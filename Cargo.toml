@@ -1,0 +1,26 @@
+[package]
+name = "pdf_rs"
+version = "0.1.0"
+edition = "2021"
+description = "A Rust library for creating and manipulating PDF documents"
+license = "MIT"
+repository = "https://github.com/ratazzi/pdf.rs"
+keywords = ["pdf", "document", "generator"]
+categories = ["text-processing", "encoding"]
+
+[dependencies]
+flate2 = "1.0"
+thiserror = "1.0"
+log = "0.4"
+
+# Optional dependencies for extended functionality
+png = { version = "0.17", optional = true }
+ttf-parser = { version = "0.24", optional = true }
+
+[dev-dependencies]
+pretty_assertions = "1.0"
+
+[features]
+default = ["png"]
+fonts = ["ttf-parser"]
+full = ["png", "fonts"]
