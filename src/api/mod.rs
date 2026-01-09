@@ -142,6 +142,76 @@ impl Document {
         self
     }
 
+    /// Returns the number of pages in the document
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Returns the current page number (1-based)
+    pub fn page_number(&self) -> usize {
+        self.current_page + 1
+    }
+
+    /// Switches to a specific page (0-based index)
+    ///
+    /// Returns true if the page exists, false otherwise.
+    pub fn go_to_page(&mut self, index: usize) -> bool {
+        if index < self.pages.len() {
+            self.current_page = index;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Deletes a page at the specified index (0-based)
+    ///
+    /// Returns true if the page was deleted, false if index was out of bounds.
+    /// The document must have at least one page, so deleting the last page
+    /// will add a new blank page.
+    pub fn delete_page(&mut self, index: usize) -> bool {
+        if index >= self.pages.len() {
+            return false;
+        }
+
+        self.pages.remove(index);
+
+        // Ensure at least one page exists
+        if self.pages.is_empty() {
+            self.add_page();
+        }
+
+        // Adjust current page if needed
+        if self.current_page >= self.pages.len() {
+            self.current_page = self.pages.len() - 1;
+        }
+
+        true
+    }
+
+    /// Inserts a new blank page at the specified index
+    ///
+    /// Returns true if the page was inserted, false if index was out of bounds.
+    pub fn insert_page(&mut self, index: usize) -> bool {
+        if index > self.pages.len() {
+            return false;
+        }
+
+        let page = PageData {
+            content: ContentBuilder::new(),
+            size: self.page_size,
+            layout: self.page_layout,
+        };
+        self.pages.insert(index, page);
+
+        // Adjust current page if insertion is before current
+        if index <= self.current_page {
+            self.current_page += 1;
+        }
+
+        true
+    }
+
     /// Adds a new page
     fn add_page(&mut self) {
         let page = PageData {
@@ -451,5 +521,88 @@ mod tests {
             doc.text("Test");
             Ok(())
         });
+    }
+
+    #[test]
+    fn test_page_count() {
+        let mut doc = Document::new();
+        assert_eq!(doc.page_count(), 1);
+
+        doc.start_new_page();
+        assert_eq!(doc.page_count(), 2);
+
+        doc.start_new_page();
+        assert_eq!(doc.page_count(), 3);
+    }
+
+    #[test]
+    fn test_page_number() {
+        let mut doc = Document::new();
+        assert_eq!(doc.page_number(), 1);
+
+        doc.start_new_page();
+        assert_eq!(doc.page_number(), 2);
+
+        doc.go_to_page(0);
+        assert_eq!(doc.page_number(), 1);
+    }
+
+    #[test]
+    fn test_go_to_page() {
+        let mut doc = Document::new();
+        doc.start_new_page();
+        doc.start_new_page();
+
+        assert!(doc.go_to_page(0));
+        assert_eq!(doc.current_page, 0);
+
+        assert!(doc.go_to_page(2));
+        assert_eq!(doc.current_page, 2);
+
+        assert!(!doc.go_to_page(10)); // Out of bounds
+    }
+
+    #[test]
+    fn test_delete_page() {
+        let mut doc = Document::new();
+        doc.start_new_page();
+        doc.start_new_page();
+        assert_eq!(doc.page_count(), 3);
+
+        // Delete middle page
+        assert!(doc.delete_page(1));
+        assert_eq!(doc.page_count(), 2);
+
+        // Delete first page
+        assert!(doc.delete_page(0));
+        assert_eq!(doc.page_count(), 1);
+
+        // Delete last page - should add a new blank page
+        assert!(doc.delete_page(0));
+        assert_eq!(doc.page_count(), 1);
+
+        // Out of bounds
+        assert!(!doc.delete_page(10));
+    }
+
+    #[test]
+    fn test_insert_page() {
+        let mut doc = Document::new();
+        assert_eq!(doc.page_count(), 1);
+
+        // Insert at beginning
+        assert!(doc.insert_page(0));
+        assert_eq!(doc.page_count(), 2);
+
+        // Insert at end
+        assert!(doc.insert_page(2));
+        assert_eq!(doc.page_count(), 3);
+
+        // Insert in middle
+        assert!(doc.insert_page(1));
+        assert_eq!(doc.page_count(), 4);
+
+        // Out of bounds
+        assert!(!doc.insert_page(10));
     }
 }
