@@ -67,6 +67,22 @@ impl ContentBuilder {
         self.line(&format!("{} j", join as u8))
     }
 
+    /// Set dash pattern (d)
+    pub fn set_dash(&mut self, pattern: &[f64], phase: f64) -> &mut Self {
+        let arr: Vec<String> = pattern.iter().map(|&n| format_number(n)).collect();
+        self.line(&format!("[{}] {} d", arr.join(" "), format_number(phase)))
+    }
+
+    /// Clear dash pattern (solid line)
+    pub fn clear_dash(&mut self) -> &mut Self {
+        self.line("[] 0 d")
+    }
+
+    /// Set miter limit (M)
+    pub fn set_miter_limit(&mut self, limit: f64) -> &mut Self {
+        self.line(&format!("{} M", format_number(limit)))
+    }
+
     // Color operators
 
     /// Set stroke color (RGB) (RG)
@@ -97,6 +113,33 @@ impl ContentBuilder {
     /// Set fill color (grayscale) (g)
     pub fn set_fill_color_gray(&mut self, gray: f64) -> &mut Self {
         self.line(&format!("{} g", format_number(gray)))
+    }
+
+    /// Set stroke color (CMYK) (K)
+    pub fn set_stroke_color_cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.line(&format!(
+            "{} {} {} {} K",
+            format_number(c),
+            format_number(m),
+            format_number(y),
+            format_number(k)
+        ))
+    }
+
+    /// Set fill color (CMYK) (k)
+    pub fn set_fill_color_cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.line(&format!(
+            "{} {} {} {} k",
+            format_number(c),
+            format_number(m),
+            format_number(y),
+            format_number(k)
+        ))
+    }
+
+    /// Set graphics state from extended graphics state dictionary (gs)
+    pub fn set_graphics_state(&mut self, name: &str) -> &mut Self {
+        self.line(&format!("/{} gs", name))
     }
 
     // Path construction operators
@@ -138,6 +181,105 @@ impl ContentBuilder {
             format_number(width),
             format_number(height)
         ))
+    }
+
+    /// Circle (approximated with Bezier curves)
+    ///
+    /// Draws a circle centered at (cx, cy) with the given radius.
+    pub fn circle(&mut self, cx: f64, cy: f64, r: f64) -> &mut Self {
+        self.ellipse(cx, cy, r, r)
+    }
+
+    /// Ellipse (approximated with Bezier curves)
+    ///
+    /// Draws an ellipse centered at (cx, cy) with horizontal radius rx
+    /// and vertical radius ry.
+    pub fn ellipse(&mut self, cx: f64, cy: f64, rx: f64, ry: f64) -> &mut Self {
+        // Magic number for approximating a quarter circle with a Bezier curve
+        // kappa = 4 * (sqrt(2) - 1) / 3 ≈ 0.5522847498
+        const KAPPA: f64 = 0.5522847498;
+
+        let ox = rx * KAPPA; // Control point offset horizontal
+        let oy = ry * KAPPA; // Control point offset vertical
+
+        // Start at the right-most point
+        self.move_to(cx + rx, cy);
+
+        // Top-right quadrant
+        self.curve_to(cx + rx, cy + oy, cx + ox, cy + ry, cx, cy + ry);
+
+        // Top-left quadrant
+        self.curve_to(cx - ox, cy + ry, cx - rx, cy + oy, cx - rx, cy);
+
+        // Bottom-left quadrant
+        self.curve_to(cx - rx, cy - oy, cx - ox, cy - ry, cx, cy - ry);
+
+        // Bottom-right quadrant
+        self.curve_to(cx + ox, cy - ry, cx + rx, cy - oy, cx + rx, cy);
+
+        self.close_path()
+    }
+
+    /// Rounded rectangle
+    ///
+    /// Draws a rectangle with rounded corners.
+    pub fn rounded_rect(
+        &mut self,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        // Clamp radius to half the minimum dimension
+        let r = radius.min(width / 2.0).min(height / 2.0);
+
+        // Magic number for Bezier curve approximation
+        const KAPPA: f64 = 0.5522847498;
+        let k = r * KAPPA;
+
+        // Start at top-left, just after the corner
+        self.move_to(x + r, y);
+
+        // Top edge
+        self.line_to(x + width - r, y);
+
+        // Top-right corner
+        self.curve_to(x + width - r + k, y, x + width, y + r - k, x + width, y + r);
+
+        // Right edge
+        self.line_to(x + width, y + height - r);
+
+        // Bottom-right corner
+        self.curve_to(
+            x + width,
+            y + height - r + k,
+            x + width - r + k,
+            y + height,
+            x + width - r,
+            y + height,
+        );
+
+        // Bottom edge
+        self.line_to(x + r, y + height);
+
+        // Bottom-left corner
+        self.curve_to(
+            x + r - k,
+            y + height,
+            x,
+            y + height - r + k,
+            x,
+            y + height - r,
+        );
+
+        // Left edge
+        self.line_to(x, y + r);
+
+        // Top-left corner
+        self.curve_to(x, y + r - k, x + r - k, y, x + r, y);
+
+        self.close_path()
     }
 
     // Path painting operators

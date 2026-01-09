@@ -445,6 +445,48 @@ impl<'a> StrokeContext<'a> {
         self
     }
 
+    /// Sets stroke color (grayscale)
+    pub fn gray(&mut self, gray: f64) -> &mut Self {
+        self.content.set_stroke_color_gray(gray);
+        self
+    }
+
+    /// Sets stroke color (CMYK)
+    pub fn cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.content.set_stroke_color_cmyk(c, m, y, k);
+        self
+    }
+
+    /// Sets dash pattern
+    pub fn dash(&mut self, pattern: &[f64]) -> &mut Self {
+        self.content.set_dash(pattern, 0.0);
+        self
+    }
+
+    /// Sets dash pattern with phase
+    pub fn dash_with_phase(&mut self, pattern: &[f64], phase: f64) -> &mut Self {
+        self.content.set_dash(pattern, phase);
+        self
+    }
+
+    /// Clears dash pattern (solid line)
+    pub fn undash(&mut self) -> &mut Self {
+        self.content.clear_dash();
+        self
+    }
+
+    /// Sets line cap style
+    pub fn cap(&mut self, cap: crate::content::LineCap) -> &mut Self {
+        self.content.set_line_cap(cap);
+        self
+    }
+
+    /// Sets line join style
+    pub fn join(&mut self, join: crate::content::LineJoin) -> &mut Self {
+        self.content.set_line_join(join);
+        self
+    }
+
     /// Draws a line
     pub fn line(&mut self, from: [f64; 2], to: [f64; 2]) -> &mut Self {
         self.content.move_to(from[0], from[1]).line_to(to[0], to[1]);
@@ -457,6 +499,31 @@ impl<'a> StrokeContext<'a> {
         self
     }
 
+    /// Draws a rounded rectangle
+    pub fn rounded_rectangle(
+        &mut self,
+        origin: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        self.content
+            .rounded_rect(origin[0], origin[1], width, height, radius);
+        self
+    }
+
+    /// Draws a circle
+    pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
+        self.content.circle(center[0], center[1], radius);
+        self
+    }
+
+    /// Draws an ellipse
+    pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
+        self.content.ellipse(center[0], center[1], rx, ry);
+        self
+    }
+
     /// Moves to a point
     pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.move_to(x, y);
@@ -466,6 +533,19 @@ impl<'a> StrokeContext<'a> {
     /// Draws a line to a point
     pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.line_to(x, y);
+        self
+    }
+
+    /// Draws a cubic Bezier curve
+    pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
+        self.content
+            .curve_to(cp1[0], cp1[1], cp2[0], cp2[1], end[0], end[1]);
+        self
+    }
+
+    /// Closes the current path
+    pub fn close_path(&mut self) -> &mut Self {
+        self.content.close_path();
         self
     }
 }
@@ -482,9 +562,64 @@ impl<'a> FillContext<'a> {
         self
     }
 
+    /// Sets fill color (grayscale)
+    pub fn gray(&mut self, gray: f64) -> &mut Self {
+        self.content.set_fill_color_gray(gray);
+        self
+    }
+
+    /// Sets fill color (CMYK)
+    pub fn cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.content.set_fill_color_cmyk(c, m, y, k);
+        self
+    }
+
     /// Draws a rectangle
     pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
         self.content.rect(origin[0], origin[1], width, height);
+        self
+    }
+
+    /// Draws a rounded rectangle
+    pub fn rounded_rectangle(
+        &mut self,
+        origin: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        self.content
+            .rounded_rect(origin[0], origin[1], width, height, radius);
+        self
+    }
+
+    /// Draws a circle
+    pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
+        self.content.circle(center[0], center[1], radius);
+        self
+    }
+
+    /// Draws an ellipse
+    pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
+        self.content.ellipse(center[0], center[1], rx, ry);
+        self
+    }
+
+    /// Moves to a point
+    pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
+        self.content.move_to(x, y);
+        self
+    }
+
+    /// Draws a line to a point
+    pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
+        self.content.line_to(x, y);
+        self
+    }
+
+    /// Closes the current path
+    pub fn close_path(&mut self) -> &mut Self {
+        self.content.close_path();
         self
     }
 }

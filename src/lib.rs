@@ -44,6 +44,7 @@ pub use error::{Error, Result};
 pub mod prelude {
     pub use crate::api::page::{PageLayout, PageSize};
     pub use crate::api::Document;
+    pub use crate::content::{LineCap, LineJoin};
     pub use crate::document::LoadedDocument;
     pub use crate::error::{Error, Result};
 }
