@@ -4,8 +4,11 @@
 
 pub mod page;
 
+#[cfg(feature = "std")]
 use std::fs::File;
+#[cfg(feature = "std")]
 use std::io::Write;
+#[cfg(feature = "std")]
 use std::path::Path;
 
 use crate::content::ContentBuilder;
@@ -92,6 +95,8 @@ impl Document {
 
     /// Creates a PDF and saves it to a file
     ///
+    /// This method is only available with the `std` feature (enabled by default).
+    ///
     /// # Example
     ///
     /// ```rust,no_run
@@ -102,6 +107,7 @@ impl Document {
     ///     Ok(())
     /// }).unwrap();
     /// ```
+    #[cfg(feature = "std")]
     pub fn generate<P, F>(path: P, f: F) -> Result<()>
     where
         P: AsRef<Path>,
@@ -254,6 +260,10 @@ impl Document {
     }
 
     /// Saves the document to a file
+    ///
+    /// This method is only available with the `std` feature (enabled by default).
+    /// For WASM environments, use [`render()`](Self::render) to get the PDF bytes.
+    #[cfg(feature = "std")]
     pub fn save<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let bytes = self.render()?;
         let mut file = File::create(path)?;
@@ -432,6 +442,7 @@ mod tests {
         assert!(s.contains("%%EOF"));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_document_generate() {
         // This test would write to disk, so we just test the API compiles

@@ -13,6 +13,13 @@
 //!     Ok(())
 //! }
 //! ```
+//!
+//! # WASM Support
+//!
+//! This library supports WebAssembly targets. When compiled for WASM:
+//! - Use `Document::new()` and `doc.render()` to get PDF bytes
+//! - File I/O methods (`save`, `generate`) require the `std` feature
+//! - The `WasmDocument` wrapper provides JavaScript-friendly bindings
 
 pub mod objects;
 pub mod parser;
@@ -25,6 +32,9 @@ pub mod api;
 
 #[cfg(feature = "png")]
 pub mod image;
+
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 mod error;
 
