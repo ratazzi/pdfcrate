@@ -3,8 +3,10 @@
 //! This module handles the high-level PDF document structure.
 
 mod context;
+mod loader;
 
 pub use context::PdfContext;
+pub use loader::LoadedDocument;
 
 use crate::objects::{PdfDict, PdfName, PdfObject, PdfRef};
 
@@ -29,7 +31,12 @@ pub fn create_pages(kids: Vec<PdfRef>, count: i64) -> PdfDict {
 }
 
 /// Creates a new Page dictionary
-pub fn create_page(parent_ref: PdfRef, media_box: [f64; 4], resources: Option<PdfRef>, contents: Option<PdfRef>) -> PdfDict {
+pub fn create_page(
+    parent_ref: PdfRef,
+    media_box: [f64; 4],
+    resources: Option<PdfRef>,
+    contents: Option<PdfRef>,
+) -> PdfDict {
     let mut dict = PdfDict::new();
     dict.set("Type", PdfObject::Name(PdfName::page()));
     dict.set("Parent", PdfObject::Reference(parent_ref));

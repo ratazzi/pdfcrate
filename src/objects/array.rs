@@ -73,6 +73,38 @@ impl PdfArray {
     pub fn as_slice(&self) -> &[PdfObject] {
         &self.0
     }
+
+    // Convenience methods for type-specific access
+
+    /// Gets an integer at the given index
+    pub fn get_integer(&self, index: usize) -> Option<i64> {
+        self.get(index).and_then(|v| v.as_integer())
+    }
+
+    /// Gets a real number at the given index
+    pub fn get_real(&self, index: usize) -> Option<f64> {
+        self.get(index).and_then(|v| v.as_real())
+    }
+
+    /// Gets a name at the given index
+    pub fn get_name(&self, index: usize) -> Option<&super::PdfName> {
+        self.get(index).and_then(|v| v.as_name())
+    }
+
+    /// Gets a reference at the given index
+    pub fn get_reference(&self, index: usize) -> Option<super::PdfRef> {
+        self.get(index).and_then(|v| v.as_reference())
+    }
+
+    /// Gets a dictionary at the given index
+    pub fn get_dict(&self, index: usize) -> Option<&super::PdfDict> {
+        self.get(index).and_then(|v| v.as_dict())
+    }
+
+    /// Gets an array at the given index
+    pub fn get_array(&self, index: usize) -> Option<&PdfArray> {
+        self.get(index).and_then(|v| v.as_array())
+    }
 }
 
 impl Index<usize> for PdfArray {

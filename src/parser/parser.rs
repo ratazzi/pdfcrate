@@ -3,7 +3,9 @@
 //! Parses PDF tokens into PDF objects.
 
 use crate::error::{Error, Result};
-use crate::objects::{PdfArray, PdfDict, PdfHexString, PdfName, PdfObject, PdfRef, PdfStream, PdfString};
+use crate::objects::{
+    PdfArray, PdfDict, PdfHexString, PdfName, PdfObject, PdfRef, PdfStream, PdfString,
+};
 
 use super::lexer::{Lexer, Token};
 
@@ -64,8 +66,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                     if matches!(next2, Token::R) {
                         // It's a reference
                         return Ok(PdfObject::Reference(PdfRef::with_generation(
-                            i as u32,
-                            gen as u16,
+                            i as u32, gen as u16,
                         )));
                     }
                     // Not a reference - restore state

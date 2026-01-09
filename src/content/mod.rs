@@ -112,15 +112,7 @@ impl ContentBuilder {
     }
 
     /// Cubic Bezier curve (c)
-    pub fn curve_to(
-        &mut self,
-        x1: f64,
-        y1: f64,
-        x2: f64,
-        y2: f64,
-        x3: f64,
-        y3: f64,
-    ) -> &mut Self {
+    pub fn curve_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, x3: f64, y3: f64) -> &mut Self {
         self.line(&format!(
             "{} {} {} {} {} {} c",
             format_number(x1),
@@ -199,23 +191,11 @@ impl ContentBuilder {
 
     /// Move text position (Td)
     pub fn move_text_pos(&mut self, tx: f64, ty: f64) -> &mut Self {
-        self.line(&format!(
-            "{} {} Td",
-            format_number(tx),
-            format_number(ty)
-        ))
+        self.line(&format!("{} {} Td", format_number(tx), format_number(ty)))
     }
 
     /// Set text matrix (Tm)
-    pub fn set_text_matrix(
-        &mut self,
-        a: f64,
-        b: f64,
-        c: f64,
-        d: f64,
-        e: f64,
-        f: f64,
-    ) -> &mut Self {
+    pub fn set_text_matrix(&mut self, a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) -> &mut Self {
         self.line(&format!(
             "{} {} {} {} {} {} Tm",
             format_number(a),
@@ -247,15 +227,7 @@ impl ContentBuilder {
     // Transformation operators
 
     /// Concatenate matrix (cm)
-    pub fn concat_matrix(
-        &mut self,
-        a: f64,
-        b: f64,
-        c: f64,
-        d: f64,
-        e: f64,
-        f: f64,
-    ) -> &mut Self {
+    pub fn concat_matrix(&mut self, a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) -> &mut Self {
         self.line(&format!(
             "{} {} {} {} {} {} cm",
             format_number(a),

@@ -2,11 +2,13 @@
 //!
 //! This module handles parsing PDF documents from bytes.
 
-mod lexer;
+pub mod lexer;
 mod parser;
+pub mod xref;
 
-pub use lexer::Lexer;
+pub use lexer::{Lexer, Token};
 pub use parser::Parser;
+pub use xref::{XRefEntry, XRefParser, XRefTable};
 
 use crate::objects::PdfObject;
 use crate::Result;

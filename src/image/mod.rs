@@ -69,7 +69,12 @@ pub fn embed_jpeg(data: &[u8]) -> Result<ImageData> {
         1 => ColorSpace::DeviceGray,
         3 => ColorSpace::DeviceRGB,
         4 => ColorSpace::DeviceCMYK,
-        _ => return Err(Error::Image(format!("Unsupported JPEG components: {}", components))),
+        _ => {
+            return Err(Error::Image(format!(
+                "Unsupported JPEG components: {}",
+                components
+            )))
+        }
     };
 
     Ok(ImageData {
@@ -125,7 +130,9 @@ fn parse_jpeg_header(data: &[u8]) -> Result<(u32, u32, u8)> {
         pos += length;
     }
 
-    Err(Error::Image("Invalid JPEG: no SOF marker found".to_string()))
+    Err(Error::Image(
+        "Invalid JPEG: no SOF marker found".to_string(),
+    ))
 }
 
 #[cfg(feature = "png")]
@@ -153,7 +160,11 @@ pub fn embed_png(data: &[u8]) -> Result<ImageData> {
     };
 
     let components = color_space.components() as usize;
-    let pixel_size = if has_alpha { components + 1 } else { components };
+    let pixel_size = if has_alpha {
+        components + 1
+    } else {
+        components
+    };
 
     // Separate alpha channel if present
     let (image_data, soft_mask) = if has_alpha {
@@ -168,7 +179,10 @@ pub fn embed_png(data: &[u8]) -> Result<ImageData> {
 
         (image, Some(mask))
     } else {
-        (buf[..info.width as usize * info.height as usize * components].to_vec(), None)
+        (
+            buf[..info.width as usize * info.height as usize * components].to_vec(),
+            None,
+        )
     };
 
     Ok(ImageData {
@@ -190,8 +204,14 @@ impl ImageData {
         dict.set("Subtype", PdfObject::Name(PdfName::new("Image")));
         dict.set("Width", PdfObject::Integer(self.width as i64));
         dict.set("Height", PdfObject::Integer(self.height as i64));
-        dict.set("ColorSpace", PdfObject::Name(PdfName::new(self.color_space.pdf_name())));
-        dict.set("BitsPerComponent", PdfObject::Integer(self.bits_per_component as i64));
+        dict.set(
+            "ColorSpace",
+            PdfObject::Name(PdfName::new(self.color_space.pdf_name())),
+        );
+        dict.set(
+            "BitsPerComponent",
+            PdfObject::Integer(self.bits_per_component as i64),
+        );
 
         if self.compressed {
             // JPEG uses DCTDecode

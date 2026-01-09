@@ -77,10 +77,7 @@ impl PdfContext {
 
     /// Returns all objects as a vector of (ref, object) pairs
     pub fn to_vec(&self) -> Vec<(PdfRef, PdfObject)> {
-        self.objects
-            .iter()
-            .map(|(&r, o)| (r, o.clone()))
-            .collect()
+        self.objects.iter().map(|(&r, o)| (r, o.clone())).collect()
     }
 }
 

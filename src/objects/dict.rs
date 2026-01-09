@@ -90,9 +90,9 @@ impl PdfDict {
 
     /// Returns an iterator over the key-value pairs in insertion order
     pub fn iter(&self) -> impl Iterator<Item = (&PdfName, &PdfObject)> {
-        self.order.iter().filter_map(|k| {
-            self.entries.get(k).map(|v| (k, v))
-        })
+        self.order
+            .iter()
+            .filter_map(|k| self.entries.get(k).map(|v| (k, v)))
     }
 
     /// Returns an iterator over the keys in insertion order
@@ -125,6 +125,11 @@ impl PdfDict {
     /// Gets a value as a reference
     pub fn get_reference<K: AsRef<str>>(&self, key: K) -> Option<PdfRef> {
         self.get(key).and_then(|v| v.as_reference())
+    }
+
+    /// Alias for get_reference
+    pub fn get_ref<K: AsRef<str>>(&self, key: K) -> Option<PdfRef> {
+        self.get_reference(key)
     }
 
     /// Gets a value as a dictionary

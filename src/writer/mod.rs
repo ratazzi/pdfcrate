@@ -159,7 +159,11 @@ impl<W: Write> PdfWriter<W> {
         entries.sort_by_key(|(r, _)| r.object_number());
 
         // Write entries (simplified - assumes consecutive object numbers starting from 0)
-        let max_obj = entries.iter().map(|(r, _)| r.object_number()).max().unwrap_or(0);
+        let max_obj = entries
+            .iter()
+            .map(|(r, _)| r.object_number())
+            .max()
+            .unwrap_or(0);
 
         self.write_str(&format!("0 {}\n", max_obj + 1))?;
 

@@ -3,21 +3,21 @@
 //! This module implements the core PDF object types as defined in the PDF specification.
 //! PDF documents are built from these basic object types.
 
-mod dict;
 mod array;
+mod dict;
 mod name;
-mod string;
 mod number;
 mod reference;
 mod stream;
+mod string;
 
-pub use dict::PdfDict;
 pub use array::PdfArray;
+pub use dict::PdfDict;
 pub use name::PdfName;
-pub use string::{PdfString, PdfHexString};
 pub use number::PdfNumber;
 pub use reference::PdfRef;
 pub use stream::PdfStream;
+pub use string::{PdfHexString, PdfString};
 
 use std::fmt;
 

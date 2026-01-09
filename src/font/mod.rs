@@ -169,7 +169,10 @@ mod tests {
 
     #[test]
     fn test_from_name() {
-        assert_eq!(StandardFont::from_name("Helvetica"), Some(StandardFont::Helvetica));
+        assert_eq!(
+            StandardFont::from_name("Helvetica"),
+            Some(StandardFont::Helvetica)
+        );
         assert_eq!(StandardFont::from_name("Unknown"), None);
     }
 }

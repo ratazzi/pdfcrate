@@ -21,14 +21,14 @@
 //! - File I/O methods (`save`, `generate`) require the `std` feature
 //! - The `WasmDocument` wrapper provides JavaScript-friendly bindings
 
+pub mod api;
+pub mod codec;
+pub mod content;
+pub mod document;
+pub mod font;
 pub mod objects;
 pub mod parser;
 pub mod writer;
-pub mod codec;
-pub mod document;
-pub mod content;
-pub mod font;
-pub mod api;
 
 #[cfg(feature = "png")]
 pub mod image;
@@ -42,7 +42,8 @@ pub use error::{Error, Result};
 
 /// Prelude module for convenient imports
 pub mod prelude {
+    pub use crate::api::page::{PageLayout, PageSize};
     pub use crate::api::Document;
-    pub use crate::api::page::{PageSize, PageLayout};
+    pub use crate::document::LoadedDocument;
     pub use crate::error::{Error, Result};
 }

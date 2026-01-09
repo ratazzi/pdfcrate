@@ -100,12 +100,10 @@ impl PdfStream {
                     .map_err(|e| crate::Error::Compression(e.to_string()))?;
                 Ok(decoded)
             }
-            Some(PdfObject::Name(name)) => {
-                Err(crate::Error::Unsupported(format!(
-                    "Filter {} not supported",
-                    name
-                )))
-            }
+            Some(PdfObject::Name(name)) => Err(crate::Error::Unsupported(format!(
+                "Filter {} not supported",
+                name
+            ))),
             None => Ok(self.data.clone()),
             _ => Ok(self.data.clone()),
         }
@@ -113,7 +111,8 @@ impl PdfStream {
 
     /// Updates the Length entry in the dictionary
     pub fn update_length(&mut self) {
-        self.dict.set("Length", PdfObject::Integer(self.data.len() as i64));
+        self.dict
+            .set("Length", PdfObject::Integer(self.data.len() as i64));
     }
 
     /// Sets the stream data and updates the length

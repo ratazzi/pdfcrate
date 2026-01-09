@@ -349,10 +349,11 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
-        let keyword = std::str::from_utf8(&self.data[start..self.pos]).map_err(|_| Error::Parse {
-            message: "Invalid keyword encoding".to_string(),
-            position: start,
-        })?;
+        let keyword =
+            std::str::from_utf8(&self.data[start..self.pos]).map_err(|_| Error::Parse {
+                message: "Invalid keyword encoding".to_string(),
+                position: start,
+            })?;
 
         match keyword {
             "true" => Ok(Token::True),
@@ -440,10 +441,7 @@ mod tests {
     #[test]
     fn test_lexer_name() {
         let mut lexer = Lexer::new(b"/Type");
-        assert_eq!(
-            lexer.next_token().unwrap(),
-            Token::Name("Type".to_string())
-        );
+        assert_eq!(lexer.next_token().unwrap(), Token::Name("Type".to_string()));
     }
 
     #[test]
@@ -478,14 +476,8 @@ mod tests {
     fn test_lexer_dict() {
         let mut lexer = Lexer::new(b"<< /Type /Page >>");
         assert_eq!(lexer.next_token().unwrap(), Token::DictStart);
-        assert_eq!(
-            lexer.next_token().unwrap(),
-            Token::Name("Type".to_string())
-        );
-        assert_eq!(
-            lexer.next_token().unwrap(),
-            Token::Name("Page".to_string())
-        );
+        assert_eq!(lexer.next_token().unwrap(), Token::Name("Type".to_string()));
+        assert_eq!(lexer.next_token().unwrap(), Token::Name("Page".to_string()));
         assert_eq!(lexer.next_token().unwrap(), Token::DictEnd);
     }
 

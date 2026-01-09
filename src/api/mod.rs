@@ -298,7 +298,8 @@ impl Document {
             // Create page dictionary
             let dims = page.size.dimensions(page.layout);
             let media_box = [0.0, 0.0, dims.0, dims.1];
-            let page_dict = create_page(pages_ref, media_box, Some(resources_ref), Some(content_ref));
+            let page_dict =
+                create_page(pages_ref, media_box, Some(resources_ref), Some(content_ref));
             let page_ref = self.context.register(PdfObject::Dict(page_dict));
             page_refs.push(page_ref);
         }

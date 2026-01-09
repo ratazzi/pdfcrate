@@ -69,7 +69,9 @@ impl WasmDocument {
 
     /// Renders the document to bytes
     pub fn render(&mut self) -> Result<Vec<u8>, JsError> {
-        self.inner.render().map_err(|e| JsError::new(&e.to_string()))
+        self.inner
+            .render()
+            .map_err(|e| JsError::new(&e.to_string()))
     }
 }
 

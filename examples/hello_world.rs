@@ -7,8 +7,7 @@ use pdf_rs::prelude::*;
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Method 1: Using generate with closure
     Document::generate("hello_world.pdf", |doc| {
-        doc.title("Hello World PDF")
-            .author("pdf_rs");
+        doc.title("Hello World PDF").author("pdf_rs");
 
         doc.font("Helvetica").size(24.0);
         doc.text_at("Hello, World!", [72.0, 700.0]);

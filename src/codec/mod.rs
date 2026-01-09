@@ -7,8 +7,8 @@ use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use std::io::{Read, Write};
 
-use crate::Result;
 use crate::error::Error;
+use crate::Result;
 
 /// Compresses data using zlib/deflate
 pub fn flate_encode(data: &[u8]) -> Result<Vec<u8>> {
