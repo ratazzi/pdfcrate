@@ -3,7 +3,7 @@
 //! This module handles embedding images in PDF documents.
 
 use crate::error::{Error, Result};
-use crate::objects::{PdfDict, PdfName, PdfObject, PdfStream};
+use crate::objects::{PdfName, PdfObject, PdfStream};
 
 /// Image format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,27 +199,41 @@ pub fn embed_png(data: &[u8]) -> Result<ImageData> {
 impl ImageData {
     /// Creates a PDF XObject stream for this image
     pub fn to_xobject(&self) -> PdfStream {
-        let mut dict = PdfDict::new();
-        dict.set("Type", PdfObject::Name(PdfName::new("XObject")));
-        dict.set("Subtype", PdfObject::Name(PdfName::new("Image")));
-        dict.set("Width", PdfObject::Integer(self.width as i64));
-        dict.set("Height", PdfObject::Integer(self.height as i64));
-        dict.set(
-            "ColorSpace",
-            PdfObject::Name(PdfName::new(self.color_space.pdf_name())),
-        );
-        dict.set(
-            "BitsPerComponent",
-            PdfObject::Integer(self.bits_per_component as i64),
-        );
-
         if self.compressed {
             // JPEG uses DCTDecode
-            dict.set("Filter", PdfObject::Name(PdfName::new("DCTDecode")));
-            PdfStream::new(dict, self.data.clone())
+            let mut stream = PdfStream::from_data(self.data.clone());
+            let stream_dict = stream.dict_mut();
+            stream_dict.set("Type", PdfObject::Name(PdfName::new("XObject")));
+            stream_dict.set("Subtype", PdfObject::Name(PdfName::new("Image")));
+            stream_dict.set("Width", PdfObject::Integer(self.width as i64));
+            stream_dict.set("Height", PdfObject::Integer(self.height as i64));
+            stream_dict.set(
+                "ColorSpace",
+                PdfObject::Name(PdfName::new(self.color_space.pdf_name())),
+            );
+            stream_dict.set(
+                "BitsPerComponent",
+                PdfObject::Integer(self.bits_per_component as i64),
+            );
+            stream_dict.set("Filter", PdfObject::Name(PdfName::new("DCTDecode")));
+            stream
         } else {
-            // Compress with Flate
-            PdfStream::from_data_compressed(self.data.clone())
+            // Compress with Flate while preserving image dictionary entries.
+            let mut stream = PdfStream::from_data_compressed(self.data.clone());
+            let stream_dict = stream.dict_mut();
+            stream_dict.set("Type", PdfObject::Name(PdfName::new("XObject")));
+            stream_dict.set("Subtype", PdfObject::Name(PdfName::new("Image")));
+            stream_dict.set("Width", PdfObject::Integer(self.width as i64));
+            stream_dict.set("Height", PdfObject::Integer(self.height as i64));
+            stream_dict.set(
+                "ColorSpace",
+                PdfObject::Name(PdfName::new(self.color_space.pdf_name())),
+            );
+            stream_dict.set(
+                "BitsPerComponent",
+                PdfObject::Integer(self.bits_per_component as i64),
+            );
+            stream
         }
     }
 }

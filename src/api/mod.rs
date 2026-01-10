@@ -51,6 +51,10 @@ pub struct Document {
     current_font_size: f64,
     /// Document info
     info: DocumentInfo,
+    /// Registered images (XObjects)
+    images: Vec<(String, PdfRef, u32, u32)>, // (name, ref, width, height)
+    /// Image counter for generating unique names
+    image_counter: usize,
 }
 
 /// Internal page data
@@ -86,6 +90,8 @@ impl Document {
                 producer: Some("pdf_rs".to_string()),
                 ..Default::default()
             },
+            images: Vec::new(),
+            image_counter: 0,
         };
 
         // Start with one page
@@ -289,6 +295,104 @@ impl Document {
         }
     }
 
+    /// Embeds a JPEG image and draws it at the specified position
+    ///
+    /// Returns the image name for reuse, or an error if the image is invalid.
+    pub fn image_jpeg(
+        &mut self,
+        data: &[u8],
+        pos: [f64; 2],
+        width: f64,
+        height: f64,
+    ) -> Result<String> {
+        let image_data = crate::image::embed_jpeg(data)?;
+        self.draw_image_data(image_data, pos, width, height)
+    }
+
+    /// Embeds a PNG image and draws it at the specified position
+    ///
+    /// Returns the image name for reuse, or an error if the image is invalid.
+    /// This method requires the `png` feature.
+    #[cfg(feature = "png")]
+    pub fn image_png(
+        &mut self,
+        data: &[u8],
+        pos: [f64; 2],
+        width: f64,
+        height: f64,
+    ) -> Result<String> {
+        let image_data = crate::image::embed_png(data)?;
+        self.draw_image_data(image_data, pos, width, height)
+    }
+
+    /// Draws an already-embedded image by name
+    pub fn draw_image(&mut self, name: &str, pos: [f64; 2], width: f64, height: f64) -> &mut Self {
+        let page = &mut self.pages[self.current_page];
+        page.content
+            .save_state()
+            .concat_matrix(width, 0.0, 0.0, height, pos[0], pos[1])
+            .draw_xobject(name)
+            .restore_state();
+        self
+    }
+
+    /// Internal: draws image data and returns the image name
+    fn draw_image_data(
+        &mut self,
+        image_data: crate::image::ImageData,
+        pos: [f64; 2],
+        width: f64,
+        height: f64,
+    ) -> Result<String> {
+        // Generate unique name
+        self.image_counter += 1;
+        let name = format!("Im{}", self.image_counter);
+
+        // Create XObject stream
+        let xobject = image_data.to_xobject();
+        let img_width = image_data.width;
+        let img_height = image_data.height;
+
+        // Handle soft mask (alpha channel) if present
+        let xobject = if let Some(mask_data) = image_data.soft_mask {
+            let mut mask_stream = PdfStream::from_data_compressed(mask_data);
+            let mask_dict = mask_stream.dict_mut();
+            mask_dict.set(
+                "Type",
+                PdfObject::Name(crate::objects::PdfName::new("XObject")),
+            );
+            mask_dict.set(
+                "Subtype",
+                PdfObject::Name(crate::objects::PdfName::new("Image")),
+            );
+            mask_dict.set("Width", PdfObject::Integer(img_width as i64));
+            mask_dict.set("Height", PdfObject::Integer(img_height as i64));
+            mask_dict.set(
+                "ColorSpace",
+                PdfObject::Name(crate::objects::PdfName::new("DeviceGray")),
+            );
+            mask_dict.set("BitsPerComponent", PdfObject::Integer(8));
+
+            let mask_ref = self.context.register(PdfObject::Stream(mask_stream));
+
+            // Add SMask to the image XObject
+            let mut dict = xobject.dict().clone();
+            dict.set("SMask", PdfObject::Reference(mask_ref));
+            PdfStream::new(dict, xobject.data().to_vec())
+        } else {
+            xobject
+        };
+
+        let img_ref = self.context.register(PdfObject::Stream(xobject));
+        self.images
+            .push((name.clone(), img_ref, img_width, img_height));
+
+        // Draw the image
+        self.draw_image(&name, pos, width, height);
+
+        Ok(name)
+    }
+
     /// Strokes a path using a closure
     pub fn stroke<F>(&mut self, f: F) -> &mut Self
     where
@@ -349,9 +453,18 @@ impl Document {
             font_dict.set(name, PdfObject::Reference(*font_ref));
         }
 
+        // Build XObject resources dictionary (images)
+        let mut xobject_dict = PdfDict::new();
+        for (name, img_ref, _, _) in &self.images {
+            xobject_dict.set(name, PdfObject::Reference(*img_ref));
+        }
+
         let mut resources = PdfDict::new();
         if !self.fonts.is_empty() {
             resources.set("Font", PdfObject::Dict(font_dict));
+        }
+        if !self.images.is_empty() {
+            resources.set("XObject", PdfObject::Dict(xobject_dict));
         }
         let resources_ref = self.context.register(PdfObject::Dict(resources));
 
