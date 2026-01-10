@@ -6,7 +6,7 @@
 pub mod truetype;
 
 #[cfg(feature = "fonts")]
-pub use truetype::EmbeddedFont;
+pub use truetype::{EmbeddedFont, ShapedGlyph};
 
 use crate::objects::{PdfDict, PdfName, PdfObject};
 

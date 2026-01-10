@@ -361,6 +361,33 @@ impl ContentBuilder {
         self.line(&format!("<{}> Tj", hex))
     }
 
+    /// Show glyphs with adjustments (TJ) - for kerning/shaped text
+    pub fn show_text_hex_adjusted(&mut self, glyphs: &[u16], adjustments: &[i32]) -> &mut Self {
+        if glyphs.is_empty() {
+            return self;
+        }
+
+        let mut line = String::new();
+        line.push('[');
+        for (idx, gid) in glyphs.iter().enumerate() {
+            line.push('<');
+            line.push_str(&format!("{:04X}", gid));
+            line.push('>');
+            if idx < glyphs.len().saturating_sub(1) {
+                if let Some(adj) = adjustments.get(idx) {
+                    line.push(' ');
+                    line.push_str(&format_number(*adj as f64));
+                }
+            }
+            if idx + 1 < glyphs.len() {
+                line.push(' ');
+            }
+        }
+        line.push(']');
+        line.push_str(" TJ");
+        self.line(&line)
+    }
+
     /// Set text leading (TL)
     pub fn set_text_leading(&mut self, leading: f64) -> &mut Self {
         self.line(&format!("{} TL", format_number(leading)))

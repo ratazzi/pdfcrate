@@ -16,6 +16,8 @@ use crate::content::ContentBuilder;
 use crate::document::{create_catalog, create_page, create_pages, PdfContext};
 use crate::error::Result;
 use crate::font::StandardFont;
+#[cfg(feature = "fonts")]
+use crate::font::ShapedGlyph;
 use crate::forms::{AcroForm, FormField};
 use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
 
@@ -54,6 +56,9 @@ pub struct Document {
     /// Used characters per font (for subsetting)
     #[cfg(feature = "fonts")]
     font_used_chars: std::collections::HashMap<String, std::collections::HashSet<char>>,
+    /// Used glyphs per font (for shaping-aware subsetting)
+    #[cfg(feature = "fonts")]
+    font_used_glyphs: std::collections::HashMap<String, std::collections::BTreeMap<u16, String>>,
     /// Current font name
     current_font: String,
     /// Current font size
@@ -101,6 +106,8 @@ impl Document {
             embedded_fonts: std::collections::HashMap::new(),
             #[cfg(feature = "fonts")]
             font_used_chars: std::collections::HashMap::new(),
+            #[cfg(feature = "fonts")]
+            font_used_glyphs: std::collections::HashMap::new(),
             current_font: "Helvetica".to_string(),
             current_font_size: 12.0,
             current_font_embedded: false,
@@ -277,41 +284,35 @@ impl Document {
         let font_name = self.current_font.clone();
         let font_size = self.current_font_size;
         let is_embedded = self.current_font_embedded;
-        let page = &mut self.pages[self.current_page];
-        let dims = page.size.dimensions(page.layout);
+        let (page_size, page_layout) = {
+            let page = &self.pages[self.current_page];
+            (page.size, page.layout)
+        };
+        let dims = page_size.dimensions(page_layout);
 
         // Position text at top of page, flowing down
         let y = dims.1 - 72.0; // 1 inch from top
         let x = 72.0; // 1 inch from left
 
-        page.content
-            .begin_text()
-            .set_font(&font_name, font_size)
-            .move_text_pos(x, y);
-
         #[cfg(feature = "fonts")]
-        if is_embedded {
-            // Track used characters for subsetting
-            self.font_used_chars
-                .entry(font_name.clone())
-                .or_default()
-                .extend(text.chars());
-
-            if let Some(font) = self.embedded_fonts.get(&font_name) {
-                let hex = font.encode_text(text);
-                self.pages[self.current_page].content.show_text_hex(&hex);
+        {
+            if is_embedded {
+                self.draw_embedded_text(text, [x, y]);
+                return self;
             }
-        } else {
-            self.pages[self.current_page].content.show_text(text);
         }
-
         #[cfg(not(feature = "fonts"))]
         {
             let _ = is_embedded;
-            self.pages[self.current_page].content.show_text(text);
         }
 
-        self.pages[self.current_page].content.end_text();
+        self.pages[self.current_page]
+            .content
+            .begin_text()
+            .set_font(&font_name, font_size)
+            .move_text_pos(x, y)
+            .show_text(text)
+            .end_text();
 
         self
     }
@@ -324,35 +325,72 @@ impl Document {
         let font_size = self.current_font_size;
         let is_embedded = self.current_font_embedded;
 
+        #[cfg(feature = "fonts")]
+        {
+            if is_embedded {
+                self.draw_embedded_text(text, pos);
+                return self;
+            }
+        }
+        #[cfg(not(feature = "fonts"))]
+        {
+            let _ = is_embedded;
+        }
+
         self.pages[self.current_page]
             .content
             .begin_text()
             .set_font(&font_name, font_size)
-            .move_text_pos(pos[0], pos[1]);
+            .move_text_pos(pos[0], pos[1])
+            .show_text(text)
+            .end_text();
 
-        #[cfg(feature = "fonts")]
-        if is_embedded {
-            // Track used characters for subsetting
-            self.font_used_chars
-                .entry(font_name.clone())
-                .or_default()
-                .extend(text.chars());
+        self
+    }
 
+    /// Draws text at a specific position without kerning adjustments.
+    ///
+    /// This is useful for comparing kerning/shaping behavior in embedded fonts.
+    #[cfg(feature = "fonts")]
+    pub fn text_at_no_kerning(&mut self, text: &str, pos: [f64; 2]) -> &mut Self {
+        self.ensure_font(&self.current_font.clone());
+
+        let font_name = self.current_font.clone();
+        let font_size = self.current_font_size;
+
+        if self.current_font_embedded {
             if let Some(font) = self.embedded_fonts.get(&font_name) {
-                let hex = font.encode_text(text);
-                self.pages[self.current_page].content.show_text_hex(&hex);
+                let glyphs = font.shape_text(text);
+                if glyphs.is_empty() {
+                    return self;
+                }
+
+                self.track_font_glyphs(&font_name, &glyphs);
+
+                let mut hex = String::with_capacity(glyphs.len() * 4);
+                for glyph in glyphs {
+                    hex.push_str(&format!("{:04X}", glyph.gid));
+                }
+
+                self.pages[self.current_page]
+                    .content
+                    .begin_text()
+                    .set_font(&font_name, font_size)
+                    .move_text_pos(pos[0], pos[1])
+                    .show_text_hex(&hex)
+                    .end_text();
+
+                return self;
             }
-        } else {
-            self.pages[self.current_page].content.show_text(text);
         }
 
-        #[cfg(not(feature = "fonts"))]
-        {
-            let _ = is_embedded;
-            self.pages[self.current_page].content.show_text(text);
-        }
-
-        self.pages[self.current_page].content.end_text();
+        self.pages[self.current_page]
+            .content
+            .begin_text()
+            .set_font(&font_name, font_size)
+            .move_text_pos(pos[0], pos[1])
+            .show_text(text)
+            .end_text();
 
         self
     }
@@ -387,9 +425,11 @@ impl Document {
         let font_arc = self.embedded_fonts.get(name)?.clone();
         let font = font_arc.as_ref();
 
-        // Apply used characters for subsetting - this populates glyph_set
+        // Apply used glyphs/characters for subsetting - this populates glyph_set
         let mut font_clone = font.clone();
-        if let Some(used_chars) = self.font_used_chars.get(name) {
+        if let Some(used_glyphs) = self.font_used_glyphs.get(name) {
+            font_clone.apply_used_glyphs(used_glyphs);
+        } else if let Some(used_chars) = self.font_used_chars.get(name) {
             // Build a string of all used characters and call mark_chars_used
             // This populates both used_chars AND glyph_set
             let text: String = used_chars.iter().collect();
@@ -455,11 +495,130 @@ impl Document {
     pub fn measure_text(&self, text: &str) -> f64 {
         if self.current_font_embedded {
             if let Some(font) = self.embedded_fonts.get(&self.current_font) {
-                return font.text_width(text, self.current_font_size);
+                let glyphs = font.shape_text(text);
+                let total_advance: i32 = glyphs.iter().map(|g| g.x_advance).sum();
+                return total_advance as f64 * self.current_font_size / 1000.0;
             }
         }
         // Fallback for standard fonts (approximate)
         text.len() as f64 * self.current_font_size * 0.5
+    }
+
+    #[cfg(feature = "fonts")]
+    fn draw_embedded_text(&mut self, text: &str, pos: [f64; 2]) {
+        let font_name = self.current_font.clone();
+        let font_size = self.current_font_size;
+        let font = match self.embedded_fonts.get(&font_name) {
+            Some(font) => font.clone(),
+            None => {
+                self.pages[self.current_page]
+                    .content
+                    .begin_text()
+                    .set_font(&font_name, font_size)
+                    .move_text_pos(pos[0], pos[1])
+                    .show_text(text)
+                    .end_text();
+                return;
+            }
+        };
+
+        let glyphs = font.shape_text(text);
+        if glyphs.is_empty() {
+            return;
+        }
+
+        self.track_font_glyphs(&font_name, &glyphs);
+
+        let has_offsets = glyphs
+            .iter()
+            .any(|g| g.x_offset != 0 || g.y_offset != 0 || g.y_advance != 0);
+
+        let (glyph_ids, adjustments) = if has_offsets {
+            (Vec::new(), Vec::new())
+        } else {
+            Self::build_glyph_adjustments(font.as_ref(), &glyphs)
+        };
+
+        let content = &mut self.pages[self.current_page].content;
+        content.begin_text().set_font(&font_name, font_size);
+
+        if has_offsets {
+            Self::show_positioned_glyphs(content, &glyphs, pos, font_size);
+        } else {
+            content.move_text_pos(pos[0], pos[1]);
+            content.show_text_hex_adjusted(&glyph_ids, &adjustments);
+        }
+
+        content.end_text();
+    }
+
+    #[cfg(feature = "fonts")]
+    fn track_font_glyphs(&mut self, font_name: &str, glyphs: &[ShapedGlyph]) {
+        let used_chars = self
+            .font_used_chars
+            .entry(font_name.to_string())
+            .or_default();
+        let used_glyphs = self
+            .font_used_glyphs
+            .entry(font_name.to_string())
+            .or_default();
+
+        for glyph in glyphs {
+            used_chars.extend(glyph.text.chars());
+
+            match used_glyphs.get_mut(&glyph.gid) {
+                Some(existing) => {
+                    if existing.is_empty() && !glyph.text.is_empty() {
+                        *existing = glyph.text.clone();
+                    }
+                }
+                None => {
+                    used_glyphs.insert(glyph.gid, glyph.text.clone());
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "fonts")]
+    fn build_glyph_adjustments(
+        font: &crate::font::EmbeddedFont,
+        glyphs: &[ShapedGlyph],
+    ) -> (Vec<u16>, Vec<i32>) {
+        let mut glyph_ids = Vec::with_capacity(glyphs.len());
+        let mut adjustments = Vec::with_capacity(glyphs.len().saturating_sub(1));
+
+        for (idx, glyph) in glyphs.iter().enumerate() {
+            glyph_ids.push(glyph.gid);
+            if idx + 1 < glyphs.len() {
+                let default_width = font.glyph_width(glyph.gid) as i32;
+                adjustments.push(default_width - glyph.x_advance);
+            }
+        }
+
+        (glyph_ids, adjustments)
+    }
+
+    #[cfg(feature = "fonts")]
+    fn show_positioned_glyphs(
+        content: &mut ContentBuilder,
+        glyphs: &[ShapedGlyph],
+        pos: [f64; 2],
+        font_size: f64,
+    ) {
+        let scale = font_size / 1000.0;
+        let mut pen_x: i32 = 0;
+        let mut pen_y: i32 = 0;
+
+        for glyph in glyphs {
+            let x = pos[0] + (pen_x + glyph.x_offset) as f64 * scale;
+            let y = pos[1] + (pen_y + glyph.y_offset) as f64 * scale;
+            content
+                .set_text_matrix(1.0, 0.0, 0.0, 1.0, x, y)
+                .show_text_hex(&format!("{:04X}", glyph.gid));
+
+            pen_x += glyph.x_advance;
+            pen_y += glyph.y_advance;
+        }
     }
 
     /// Ensures a font is registered

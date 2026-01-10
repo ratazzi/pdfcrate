@@ -4,11 +4,12 @@
 //! - Page 3: Embedded JPEG image
 //! - Page 4: PNG with alpha transparency
 //! - Page 5: Custom TrueType font embedding (requires `fonts` feature)
-//! - Page 6: CJK font support (Chinese/Japanese/Korean)
-//! - Page 7: Interactive forms (AcroForms)
-//! - Page 8: PDF embedding and merging
+//! - Page 6: MapleMono ligatures (best with `text-shaping` feature)
+//! - Page 7: CJK font support (Chinese/Japanese/Korean)
+//! - Page 8: Interactive forms (AcroForms)
+//! - Page 9: PDF embedding and merging
 //!
-//! Run with: cargo run --example showcase --features fonts
+//! Run with: cargo run --example showcase --features "fonts,text-shaping"
 
 use pdf_rs::image::embed_jpeg;
 use pdf_rs::prelude::{Document, LoadedDocument, PageLayout, PageSize};
@@ -23,6 +24,7 @@ const FONT_PATH: &str = "/Users/ratazzi/Downloads/Roboto_v3.014/web/static/Robot
 const FONT_BOLD_PATH: &str = "/Users/ratazzi/Downloads/Roboto_v3.014/web/static/Roboto-Bold.ttf";
 const FONT_ITALIC_PATH: &str =
     "/Users/ratazzi/Downloads/Roboto_v3.014/web/static/Roboto-Italic.ttf";
+const MAPLE_FONT_PATH: &str = "/Users/ratazzi/Library/Fonts/MapleMono-NF-CN-Regular.ttf";
 
 // CJK font (LXGW WenKai - 霞鹜文楷)
 const CJK_FONT_LIGHT: &str = "/Users/ratazzi/Library/Fonts/LXGWWenKai-Light.ttf";
@@ -51,6 +53,9 @@ fn main() -> StdResult<(), Box<dyn Error>> {
 
         #[cfg(feature = "fonts")]
         add_page_custom_font(doc)?;
+
+        #[cfg(feature = "fonts")]
+        add_page_ligatures(doc)?;
 
         #[cfg(feature = "fonts")]
         add_page_cjk(doc)?;
@@ -360,6 +365,104 @@ fn add_page_custom_font(doc: &mut Document) -> PdfResult<()> {
 }
 
 #[cfg(feature = "fonts")]
+fn add_page_ligatures(doc: &mut Document) -> PdfResult<()> {
+    use std::fs;
+
+    let (page_width, page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
+    let margin = 48.0;
+
+    doc.start_new_page();
+
+    doc.fill(|ctx| {
+        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+    });
+
+    let font_name = doc.embed_font(fs::read(MAPLE_FONT_PATH)?)?;
+
+    doc.font(&font_name).size(28.0);
+    doc.text_at("MapleMono Ligatures", [margin, 800.0]);
+
+    doc.font("Helvetica").size(12.0);
+    doc.text_at("Page 6: ligatures, kerning, and line spacing", [margin, 778.0]);
+
+    let mut y = 700.0;
+    doc.font(&font_name).size(22.0);
+
+    let samples = ["== != === !== <= >= -> => <-> <=>"];
+
+    for line in samples {
+        doc.text_at(line, [margin, y]);
+        y -= 32.0;
+    }
+
+    y -= 8.0;
+    doc.font("Helvetica").size(11.0);
+    doc.text_at("Nerd Font glyphs (MapleMono NF):", [margin, y]);
+    y -= 32.0;
+
+    doc.font(&font_name).size(24.0);
+    doc.text_at(
+        "\u{f09b}  \u{f121}  \u{f179}  \u{f0f3}  \u{f0e0}  \u{f2db}  \u{f1eb}",
+        [margin, y],
+    );
+    y -= 36.0;
+
+    doc.stroke(|ctx| {
+        ctx.gray(0.88)
+            .line_width(0.5)
+            .line([margin, y], [page_width - margin, y]);
+    });
+    y -= 16.0;
+
+
+    doc.font("Helvetica").size(12.0);
+    doc.text_at("Kerning samples (Roboto, proportional):", [margin, y]);
+    y -= 18.0;
+
+    let roboto_font = doc.embed_font(fs::read(FONT_PATH)?)?;
+    doc.font("Helvetica").size(10.0);
+    doc.text_at("Kerning OFF:", [margin, y]);
+    y -= 26.0;
+
+    doc.font(&roboto_font).size(32.0);
+    doc.text_at_no_kerning("AV AVA WA We To Ta Te Yo", [margin, y]);
+    y -= 48.0;
+
+    doc.font("Helvetica").size(10.0);
+    doc.text_at("Kerning ON:", [margin, y]);
+    y -= 26.0;
+
+    doc.font(&roboto_font).size(32.0);
+    doc.text_at("AV AVA WA We To Ta Te Yo", [margin, y]);
+    y -= 48.0;
+
+    doc.font("Helvetica").size(12.0);
+    doc.text_at("Line spacing (manual):", [margin, y]);
+    y -= 18.0;
+
+    for spacing in [16.0, 24.0, 36.0] {
+        doc.font("Helvetica").size(10.0);
+        doc.text_at(&format!("Line height {:.0}pt", spacing), [margin, y]);
+        let text_y = y - 14.0;
+
+        doc.stroke(|ctx| {
+            ctx.gray(0.8)
+                .line_width(0.5)
+                .line([margin, text_y], [page_width - margin, text_y])
+                .line([margin, text_y - spacing], [page_width - margin, text_y - spacing]);
+        });
+
+        doc.font(&font_name).size(14.0);
+        doc.text_at("The quick brown fox jumps.", [margin, text_y]);
+        doc.text_at("Second line for spacing.", [margin, text_y - spacing]);
+
+        y = text_y - spacing - 24.0;
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "fonts")]
 fn add_page_cjk(doc: &mut Document) -> PdfResult<()> {
     use std::fs;
 
@@ -384,7 +487,7 @@ fn add_page_cjk(doc: &mut Document) -> PdfResult<()> {
 
     doc.font(&cjk_regular).size(12.0);
     doc.text_at(
-        "Page 6: 中日韩文字渲染 / Chinese, Japanese, Korean",
+        "Page 7: 中日韩文字渲染 / Chinese, Japanese, Korean",
         [margin, 778.0],
     );
 
@@ -492,7 +595,7 @@ fn add_page_forms(doc: &mut Document) -> PdfResult<()> {
 
     doc.font("Helvetica").size(11.0);
     doc.text_at(
-        "Page 7: AcroForms - text fields, checkboxes, and dropdowns",
+        "Page 8: AcroForms - text fields, checkboxes, and dropdowns",
         [margin, 780.0],
     );
 
@@ -606,7 +709,7 @@ fn add_page_pdf_embed(doc: &mut Document) -> PdfResult<()> {
 
     doc.font("Helvetica").size(11.0);
     doc.text_at(
-        "Page 8: Embed and draw pages from other PDFs",
+        "Page 9: Embed and draw pages from other PDFs",
         [margin, 780.0],
     );
 

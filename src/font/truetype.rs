@@ -3,7 +3,8 @@
 //! This module handles embedding TrueType/OpenType fonts in PDF documents.
 //! Supports font subsetting to reduce file size by including only used glyphs.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, RwLock};
 
 use crate::error::{Error, Result};
 use crate::objects::{PdfArray, PdfDict, PdfName, PdfObject, PdfRef, PdfStream};
@@ -62,6 +63,19 @@ pub struct EmbeddedFont {
     pub(crate) glyph_set: BTreeMap<u16, String>,
     /// Characters used in the document (for subsetting) - legacy field
     pub(crate) used_chars: HashSet<char>,
+    /// Cached glyph IDs for character lookup
+    pub(crate) glyph_cache: Arc<RwLock<HashMap<char, u16>>>,
+}
+
+/// Shaped glyph placement (gid + advances/offsets in 1/1000 em units).
+#[derive(Debug, Clone)]
+pub struct ShapedGlyph {
+    pub gid: u16,
+    pub x_advance: i32,
+    pub y_advance: i32,
+    pub x_offset: i32,
+    pub y_offset: i32,
+    pub text: String,
 }
 
 impl EmbeddedFont {
@@ -168,17 +182,29 @@ impl EmbeddedFont {
             data,
             glyph_set: BTreeMap::new(),
             used_chars: HashSet::new(),
+            glyph_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
     /// Looks up a glyph ID for a character using the font's cmap
     pub fn glyph_id(&self, c: char) -> Option<u16> {
         use ttf_parser::Face;
-        if let Ok(face) = Face::parse(&self.data, 0) {
-            face.glyph_index(c).map(|gid| gid.0)
-        } else {
-            None
+
+        if let Ok(cache) = self.glyph_cache.read() {
+            if let Some(&gid) = cache.get(&c) {
+                return Some(gid);
+            }
         }
+
+        if let Ok(face) = Face::parse(&self.data, 0) {
+            if let Some(gid) = face.glyph_index(c) {
+                if let Ok(mut cache) = self.glyph_cache.write() {
+                    cache.insert(c, gid.0);
+                }
+                return Some(gid.0);
+            }
+        }
+        None
     }
 
     /// Records characters as used (for subsetting)
@@ -204,6 +230,26 @@ impl EmbeddedFont {
                 self.used_chars.insert(c);
             }
         }
+    }
+
+    /// Applies a glyph usage map directly (gid -> unicode string).
+    /// This is used to keep subsetting accurate for shaped text.
+    pub fn apply_used_glyphs(&mut self, glyphs: &BTreeMap<u16, String>) {
+        self.glyph_set = glyphs.clone();
+        self.used_chars.clear();
+        for text in glyphs.values() {
+            self.used_chars.extend(text.chars());
+        }
+    }
+
+    /// Returns the font units per em.
+    pub fn units_per_em(&self) -> u16 {
+        self.units_per_em
+    }
+
+    /// Returns the width of a glyph in PDF units (1/1000 of em).
+    pub fn glyph_width(&self, gid: u16) -> u16 {
+        self.widths.get(gid as usize).copied().unwrap_or(0)
     }
 
     /// Returns the number of unique characters used
@@ -291,6 +337,115 @@ impl EmbeddedFont {
     pub fn text_width(&self, text: &str, font_size: f64) -> f64 {
         let width: u32 = text.chars().map(|c| self.char_width(c) as u32).sum();
         width as f64 * font_size / 1000.0
+    }
+
+    /// Shapes text into glyphs with advances/offsets.
+    ///
+    /// When shaping is unavailable, falls back to simple glyph lookup with kerning.
+    pub fn shape_text(&self, text: &str) -> Vec<ShapedGlyph> {
+        #[cfg(feature = "text-shaping")]
+        {
+            use rustybuzz::{Face as BuzzFace, UnicodeBuffer};
+
+            let face = match BuzzFace::from_slice(&self.data, 0) {
+                Some(face) => face,
+                None => return self.shape_text_fallback(text),
+            };
+
+            let mut buffer = UnicodeBuffer::new();
+            buffer.push_str(text);
+            let glyph_buffer = rustybuzz::shape(&face, &[], buffer);
+            let infos = glyph_buffer.glyph_infos();
+            let positions = glyph_buffer.glyph_positions();
+
+            let scale = 1000.0 / self.units_per_em as f64;
+            let text_bytes = text.as_bytes();
+
+            let mut glyphs = Vec::with_capacity(infos.len());
+            for (idx, info) in infos.iter().enumerate() {
+                let pos = &positions[idx];
+                let cluster = info.cluster as usize;
+                let next_cluster = infos
+                    .get(idx + 1)
+                    .map(|n| n.cluster as usize)
+                    .unwrap_or(text_bytes.len());
+
+                let (start, end) = if cluster <= next_cluster
+                    && cluster <= text_bytes.len()
+                    && next_cluster <= text_bytes.len()
+                    && text.is_char_boundary(cluster)
+                    && text.is_char_boundary(next_cluster)
+                {
+                    (cluster, next_cluster)
+                } else {
+                    (0, 0)
+                };
+
+                let cluster_text = if start < end {
+                    text[start..end].to_string()
+                } else {
+                    String::new()
+                };
+
+                glyphs.push(ShapedGlyph {
+                    gid: info.glyph_id as u16,
+                    x_advance: (pos.x_advance as f64 * scale).round() as i32,
+                    y_advance: (pos.y_advance as f64 * scale).round() as i32,
+                    x_offset: (pos.x_offset as f64 * scale).round() as i32,
+                    y_offset: (pos.y_offset as f64 * scale).round() as i32,
+                    text: cluster_text,
+                });
+            }
+
+            return glyphs;
+        }
+
+        #[cfg(not(feature = "text-shaping"))]
+        {
+            self.shape_text_fallback(text)
+        }
+    }
+
+    fn shape_text_fallback(&self, text: &str) -> Vec<ShapedGlyph> {
+        let mut glyphs = Vec::with_capacity(text.chars().count());
+        let scale = 1000.0 / self.units_per_em as f64;
+
+        for c in text.chars() {
+            let gid = self.glyph_id(c).unwrap_or(0);
+            let width = self.glyph_width(gid);
+            glyphs.push(ShapedGlyph {
+                gid,
+                x_advance: width as i32,
+                y_advance: 0,
+                x_offset: 0,
+                y_offset: 0,
+                text: c.to_string(),
+            });
+        }
+
+        // Apply kerning from 'kern' table if available.
+        if let Ok(face) = ttf_parser::Face::parse(&self.data, 0) {
+            if let Some(kern) = face.tables().kern {
+                for i in 0..glyphs.len().saturating_sub(1) {
+                    let left = ttf_parser::GlyphId(glyphs[i].gid);
+                    let right = ttf_parser::GlyphId(glyphs[i + 1].gid);
+                    let mut kern_value: i32 = 0;
+                    for subtable in kern.subtables {
+                        if subtable.horizontal {
+                            if let Some(value) = subtable.glyphs_kerning(left, right) {
+                                kern_value += value as i32;
+                            }
+                        }
+                    }
+                    if kern_value != 0 {
+                        let kern_1000 = (kern_value as f64 * scale).round() as i32;
+                        glyphs[i].x_advance += kern_1000;
+                    }
+                }
+            }
+        }
+
+        glyphs
     }
 
     /// Creates the font file stream (for embedding)
@@ -785,6 +940,7 @@ mod tests {
             data: vec![],
             glyph_set: BTreeMap::new(),
             used_chars: HashSet::new(),
+            glyph_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
         };
 
         let widths = font.create_widths_array();
@@ -812,6 +968,7 @@ mod tests {
             data: vec![], // Empty data - will use fallback path
             glyph_set: BTreeMap::new(),
             used_chars: HashSet::new(),
+            glyph_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
         };
 
         assert_eq!(font.used_char_count(), 0);
