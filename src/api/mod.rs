@@ -45,12 +45,17 @@ pub struct Document {
     pages: Vec<PageData>,
     /// Current page index
     current_page: usize,
-    /// Registered fonts
+    /// Registered fonts (name -> ref)
     fonts: Vec<(String, PdfRef)>,
+    /// Embedded TrueType fonts (name -> font data)
+    #[cfg(feature = "fonts")]
+    embedded_fonts: std::collections::HashMap<String, std::sync::Arc<crate::font::EmbeddedFont>>,
     /// Current font name
     current_font: String,
     /// Current font size
     current_font_size: f64,
+    /// Whether current font is embedded (TrueType)
+    current_font_embedded: bool,
     /// Document info
     info: DocumentInfo,
     /// Registered images (XObjects)
@@ -86,8 +91,11 @@ impl Document {
             pages: Vec::new(),
             current_page: 0,
             fonts: Vec::new(),
+            #[cfg(feature = "fonts")]
+            embedded_fonts: std::collections::HashMap::new(),
             current_font: "Helvetica".to_string(),
             current_font_size: 12.0,
+            current_font_embedded: false,
             info: DocumentInfo {
                 producer: Some("pdf_rs".to_string()),
                 ..Default::default()
@@ -240,6 +248,15 @@ impl Document {
     /// Sets the current font
     pub fn font(&mut self, name: &str) -> FontBuilder<'_> {
         self.current_font = name.to_string();
+        // Check if this is an embedded font
+        #[cfg(feature = "fonts")]
+        {
+            self.current_font_embedded = self.embedded_fonts.contains_key(name);
+        }
+        #[cfg(not(feature = "fonts"))]
+        {
+            self.current_font_embedded = false;
+        }
         FontBuilder { doc: self }
     }
 
@@ -250,6 +267,7 @@ impl Document {
 
         let font_name = self.current_font.clone();
         let font_size = self.current_font_size;
+        let is_embedded = self.current_font_embedded;
         let page = &mut self.pages[self.current_page];
         let dims = page.size.dimensions(page.layout);
 
@@ -260,9 +278,25 @@ impl Document {
         page.content
             .begin_text()
             .set_font(&font_name, font_size)
-            .move_text_pos(x, y)
-            .show_text(text)
-            .end_text();
+            .move_text_pos(x, y);
+
+        #[cfg(feature = "fonts")]
+        if is_embedded {
+            if let Some(font) = self.embedded_fonts.get(&font_name) {
+                let hex = font.encode_text(text);
+                page.content.show_text_hex(&hex);
+            }
+        } else {
+            page.content.show_text(text);
+        }
+
+        #[cfg(not(feature = "fonts"))]
+        {
+            let _ = is_embedded;
+            page.content.show_text(text);
+        }
+
+        page.content.end_text();
 
         self
     }
@@ -273,22 +307,106 @@ impl Document {
 
         let font_name = self.current_font.clone();
         let font_size = self.current_font_size;
+        let is_embedded = self.current_font_embedded;
         let page = &mut self.pages[self.current_page];
 
         page.content
             .begin_text()
             .set_font(&font_name, font_size)
-            .move_text_pos(pos[0], pos[1])
-            .show_text(text)
-            .end_text();
+            .move_text_pos(pos[0], pos[1]);
+
+        #[cfg(feature = "fonts")]
+        if is_embedded {
+            if let Some(font) = self.embedded_fonts.get(&font_name) {
+                let hex = font.encode_text(text);
+                page.content.show_text_hex(&hex);
+            }
+        } else {
+            page.content.show_text(text);
+        }
+
+        #[cfg(not(feature = "fonts"))]
+        {
+            let _ = is_embedded;
+            page.content.show_text(text);
+        }
+
+        page.content.end_text();
 
         self
+    }
+
+    /// Embeds a TrueType font from bytes
+    ///
+    /// Returns the font name to use with `font()`.
+    /// This method requires the `fonts` feature.
+    #[cfg(feature = "fonts")]
+    pub fn embed_font(&mut self, data: Vec<u8>) -> Result<String> {
+        use crate::font::EmbeddedFont;
+
+        let font = EmbeddedFont::from_bytes(data)?;
+        let name = font.name.clone();
+
+        // Create all the PDF objects for this font
+        // 1. Font file stream
+        let font_file = font.create_font_file_stream();
+        let font_file_ref = self.context.register(PdfObject::Stream(font_file));
+
+        // 2. Font descriptor
+        let font_descriptor = font.create_font_descriptor(font_file_ref);
+        let font_descriptor_ref = self.context.register(PdfObject::Dict(font_descriptor));
+
+        // 3. CIDFont
+        let cid_font = font.create_cid_font(font_descriptor_ref);
+        let cid_font_ref = self.context.register(PdfObject::Dict(cid_font));
+
+        // 4. ToUnicode CMap
+        let to_unicode = font.create_to_unicode_cmap();
+        let to_unicode_ref = self.context.register(PdfObject::Stream(to_unicode));
+
+        // 5. Type0 font (main font object)
+        let type0_font = font.create_type0_font(cid_font_ref, to_unicode_ref);
+        let font_ref = self.context.register(PdfObject::Dict(type0_font));
+
+        // Register the font
+        self.fonts.push((name.clone(), font_ref));
+        self.embedded_fonts
+            .insert(name.clone(), std::sync::Arc::new(font));
+
+        Ok(name)
+    }
+
+    /// Embeds a TrueType font from a file path
+    ///
+    /// This method requires both the `fonts` and `std` features.
+    #[cfg(all(feature = "fonts", feature = "std"))]
+    pub fn embed_font_file<P: AsRef<std::path::Path>>(&mut self, path: P) -> Result<String> {
+        let data = std::fs::read(path)?;
+        self.embed_font(data)
+    }
+
+    /// Gets an embedded font by name
+    #[cfg(feature = "fonts")]
+    pub fn get_embedded_font(&self, name: &str) -> Option<&crate::font::EmbeddedFont> {
+        self.embedded_fonts.get(name).map(|f| f.as_ref())
+    }
+
+    /// Measures the width of text with the current font
+    #[cfg(feature = "fonts")]
+    pub fn measure_text(&self, text: &str) -> f64 {
+        if self.current_font_embedded {
+            if let Some(font) = self.embedded_fonts.get(&self.current_font) {
+                return font.text_width(text, self.current_font_size);
+            }
+        }
+        // Fallback for standard fonts (approximate)
+        text.len() as f64 * self.current_font_size * 0.5
     }
 
     /// Ensures a font is registered
     fn ensure_font(&mut self, name: &str) {
         if !self.fonts.iter().any(|(n, _)| n == name) {
-            // Register the font
+            // Register the font (only for standard fonts - embedded fonts are already registered)
             if let Some(std_font) = StandardFont::from_name(name) {
                 let dict = std_font.to_dict();
                 let font_ref = self.context.register(PdfObject::Dict(dict));

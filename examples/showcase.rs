@@ -1,6 +1,11 @@
-//! Showcase PDF with drawing on page 1 and an embedded image on page 2.
+//! Showcase PDF demonstrating pdf_rs features:
+//! - Page 1: Drawing primitives (shapes, strokes, fills)
+//! - Page 2: Embedded PNG image
+//! - Page 3: Embedded JPEG image
+//! - Page 4: PNG with alpha transparency
+//! - Page 5: Custom TrueType font embedding (requires `fonts` feature)
 //!
-//! Run with: cargo run --example showcase
+//! Run with: cargo run --example showcase --features fonts
 
 use pdf_rs::image::embed_jpeg;
 use pdf_rs::prelude::{Document, PageLayout, PageSize};
@@ -9,6 +14,12 @@ use std::error::Error;
 use std::fs;
 use std::io::Cursor;
 use std::result::Result as StdResult;
+
+// Path to a TrueType font for the custom font demo page
+const FONT_PATH: &str = "/Users/ratazzi/Downloads/Roboto_v3.014/web/static/Roboto-Regular.ttf";
+const FONT_BOLD_PATH: &str = "/Users/ratazzi/Downloads/Roboto_v3.014/web/static/Roboto-Bold.ttf";
+const FONT_ITALIC_PATH: &str =
+    "/Users/ratazzi/Downloads/Roboto_v3.014/web/static/Roboto-Italic.ttf";
 
 fn main() -> StdResult<(), Box<dyn Error>> {
     let png_path = "example.png";
@@ -29,6 +40,9 @@ fn main() -> StdResult<(), Box<dyn Error>> {
         add_page_png(doc, &png_bytes, png_width, png_height)?;
         add_page_jpeg(doc, &jpeg_bytes, jpeg_width, jpeg_height)?;
         add_page_alpha(doc, &alpha_bytes, alpha_width, alpha_height)?;
+
+        #[cfg(feature = "fonts")]
+        add_page_custom_font(doc)?;
 
         Ok(())
     })?;
@@ -190,4 +204,143 @@ fn fit_image(
     let draw_x = (page_width - draw_width) / 2.0;
     let draw_y = margin + (max_height - draw_height) / 2.0;
     (draw_x, draw_y, draw_width, draw_height)
+}
+
+#[cfg(feature = "fonts")]
+fn add_page_custom_font(doc: &mut Document) -> PdfResult<()> {
+    use std::fs;
+
+    let (page_width, _page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
+    let margin = 48.0;
+
+    doc.start_new_page();
+
+    // Header band (light gray)
+    doc.fill(|ctx| {
+        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+    });
+
+    // Embed fonts
+    let font_regular = doc.embed_font(fs::read(FONT_PATH)?)?;
+    let font_bold = doc.embed_font(fs::read(FONT_BOLD_PATH)?)?;
+    let font_italic = doc.embed_font(fs::read(FONT_ITALIC_PATH)?)?;
+
+    // Page title (using embedded font)
+    doc.font(&font_bold).size(28.0);
+    doc.text_at("Custom Font Embedding", [margin, 800.0]);
+
+    doc.font(&font_regular).size(12.0);
+    doc.text_at(
+        "Page 5: TrueType fonts with full Unicode support",
+        [margin, 778.0],
+    );
+
+    // Section 1: Font showcase
+    let mut y = 700.0;
+
+    doc.font("Helvetica").size(14.0);
+    doc.text_at("Font Comparison:", [margin, y]);
+    y -= 30.0;
+
+    // Standard font
+    doc.font("Helvetica").size(16.0);
+    doc.text_at(
+        "Helvetica (Standard): The quick brown fox jumps over the lazy dog.",
+        [margin, y],
+    );
+    y -= 25.0;
+
+    // Embedded fonts
+    doc.font(&font_regular).size(16.0);
+    doc.text_at(
+        "Roboto Regular: The quick brown fox jumps over the lazy dog.",
+        [margin, y],
+    );
+    y -= 25.0;
+
+    doc.font(&font_bold).size(16.0);
+    doc.text_at(
+        "Roboto Bold: The quick brown fox jumps over the lazy dog.",
+        [margin, y],
+    );
+    y -= 25.0;
+
+    doc.font(&font_italic).size(16.0);
+    doc.text_at(
+        "Roboto Italic: The quick brown fox jumps over the lazy dog.",
+        [margin, y],
+    );
+    y -= 45.0;
+
+    // Section 2: Size variations
+    doc.font("Helvetica").size(14.0);
+    doc.text_at("Size Variations:", [margin, y]);
+    y -= 25.0;
+
+    for size in [10.0, 14.0, 18.0, 24.0, 32.0] {
+        doc.font(&font_regular).size(size);
+        doc.text_at(&format!("{}pt: Roboto Font", size as i32), [margin, y]);
+        y -= size + 8.0;
+    }
+    y -= 20.0;
+
+    // Section 3: Text measurement
+    doc.font("Helvetica").size(14.0);
+    doc.text_at("Text Measurement:", [margin, y]);
+    y -= 30.0;
+
+    doc.font(&font_regular).size(18.0);
+    let sample_text = "Measured Text Width";
+    let text_width = doc.measure_text(sample_text);
+
+    // Draw the text
+    doc.text_at(sample_text, [margin, y]);
+
+    // Draw a line under it showing the measured width
+    doc.stroke(|ctx| {
+        ctx.color(0.9, 0.2, 0.2)
+            .line_width(2.0)
+            .line([margin, y - 5.0], [margin + text_width, y - 5.0]);
+    });
+
+    doc.font(&font_regular).size(11.0);
+    doc.text_at(
+        &format!("Width: {:.1} points at 18pt", text_width),
+        [margin, y - 20.0],
+    );
+    y -= 60.0;
+
+    // Section 4: Mixed content
+    doc.font("Helvetica").size(14.0);
+    doc.text_at("Mixed Fonts in Document:", [margin, y]);
+    y -= 30.0;
+
+    // Draw a box with mixed font content
+    doc.stroke(|ctx| {
+        ctx.gray(0.7).line_width(1.0).rounded_rectangle(
+            [margin, y - 80.0],
+            page_width - margin * 2.0,
+            90.0,
+            8.0,
+        );
+    });
+
+    doc.font(&font_bold).size(14.0);
+    doc.text_at("Note:", [margin + 15.0, y - 10.0]);
+
+    doc.font(&font_regular).size(12.0);
+    doc.text_at(
+        "This PDF demonstrates seamless mixing of standard PDF fonts",
+        [margin + 15.0, y - 30.0],
+    );
+    doc.text_at(
+        "(Helvetica, Times, Courier) with embedded TrueType fonts (Roboto).",
+        [margin + 15.0, y - 45.0],
+    );
+    doc.text_at(
+        "Text is fully searchable and can be copied from the PDF.",
+        [margin + 15.0, y - 60.0],
+    );
+
+    Ok(())
 }

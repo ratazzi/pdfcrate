@@ -48,4 +48,7 @@ pub mod prelude {
     pub use crate::content::{LineCap, LineJoin};
     pub use crate::document::LoadedDocument;
     pub use crate::error::{Error, Result};
+
+    #[cfg(feature = "fonts")]
+    pub use crate::font::EmbeddedFont;
 }

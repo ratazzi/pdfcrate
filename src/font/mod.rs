@@ -2,6 +2,12 @@
 //!
 //! This module handles PDF fonts, both standard and embedded.
 
+#[cfg(feature = "fonts")]
+pub mod truetype;
+
+#[cfg(feature = "fonts")]
+pub use truetype::EmbeddedFont;
+
 use crate::objects::{PdfDict, PdfName, PdfObject};
 
 /// Standard PDF fonts

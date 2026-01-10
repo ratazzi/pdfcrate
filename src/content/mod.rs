@@ -356,6 +356,11 @@ impl ContentBuilder {
         self.line(&format!("({}) Tj", escaped))
     }
 
+    /// Show text using hex string (Tj) - for TrueType/CID fonts
+    pub fn show_text_hex(&mut self, hex: &str) -> &mut Self {
+        self.line(&format!("<{}> Tj", hex))
+    }
+
     /// Set text leading (TL)
     pub fn set_text_leading(&mut self, leading: f64) -> &mut Self {
         self.line(&format!("{} TL", format_number(leading)))
