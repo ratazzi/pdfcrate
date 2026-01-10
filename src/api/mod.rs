@@ -16,7 +16,8 @@ use crate::content::ContentBuilder;
 use crate::document::{create_catalog, create_page, create_pages, PdfContext};
 use crate::error::Result;
 use crate::font::StandardFont;
-use crate::objects::{PdfDict, PdfObject, PdfRef, PdfStream};
+use crate::forms::{AcroForm, FormField};
+use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
 
 pub use image::{EmbeddedImage, ImageOptions, Position};
 pub use page::{PageLayout, PageSize};
@@ -62,6 +63,8 @@ pub struct Document {
     images: Vec<(String, PdfRef, u32, u32)>, // (name, ref, width, height)
     /// Image counter for generating unique names
     image_counter: usize,
+    /// Form fields
+    form: AcroForm,
 }
 
 /// Internal page data
@@ -102,6 +105,7 @@ impl Document {
             },
             images: Vec::new(),
             image_counter: 0,
+            form: AcroForm::new(),
         };
 
         // Start with one page
@@ -674,6 +678,118 @@ impl Document {
         self
     }
 
+    // =========================================================================
+    // Form API
+    // =========================================================================
+
+    /// Adds a text field to the current page
+    ///
+    /// # Arguments
+    /// * `name` - Unique field name
+    /// * `rect` - Bounding rectangle [x1, y1, x2, y2]
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// doc.add_text_field("username", [100.0, 700.0, 300.0, 720.0]);
+    /// ```
+    pub fn add_text_field(&mut self, name: impl Into<String>, rect: [f64; 4]) -> &mut Self {
+        let mut field = FormField::text(name, rect);
+        field.page_index = self.current_page;
+        self.form.add_field(field);
+        self
+    }
+
+    /// Adds a text field with custom options using a builder pattern
+    pub fn add_text_field_with<F>(
+        &mut self,
+        name: impl Into<String>,
+        rect: [f64; 4],
+        f: F,
+    ) -> &mut Self
+    where
+        F: FnOnce(FormField) -> FormField,
+    {
+        let field = FormField::text(name, rect);
+        let mut field = f(field);
+        field.page_index = self.current_page;
+        self.form.add_field(field);
+        self
+    }
+
+    /// Adds a multiline text field (text area)
+    pub fn add_text_area(&mut self, name: impl Into<String>, rect: [f64; 4]) -> &mut Self {
+        let mut field = FormField::text(name, rect).multiline();
+        field.page_index = self.current_page;
+        self.form.add_field(field);
+        self
+    }
+
+    /// Adds a checkbox field
+    ///
+    /// # Arguments
+    /// * `name` - Unique field name
+    /// * `rect` - Bounding rectangle [x1, y1, x2, y2]
+    /// * `checked` - Initial checked state
+    pub fn add_checkbox(
+        &mut self,
+        name: impl Into<String>,
+        rect: [f64; 4],
+        checked: bool,
+    ) -> &mut Self {
+        let mut field = FormField::checkbox(name, rect, checked);
+        field.page_index = self.current_page;
+        self.form.add_field(field);
+        self
+    }
+
+    /// Adds a dropdown (combo box) field
+    ///
+    /// # Arguments
+    /// * `name` - Unique field name
+    /// * `rect` - Bounding rectangle [x1, y1, x2, y2]
+    /// * `options` - List of options to choose from
+    pub fn add_dropdown<S: Into<String>>(
+        &mut self,
+        name: impl Into<String>,
+        rect: [f64; 4],
+        options: Vec<S>,
+    ) -> &mut Self {
+        let options: Vec<String> = options.into_iter().map(Into::into).collect();
+        let mut field = FormField::dropdown(name, rect, options);
+        field.page_index = self.current_page;
+        self.form.add_field(field);
+        self
+    }
+
+    /// Adds a list box field
+    ///
+    /// # Arguments
+    /// * `name` - Unique field name
+    /// * `rect` - Bounding rectangle [x1, y1, x2, y2]
+    /// * `options` - List of options to choose from
+    pub fn add_listbox<S: Into<String>>(
+        &mut self,
+        name: impl Into<String>,
+        rect: [f64; 4],
+        options: Vec<S>,
+    ) -> &mut Self {
+        let options: Vec<String> = options.into_iter().map(Into::into).collect();
+        let mut field = FormField::listbox(name, rect, options);
+        field.page_index = self.current_page;
+        self.form.add_field(field);
+        self
+    }
+
+    /// Returns true if the document has form fields
+    pub fn has_form(&self) -> bool {
+        self.form.has_fields()
+    }
+
+    /// Returns the number of form fields
+    pub fn form_field_count(&self) -> usize {
+        self.form.fields.len()
+    }
+
     /// Saves the document to a file
     ///
     /// This method is only available with the `std` feature (enabled by default).
@@ -702,7 +818,7 @@ impl Document {
 
         let mut resources = PdfDict::new();
         if !self.fonts.is_empty() {
-            resources.set("Font", PdfObject::Dict(font_dict));
+            resources.set("Font", PdfObject::Dict(font_dict.clone()));
         }
         if !self.images.is_empty() {
             resources.set("XObject", PdfObject::Dict(xobject_dict));
@@ -732,8 +848,86 @@ impl Document {
         let pages_dict = create_pages(page_refs.clone(), page_refs.len() as i64);
         self.context.assign(pages_ref, PdfObject::Dict(pages_dict));
 
-        // Create catalog
-        let catalog = create_catalog(pages_ref);
+        // Create catalog (may be modified later with AcroForm)
+        let mut catalog = create_catalog(pages_ref);
+
+        // Handle form fields if present
+        let acro_form_ref = if self.form.has_fields() {
+            // Create field widget annotations and appearance streams
+            // Group field refs by page index
+            let mut field_refs_all = Vec::new();
+            let mut page_annots: std::collections::HashMap<usize, Vec<PdfRef>> =
+                std::collections::HashMap::new();
+
+            for field in &self.form.fields {
+                // Get the page reference for this field
+                let page_ref = page_refs
+                    .get(field.page_index)
+                    .copied()
+                    .unwrap_or_else(|| page_refs.last().copied().unwrap_or(pages_ref));
+
+                // Generate appearance stream for the field
+                let appearance_stream = crate::forms::generate_appearance(field, None);
+                let appearance_ref = self.context.register(PdfObject::Stream(appearance_stream));
+
+                // Create widget annotation dictionary with correct page reference
+                let widget =
+                    crate::forms::create_widget_annotation(field, page_ref, Some(appearance_ref));
+                let widget_ref = self.context.register(PdfObject::Dict(widget));
+                field_refs_all.push(widget_ref);
+
+                // Group by page index
+                page_annots
+                    .entry(field.page_index)
+                    .or_default()
+                    .push(widget_ref);
+            }
+
+            // Build font references for AcroForm default resources
+            let font_refs: Vec<(String, PdfRef)> = self
+                .fonts
+                .iter()
+                .map(|(name, r)| (name.clone(), *r))
+                .collect();
+
+            // Create AcroForm dictionary
+            let acro_form_dict = crate::forms::create_acro_form_dict(
+                &field_refs_all,
+                &font_refs,
+                self.form.need_appearances,
+                self.form.default_appearance.as_deref(),
+            );
+            let acro_form_ref = self.context.register(PdfObject::Dict(acro_form_dict));
+
+            // Add annotations to each page that has fields
+            for (page_idx, annot_refs) in page_annots {
+                if let Some(&page_ref) = page_refs.get(page_idx) {
+                    // Create Annots array for this page
+                    let annots: Vec<PdfObject> = annot_refs
+                        .iter()
+                        .map(|r| PdfObject::Reference(*r))
+                        .collect();
+                    let annots_array = PdfArray::from(annots);
+
+                    // Update the page with annotations
+                    if let Some(PdfObject::Dict(ref page_dict)) = self.context.lookup(page_ref) {
+                        let mut updated_page = page_dict.clone();
+                        updated_page.set("Annots", PdfObject::Array(annots_array));
+                        self.context.assign(page_ref, PdfObject::Dict(updated_page));
+                    }
+                }
+            }
+
+            Some(acro_form_ref)
+        } else {
+            None
+        };
+
+        // Add AcroForm to catalog if present
+        if let Some(acro_form_ref) = acro_form_ref {
+            catalog.set("AcroForm", PdfObject::Reference(acro_form_ref));
+        }
+
         let catalog_ref = self.context.register(PdfObject::Dict(catalog));
 
         // Create info dictionary

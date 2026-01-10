@@ -26,6 +26,7 @@ pub mod codec;
 pub mod content;
 pub mod document;
 pub mod font;
+pub mod forms;
 pub mod objects;
 pub mod parser;
 pub mod writer;
@@ -48,6 +49,7 @@ pub mod prelude {
     pub use crate::content::{LineCap, LineJoin};
     pub use crate::document::LoadedDocument;
     pub use crate::error::{Error, Result};
+    pub use crate::forms::{AcroForm, FieldFlags, FieldType, FormField, TextAlign};
 
     #[cfg(feature = "fonts")]
     pub use crate::font::EmbeddedFont;
