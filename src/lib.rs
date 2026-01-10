@@ -42,6 +42,7 @@ pub use error::{Error, Result};
 
 /// Prelude module for convenient imports
 pub mod prelude {
+    pub use crate::api::image::{EmbeddedImage, ImageOptions, Position};
     pub use crate::api::page::{PageLayout, PageSize};
     pub use crate::api::Document;
     pub use crate::content::{LineCap, LineJoin};

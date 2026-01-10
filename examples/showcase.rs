@@ -57,9 +57,12 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
         ctx.color(0.15, 0.45, 0.85)
             .line_width(2.0)
             .rectangle([60.0, 610.0], 180.0, 90.0);
-        ctx.color(0.9, 0.3, 0.2)
-            .line_width(3.0)
-            .rounded_rectangle([60.0, 490.0], 180.0, 90.0, 14.0);
+        ctx.color(0.9, 0.3, 0.2).line_width(3.0).rounded_rectangle(
+            [60.0, 490.0],
+            180.0,
+            90.0,
+            14.0,
+        );
         ctx.color(0.2, 0.7, 0.4)
             .line_width(2.5)
             .circle([150.0, 420.0], 40.0);
@@ -75,19 +78,13 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
             .rounded_rectangle([320.0, 610.0], 220.0, 90.0, 18.0);
         ctx.color(0.2, 0.62, 0.95)
             .ellipse([430.0, 520.0], 90.0, 45.0);
-        ctx.color(0.9, 0.5, 0.6)
-            .circle([430.0, 420.0], 45.0);
+        ctx.color(0.9, 0.5, 0.6).circle([430.0, 420.0], 45.0);
     });
 
     Ok(())
 }
 
-fn add_page_png(
-    doc: &mut Document,
-    png_bytes: &[u8],
-    width: u32,
-    height: u32,
-) -> PdfResult<()> {
+fn add_page_png(doc: &mut Document, png_bytes: &[u8], width: u32, height: u32) -> PdfResult<()> {
     let (page_width, page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
     let margin = 36.0;
     let header_height = 32.0;
@@ -102,17 +99,15 @@ fn add_page_png(
     );
 
     doc.font("Helvetica").size(14.0);
-    doc.text_at("Page 2: embedded PNG", [margin, page_height - margin - 16.0]);
+    doc.text_at(
+        "Page 2: embedded PNG",
+        [margin, page_height - margin - 16.0],
+    );
     doc.image_png(png_bytes, [draw_x, draw_y], draw_width, draw_height)?;
     Ok(())
 }
 
-fn add_page_jpeg(
-    doc: &mut Document,
-    jpeg_bytes: &[u8],
-    width: u32,
-    height: u32,
-) -> PdfResult<()> {
+fn add_page_jpeg(doc: &mut Document, jpeg_bytes: &[u8], width: u32, height: u32) -> PdfResult<()> {
     let (page_width, page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
     let margin = 36.0;
     let header_height = 32.0;
@@ -126,7 +121,10 @@ fn add_page_jpeg(
         height,
     );
     doc.font("Helvetica").size(14.0);
-    doc.text_at("Page 3: embedded JPEG", [margin, page_height - margin - 16.0]);
+    doc.text_at(
+        "Page 3: embedded JPEG",
+        [margin, page_height - margin - 16.0],
+    );
     doc.image_jpeg(jpeg_bytes, [draw_x, draw_y], draw_width, draw_height)?;
     Ok(())
 }

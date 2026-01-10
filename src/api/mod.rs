@@ -2,6 +2,7 @@
 //!
 //! This module provides the user-facing API for creating and manipulating PDFs.
 
+pub mod image;
 pub mod page;
 
 #[cfg(feature = "std")]
@@ -17,6 +18,7 @@ use crate::error::Result;
 use crate::font::StandardFont;
 use crate::objects::{PdfDict, PdfObject, PdfRef, PdfStream};
 
+pub use image::{EmbeddedImage, ImageOptions, Position};
 pub use page::{PageLayout, PageSize};
 
 /// A PDF Document
@@ -295,6 +297,10 @@ impl Document {
         }
     }
 
+    // =========================================================================
+    // Image API
+    // =========================================================================
+
     /// Embeds a JPEG image and draws it at the specified position
     ///
     /// Returns the image name for reuse, or an error if the image is invalid.
@@ -325,6 +331,42 @@ impl Document {
         self.draw_image_data(image_data, pos, width, height)
     }
 
+    /// Embeds a JPEG image and draws it with the specified options
+    ///
+    /// This method provides more control over image placement and sizing.
+    pub fn image_jpeg_with(&mut self, data: &[u8], options: ImageOptions) -> Result<EmbeddedImage> {
+        let image_data = crate::image::embed_jpeg(data)?;
+        self.embed_and_draw_image_data(image_data, options)
+    }
+
+    /// Embeds a PNG image and draws it with the specified options
+    ///
+    /// This method provides more control over image placement and sizing.
+    #[cfg(feature = "png")]
+    pub fn image_png_with(&mut self, data: &[u8], options: ImageOptions) -> Result<EmbeddedImage> {
+        let image_data = crate::image::embed_png(data)?;
+        self.embed_and_draw_image_data(image_data, options)
+    }
+
+    /// Embeds a JPEG image without drawing it
+    ///
+    /// Use this when you want to embed an image once and draw it multiple times
+    /// or on multiple pages using `draw_embedded_image`.
+    pub fn embed_jpeg(&mut self, data: &[u8]) -> Result<EmbeddedImage> {
+        let image_data = crate::image::embed_jpeg(data)?;
+        self.embed_image_data(image_data)
+    }
+
+    /// Embeds a PNG image without drawing it
+    ///
+    /// Use this when you want to embed an image once and draw it multiple times
+    /// or on multiple pages using `draw_embedded_image`.
+    #[cfg(feature = "png")]
+    pub fn embed_png(&mut self, data: &[u8]) -> Result<EmbeddedImage> {
+        let image_data = crate::image::embed_png(data)?;
+        self.embed_image_data(image_data)
+    }
+
     /// Draws an already-embedded image by name
     pub fn draw_image(&mut self, name: &str, pos: [f64; 2], width: f64, height: f64) -> &mut Self {
         let page = &mut self.pages[self.current_page];
@@ -336,22 +378,78 @@ impl Document {
         self
     }
 
-    /// Internal: draws image data and returns the image name
-    fn draw_image_data(
+    /// Draws an embedded image with options
+    ///
+    /// This allows repositioning and resizing an already-embedded image.
+    pub fn draw_embedded_image(
         &mut self,
-        image_data: crate::image::ImageData,
-        pos: [f64; 2],
-        width: f64,
-        height: f64,
-    ) -> Result<String> {
+        image: &EmbeddedImage,
+        options: ImageOptions,
+    ) -> &mut Self {
+        let (x, y, width, height) = self.calculate_image_placement(image, &options);
+        self.draw_image(&image.name, [x, y], width, height)
+    }
+
+    /// Calculates the final position and size for an image based on options
+    fn calculate_image_placement(
+        &self,
+        image: &EmbeddedImage,
+        options: &ImageOptions,
+    ) -> (f64, f64, f64, f64) {
+        let base_pos = options.at.unwrap_or([0.0, 0.0]);
+
+        // Determine dimensions
+        let (mut width, mut height) = if let (Some(w), Some(h)) = (options.width, options.height) {
+            // Explicit dimensions
+            (w, h)
+        } else if let Some((max_w, max_h)) = options.fit {
+            // Fit within bounds
+            image.fit_dimensions(max_w, max_h)
+        } else if let Some(w) = options.width {
+            // Width specified, calculate height from aspect ratio
+            (w, w / image.aspect_ratio())
+        } else if let Some(h) = options.height {
+            // Height specified, calculate width from aspect ratio
+            (h * image.aspect_ratio(), h)
+        } else {
+            // Use original dimensions (1 pixel = 1 point)
+            (image.width as f64, image.height as f64)
+        };
+
+        // Apply scale if specified
+        if let Some(scale) = options.scale {
+            width *= scale;
+            height *= scale;
+        }
+
+        // Calculate position offset based on alignment
+        let (x_offset, y_offset) = if let Some((bounds_w, bounds_h)) = options.fit {
+            options
+                .position
+                .calculate_offset(width, height, bounds_w, bounds_h)
+        } else {
+            (0.0, 0.0)
+        };
+
+        (
+            base_pos[0] + x_offset,
+            base_pos[1] + y_offset,
+            width,
+            height,
+        )
+    }
+
+    /// Internal: embeds image data without drawing
+    fn embed_image_data(&mut self, image_data: crate::image::ImageData) -> Result<EmbeddedImage> {
         // Generate unique name
         self.image_counter += 1;
         let name = format!("Im{}", self.image_counter);
 
-        // Create XObject stream
-        let xobject = image_data.to_xobject();
         let img_width = image_data.width;
         let img_height = image_data.height;
+
+        // Create XObject stream
+        let xobject = image_data.to_xobject();
 
         // Handle soft mask (alpha channel) if present
         let xobject = if let Some(mask_data) = image_data.soft_mask {
@@ -387,10 +485,35 @@ impl Document {
         self.images
             .push((name.clone(), img_ref, img_width, img_height));
 
-        // Draw the image
-        self.draw_image(&name, pos, width, height);
+        Ok(EmbeddedImage {
+            name,
+            width: img_width,
+            height: img_height,
+        })
+    }
 
-        Ok(name)
+    /// Internal: embeds image data and draws it with options
+    fn embed_and_draw_image_data(
+        &mut self,
+        image_data: crate::image::ImageData,
+        options: ImageOptions,
+    ) -> Result<EmbeddedImage> {
+        let image = self.embed_image_data(image_data)?;
+        self.draw_embedded_image(&image, options);
+        Ok(image)
+    }
+
+    /// Internal: draws image data and returns the image name (legacy)
+    fn draw_image_data(
+        &mut self,
+        image_data: crate::image::ImageData,
+        pos: [f64; 2],
+        width: f64,
+        height: f64,
+    ) -> Result<String> {
+        let image = self.embed_image_data(image_data)?;
+        self.draw_image(&image.name, pos, width, height);
+        Ok(image.name)
     }
 
     /// Strokes a path using a closure
