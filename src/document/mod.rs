@@ -3,9 +3,11 @@
 //! This module handles the high-level PDF document structure.
 
 mod context;
+mod embed;
 mod loader;
 
 pub use context::PdfContext;
+pub use embed::EmbeddedPage;
 pub use loader::LoadedDocument;
 
 use crate::objects::{PdfDict, PdfName, PdfObject, PdfRef};

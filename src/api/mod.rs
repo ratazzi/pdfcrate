@@ -790,6 +790,143 @@ impl Document {
         self.form.fields.len()
     }
 
+    // =========================================================================
+    // PDF Embedding API
+    // =========================================================================
+
+    /// Embeds a page from a loaded PDF document
+    ///
+    /// This extracts a page from an existing PDF and embeds it as a Form XObject
+    /// that can be drawn on pages in this document.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let source_pdf = std::fs::read("source.pdf")?;
+    /// let mut source = LoadedDocument::load(source_pdf)?;
+    /// let page = doc.embed_pdf_page(&mut source, 0)?;
+    /// doc.draw_pdf_page(&page, [50.0, 400.0], 200.0, 300.0);
+    /// ```
+    pub fn embed_pdf_page(
+        &mut self,
+        source: &mut crate::document::LoadedDocument,
+        page_index: usize,
+    ) -> Result<crate::document::EmbeddedPage> {
+        let mut embedded = source.extract_page(page_index)?;
+
+        // Generate unique name
+        self.image_counter += 1;
+        embedded.name = format!("Pg{}", self.image_counter);
+
+        // Register the XObject
+        let xobject = embedded.xobject.clone();
+        let xobject_ref = self.context.register(PdfObject::Stream(xobject));
+        self.images.push((
+            embedded.name.clone(),
+            xobject_ref,
+            embedded.width as u32,
+            embedded.height as u32,
+        ));
+
+        Ok(embedded)
+    }
+
+    /// Embeds all pages from a loaded PDF document
+    ///
+    /// Returns a vector of embedded pages that can be drawn.
+    pub fn embed_pdf(
+        &mut self,
+        source: &mut crate::document::LoadedDocument,
+    ) -> Result<Vec<crate::document::EmbeddedPage>> {
+        let count = source.page_count()?;
+        let mut pages = Vec::with_capacity(count);
+        for i in 0..count {
+            pages.push(self.embed_pdf_page(source, i)?);
+        }
+        Ok(pages)
+    }
+
+    /// Draws an embedded PDF page at the specified position and size
+    ///
+    /// # Arguments
+    /// * `page` - The embedded page to draw
+    /// * `pos` - Position [x, y] for the bottom-left corner
+    /// * `width` - Width to draw the page
+    /// * `height` - Height to draw the page
+    pub fn draw_pdf_page(
+        &mut self,
+        page: &crate::document::EmbeddedPage,
+        pos: [f64; 2],
+        width: f64,
+        height: f64,
+    ) -> &mut Self {
+        // Calculate scale factors
+        let scale_x = width / page.width;
+        let scale_y = height / page.height;
+
+        let content = &mut self.pages[self.current_page].content;
+        content
+            .save_state()
+            .concat_matrix(scale_x, 0.0, 0.0, scale_y, pos[0], pos[1])
+            .draw_xobject(&page.name)
+            .restore_state();
+        self
+    }
+
+    /// Draws an embedded PDF page scaled to fit within bounds
+    ///
+    /// The page is scaled proportionally to fit within the specified bounds.
+    pub fn draw_pdf_page_fit(
+        &mut self,
+        page: &crate::document::EmbeddedPage,
+        pos: [f64; 2],
+        max_width: f64,
+        max_height: f64,
+    ) -> &mut Self {
+        let (width, height) = page.fit_dimensions(max_width, max_height);
+        self.draw_pdf_page(page, pos, width, height)
+    }
+
+    /// Copies pages from a source PDF and appends them to this document
+    ///
+    /// This is a simplified merge operation that copies entire pages.
+    /// For more control, use `embed_pdf_page` and `draw_pdf_page`.
+    ///
+    /// # Arguments
+    /// * `source` - The source PDF document
+    /// * `page_indices` - Indices of pages to copy (0-based)
+    pub fn copy_pages(
+        &mut self,
+        source: &mut crate::document::LoadedDocument,
+        page_indices: &[usize],
+    ) -> Result<&mut Self> {
+        for &page_index in page_indices {
+            // Extract the page
+            let embedded = self.embed_pdf_page(source, page_index)?;
+
+            // Create a new page with the same size
+            self.pages.push(PageData {
+                content: ContentBuilder::new(),
+                size: PageSize::Custom(embedded.width, embedded.height),
+                layout: PageLayout::Portrait,
+            });
+            self.current_page = self.pages.len() - 1;
+
+            // Draw the embedded page filling the entire new page
+            self.draw_pdf_page(&embedded, [0.0, 0.0], embedded.width, embedded.height);
+        }
+        Ok(self)
+    }
+
+    /// Copies all pages from a source PDF and appends them to this document
+    pub fn copy_all_pages(
+        &mut self,
+        source: &mut crate::document::LoadedDocument,
+    ) -> Result<&mut Self> {
+        let count = source.page_count()?;
+        let indices: Vec<usize> = (0..count).collect();
+        self.copy_pages(source, &indices)
+    }
+
     /// Saves the document to a file
     ///
     /// This method is only available with the `std` feature (enabled by default).
@@ -1287,5 +1424,169 @@ mod tests {
 
         // Out of bounds
         assert!(!doc.insert_page(10));
+    }
+
+    #[test]
+    fn test_embed_pdf_page() {
+        use crate::document::LoadedDocument;
+
+        // Create source PDF
+        let mut source = Document::new();
+        source.text("Source Page 1");
+        source.start_new_page();
+        source.text("Source Page 2");
+        let source_bytes = source.render().unwrap();
+
+        // Load and embed
+        let mut loaded = LoadedDocument::load(source_bytes).unwrap();
+        let mut doc = Document::new();
+        let embedded = doc.embed_pdf_page(&mut loaded, 0).unwrap();
+
+        assert!(embedded.width > 0.0);
+        assert!(embedded.height > 0.0);
+        assert!(embedded.name.starts_with("Pg"));
+    }
+
+    #[test]
+    fn test_embed_pdf_all_pages() {
+        use crate::document::LoadedDocument;
+
+        // Create source PDF with 3 pages
+        let mut source = Document::new();
+        source.text("Page 1");
+        source.start_new_page();
+        source.text("Page 2");
+        source.start_new_page();
+        source.text("Page 3");
+        let source_bytes = source.render().unwrap();
+
+        // Load and embed all
+        let mut loaded = LoadedDocument::load(source_bytes).unwrap();
+        let mut doc = Document::new();
+        let embedded = doc.embed_pdf(&mut loaded).unwrap();
+
+        assert_eq!(embedded.len(), 3);
+    }
+
+    #[test]
+    fn test_draw_pdf_page() {
+        use crate::document::LoadedDocument;
+
+        // Create source PDF
+        let mut source = Document::new();
+        source.text("Source content");
+        let source_bytes = source.render().unwrap();
+
+        // Load, embed, and draw
+        let mut loaded = LoadedDocument::load(source_bytes).unwrap();
+        let mut doc = Document::new();
+        let embedded = doc.embed_pdf_page(&mut loaded, 0).unwrap();
+        doc.draw_pdf_page(&embedded, [50.0, 400.0], 200.0, 300.0);
+
+        // Should render without error
+        let bytes = doc.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_draw_pdf_page_fit() {
+        use crate::document::LoadedDocument;
+
+        // Create source PDF with A4 page
+        let mut source = Document::new();
+        source.text("A4 content");
+        let source_bytes = source.render().unwrap();
+
+        // Load, embed, and draw with fit
+        let mut loaded = LoadedDocument::load(source_bytes).unwrap();
+        let mut doc = Document::new();
+        let embedded = doc.embed_pdf_page(&mut loaded, 0).unwrap();
+
+        // Draw scaled to fit within 200x200
+        doc.draw_pdf_page_fit(&embedded, [50.0, 400.0], 200.0, 200.0);
+
+        let bytes = doc.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_copy_pages() {
+        use crate::document::LoadedDocument;
+
+        // Create source PDF with 3 pages
+        let mut source = Document::new();
+        source.text("Page 1");
+        source.start_new_page();
+        source.text("Page 2");
+        source.start_new_page();
+        source.text("Page 3");
+        let source_bytes = source.render().unwrap();
+
+        // Copy pages 0 and 2
+        let mut loaded = LoadedDocument::load(source_bytes).unwrap();
+        let mut doc = Document::new();
+        doc.copy_pages(&mut loaded, &[0, 2]).unwrap();
+
+        // Original page + 2 copied pages
+        assert_eq!(doc.page_count(), 3);
+
+        let bytes = doc.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_copy_all_pages() {
+        use crate::document::LoadedDocument;
+
+        // Create source PDF with 2 pages
+        let mut source = Document::new();
+        source.text("Source Page 1");
+        source.start_new_page();
+        source.text("Source Page 2");
+        let source_bytes = source.render().unwrap();
+
+        // Copy all pages
+        let mut loaded = LoadedDocument::load(source_bytes).unwrap();
+        let mut doc = Document::new();
+        doc.copy_all_pages(&mut loaded).unwrap();
+
+        // Original page + 2 copied pages
+        assert_eq!(doc.page_count(), 3);
+
+        let bytes = doc.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_merge_multiple_pdfs() {
+        use crate::document::LoadedDocument;
+
+        // Create first source PDF
+        let mut source1 = Document::new();
+        source1.text("Document 1 - Page 1");
+        let source1_bytes = source1.render().unwrap();
+
+        // Create second source PDF
+        let mut source2 = Document::new();
+        source2.text("Document 2 - Page 1");
+        source2.start_new_page();
+        source2.text("Document 2 - Page 2");
+        let source2_bytes = source2.render().unwrap();
+
+        // Merge both PDFs
+        let mut doc = Document::new();
+        doc.text("Merged Document - Cover");
+
+        let mut loaded1 = LoadedDocument::load(source1_bytes).unwrap();
+        doc.copy_all_pages(&mut loaded1).unwrap();
+
+        let mut loaded2 = LoadedDocument::load(source2_bytes).unwrap();
+        doc.copy_all_pages(&mut loaded2).unwrap();
+
+        // 1 cover + 1 from source1 + 2 from source2 = 4 pages
+        assert_eq!(doc.page_count(), 4);
+
+        let bytes = doc.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
     }
 }
