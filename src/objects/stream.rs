@@ -24,7 +24,9 @@ pub struct PdfStream {
 
 impl PdfStream {
     /// Creates a new stream with the given dictionary and data
-    pub fn new(dict: PdfDict, data: Vec<u8>) -> Self {
+    pub fn new(mut dict: PdfDict, data: Vec<u8>) -> Self {
+        // Always ensure Length is set correctly
+        dict.set("Length", PdfObject::Integer(data.len() as i64));
         PdfStream {
             dict,
             data,

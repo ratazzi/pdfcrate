@@ -51,6 +51,9 @@ pub struct Document {
     /// Embedded TrueType fonts (name -> font data)
     #[cfg(feature = "fonts")]
     embedded_fonts: std::collections::HashMap<String, std::sync::Arc<crate::font::EmbeddedFont>>,
+    /// Used characters per font (for subsetting)
+    #[cfg(feature = "fonts")]
+    font_used_chars: std::collections::HashMap<String, std::collections::HashSet<char>>,
     /// Current font name
     current_font: String,
     /// Current font size
@@ -96,6 +99,8 @@ impl Document {
             fonts: Vec::new(),
             #[cfg(feature = "fonts")]
             embedded_fonts: std::collections::HashMap::new(),
+            #[cfg(feature = "fonts")]
+            font_used_chars: std::collections::HashMap::new(),
             current_font: "Helvetica".to_string(),
             current_font_size: 12.0,
             current_font_embedded: false,
@@ -286,21 +291,27 @@ impl Document {
 
         #[cfg(feature = "fonts")]
         if is_embedded {
+            // Track used characters for subsetting
+            self.font_used_chars
+                .entry(font_name.clone())
+                .or_default()
+                .extend(text.chars());
+
             if let Some(font) = self.embedded_fonts.get(&font_name) {
                 let hex = font.encode_text(text);
-                page.content.show_text_hex(&hex);
+                self.pages[self.current_page].content.show_text_hex(&hex);
             }
         } else {
-            page.content.show_text(text);
+            self.pages[self.current_page].content.show_text(text);
         }
 
         #[cfg(not(feature = "fonts"))]
         {
             let _ = is_embedded;
-            page.content.show_text(text);
+            self.pages[self.current_page].content.show_text(text);
         }
 
-        page.content.end_text();
+        self.pages[self.current_page].content.end_text();
 
         self
     }
@@ -312,30 +323,36 @@ impl Document {
         let font_name = self.current_font.clone();
         let font_size = self.current_font_size;
         let is_embedded = self.current_font_embedded;
-        let page = &mut self.pages[self.current_page];
 
-        page.content
+        self.pages[self.current_page]
+            .content
             .begin_text()
             .set_font(&font_name, font_size)
             .move_text_pos(pos[0], pos[1]);
 
         #[cfg(feature = "fonts")]
         if is_embedded {
+            // Track used characters for subsetting
+            self.font_used_chars
+                .entry(font_name.clone())
+                .or_default()
+                .extend(text.chars());
+
             if let Some(font) = self.embedded_fonts.get(&font_name) {
                 let hex = font.encode_text(text);
-                page.content.show_text_hex(&hex);
+                self.pages[self.current_page].content.show_text_hex(&hex);
             }
         } else {
-            page.content.show_text(text);
+            self.pages[self.current_page].content.show_text(text);
         }
 
         #[cfg(not(feature = "fonts"))]
         {
             let _ = is_embedded;
-            page.content.show_text(text);
+            self.pages[self.current_page].content.show_text(text);
         }
 
-        page.content.end_text();
+        self.pages[self.current_page].content.end_text();
 
         self
     }
@@ -344,6 +361,10 @@ impl Document {
     ///
     /// Returns the font name to use with `font()`.
     /// This method requires the `fonts` feature.
+    ///
+    /// Note: Font subsetting is applied automatically at render time.
+    /// Only glyphs for characters actually used in the document will be included,
+    /// which can significantly reduce file size.
     #[cfg(feature = "fonts")]
     pub fn embed_font(&mut self, data: Vec<u8>) -> Result<String> {
         use crate::font::EmbeddedFont;
@@ -351,33 +372,67 @@ impl Document {
         let font = EmbeddedFont::from_bytes(data)?;
         let name = font.name.clone();
 
-        // Create all the PDF objects for this font
-        // 1. Font file stream
-        let font_file = font.create_font_file_stream();
-        let font_file_ref = self.context.register(PdfObject::Stream(font_file));
-
-        // 2. Font descriptor
-        let font_descriptor = font.create_font_descriptor(font_file_ref);
-        let font_descriptor_ref = self.context.register(PdfObject::Dict(font_descriptor));
-
-        // 3. CIDFont
-        let cid_font = font.create_cid_font(font_descriptor_ref);
-        let cid_font_ref = self.context.register(PdfObject::Dict(cid_font));
-
-        // 4. ToUnicode CMap
-        let to_unicode = font.create_to_unicode_cmap();
-        let to_unicode_ref = self.context.register(PdfObject::Stream(to_unicode));
-
-        // 5. Type0 font (main font object)
-        let type0_font = font.create_type0_font(cid_font_ref, to_unicode_ref);
-        let font_ref = self.context.register(PdfObject::Dict(type0_font));
-
-        // Register the font
-        self.fonts.push((name.clone(), font_ref));
+        // Store font data - PDF objects will be created at render time
+        // to allow subsetting based on used characters
         self.embedded_fonts
             .insert(name.clone(), std::sync::Arc::new(font));
 
         Ok(name)
+    }
+
+    /// Creates font PDF objects for an embedded font
+    /// Called during render() to apply subsetting
+    #[cfg(feature = "fonts")]
+    fn create_font_objects(&mut self, name: &str) -> Option<PdfRef> {
+        let font_arc = self.embedded_fonts.get(name)?.clone();
+        let font = font_arc.as_ref();
+
+        // Apply used characters for subsetting - this populates glyph_set
+        let mut font_clone = font.clone();
+        if let Some(used_chars) = self.font_used_chars.get(name) {
+            // Build a string of all used characters and call mark_chars_used
+            // This populates both used_chars AND glyph_set
+            let text: String = used_chars.iter().collect();
+            font_clone.mark_chars_used(&text);
+        }
+
+        // 1. Font file stream (with subsetting if chars were used)
+        let font_file = font_clone.create_font_file_stream();
+        let font_file_ref = self.context.register(PdfObject::Stream(font_file));
+
+        // Determine if we're subsetting (glyph_set is populated)
+        let is_subset = !font_clone.glyph_set.is_empty();
+
+        // 2. Font descriptor (use subset name if subsetting)
+        let font_descriptor = font_clone.create_font_descriptor(font_file_ref, is_subset);
+        let font_descriptor_ref = self.context.register(PdfObject::Dict(font_descriptor));
+
+        // 3. CIDToGIDMap (for subsetting - maps original GIDs to subset GIDs)
+        let cid_to_gid_map_ref = if is_subset {
+            font_clone
+                .create_cid_to_gid_map()
+                .map(|stream| self.context.register(PdfObject::Stream(stream)))
+        } else {
+            None
+        };
+
+        // 4. CIDFont (use original GIDs for widths)
+        let mut cid_font =
+            font_clone.create_cid_font(font_descriptor_ref, cid_to_gid_map_ref, is_subset);
+        // Update widths array (uses original GIDs when subsetting)
+        let w_array = font_clone.create_widths_array_for_pdf();
+        cid_font.set("W", PdfObject::Array(w_array));
+        let cid_font_ref = self.context.register(PdfObject::Dict(cid_font));
+
+        // 5. ToUnicode CMap (uses original GIDs)
+        let to_unicode = font_clone.create_to_unicode_cmap_for_pdf();
+        let to_unicode_ref = self.context.register(PdfObject::Stream(to_unicode));
+
+        // 6. Type0 font (main font object)
+        let type0_font = font_clone.create_type0_font(cid_font_ref, to_unicode_ref, is_subset);
+        let font_ref = self.context.register(PdfObject::Dict(type0_font));
+
+        Some(font_ref)
     }
 
     /// Embeds a TrueType font from a file path
@@ -941,6 +996,17 @@ impl Document {
 
     /// Renders the document to bytes
     pub fn render(&mut self) -> Result<Vec<u8>> {
+        // Create font objects for embedded fonts (with subsetting)
+        #[cfg(feature = "fonts")]
+        {
+            let embedded_font_names: Vec<String> = self.embedded_fonts.keys().cloned().collect();
+            for name in embedded_font_names {
+                if let Some(font_ref) = self.create_font_objects(&name) {
+                    self.fonts.push((name, font_ref));
+                }
+            }
+        }
+
         // Build font resources dictionary
         let mut font_dict = PdfDict::new();
         for (name, font_ref) in &self.fonts {

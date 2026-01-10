@@ -397,6 +397,7 @@ dependencies = [
  "png 0.17.16",
  "pretty_assertions",
  "qrcode",
+ "subsetter",
  "svg2pdf",
  "thiserror",
  "ttf-parser 0.24.1",
