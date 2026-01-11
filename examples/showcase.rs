@@ -387,7 +387,10 @@ fn add_page_ligatures(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("MapleMono Ligatures", [margin, 800.0]);
 
     doc.font("Helvetica").size(12.0);
-    doc.text_at("Page 6: ligatures, kerning, and line spacing", [margin, 778.0]);
+    doc.text_at(
+        "Page 6: ligatures, kerning, and line spacing",
+        [margin, 778.0],
+    );
 
     let mut y = 700.0;
     doc.font(&font_name).size(22.0);
@@ -417,7 +420,6 @@ fn add_page_ligatures(doc: &mut Document) -> PdfResult<()> {
             .line([margin, y], [page_width - margin, y]);
     });
     y -= 16.0;
-
 
     doc.font("Helvetica").size(12.0);
     doc.text_at("Kerning samples (Roboto, proportional):", [margin, y]);
@@ -453,7 +455,10 @@ fn add_page_ligatures(doc: &mut Document) -> PdfResult<()> {
             ctx.gray(0.8)
                 .line_width(0.5)
                 .line([margin, text_y], [page_width - margin, text_y])
-                .line([margin, text_y - spacing], [page_width - margin, text_y - spacing]);
+                .line(
+                    [margin, text_y - spacing],
+                    [page_width - margin, text_y - spacing],
+                );
         });
 
         doc.font(&font_name).size(14.0);
@@ -859,12 +864,18 @@ fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
     let y = 520.0;
 
     doc.fill(|ctx| {
-        ctx.gray(0.97).rectangle([x - 8.0, y - 8.0], target_width + 16.0, target_height + 16.0);
+        ctx.gray(0.97).rectangle(
+            [x - 8.0, y - 8.0],
+            target_width + 16.0,
+            target_height + 16.0,
+        );
     });
     doc.stroke(|ctx| {
-        ctx.gray(0.85)
-            .line_width(0.5)
-            .rectangle([x - 8.0, y - 8.0], target_width + 16.0, target_height + 16.0);
+        ctx.gray(0.85).line_width(0.5).rectangle(
+            [x - 8.0, y - 8.0],
+            target_width + 16.0,
+            target_height + 16.0,
+        );
     });
 
     doc.draw_svg_paths(barcode_svg, [x, y], target_width, target_height)?;

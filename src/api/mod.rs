@@ -6,6 +6,9 @@ pub mod image;
 pub mod page;
 
 #[cfg(feature = "std")]
+use std::time::SystemTime;
+
+#[cfg(feature = "std")]
 use std::fs::File;
 #[cfg(feature = "std")]
 use std::io::Write;
@@ -15,9 +18,9 @@ use std::path::Path;
 use crate::content::ContentBuilder;
 use crate::document::{create_catalog, create_page, create_pages, PdfContext};
 use crate::error::Result;
-use crate::font::StandardFont;
 #[cfg(feature = "fonts")]
 use crate::font::ShapedGlyph;
+use crate::font::StandardFont;
 use crate::forms::{AcroForm, FormField};
 use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
 
@@ -83,13 +86,137 @@ struct PageData {
 }
 
 /// Document metadata
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct DocumentInfo {
     pub title: Option<String>,
     pub author: Option<String>,
     pub subject: Option<String>,
     pub creator: Option<String>,
     pub producer: Option<String>,
+    /// Creation date.
+    ///
+    /// Defaults to `None` for reproducible builds. Use `Document::creation_date_now()`
+    /// or `DocumentInfo::set_creation_date_now()` to set the current timestamp.
+    #[cfg(feature = "std")]
+    pub creation_date: Option<SystemTime>,
+    /// Modification date.
+    ///
+    /// Defaults to `None` for reproducible builds. Use `Document::mod_date_now()`
+    /// or `DocumentInfo::set_mod_date_now()` to set the current timestamp.
+    /// NOT automatically set during render() to support reproducible builds.
+    #[cfg(feature = "std")]
+    pub mod_date: Option<SystemTime>,
+}
+
+impl Default for DocumentInfo {
+    fn default() -> Self {
+        DocumentInfo {
+            title: None,
+            author: None,
+            subject: None,
+            creator: None,
+            producer: None,
+            #[cfg(feature = "std")]
+            creation_date: None,
+            #[cfg(feature = "std")]
+            mod_date: None,
+        }
+    }
+}
+
+impl DocumentInfo {
+    /// Sets creation_date to the current time.
+    ///
+    /// By default, creation_date is `None` for reproducible builds.
+    /// Call this method to include the current timestamp in the PDF.
+    #[cfg(feature = "std")]
+    pub fn set_creation_date_now(&mut self) {
+        self.creation_date = Some(SystemTime::now());
+    }
+
+    /// Sets mod_date to the current time.
+    ///
+    /// By default, mod_date is `None` for reproducible builds.
+    /// Call this method to include the current timestamp in the PDF.
+    #[cfg(feature = "std")]
+    pub fn set_mod_date_now(&mut self) {
+        self.mod_date = Some(SystemTime::now());
+    }
+}
+
+/// Formats a SystemTime as a PDF date string (PDF 1.7 §7.9.4)
+///
+/// Format: D:YYYYMMDDHHmmSSOHH'mm'
+/// Example: D:20240111120000Z00'00'
+///
+/// Uses UTC timezone. The format matches PDF 1.7 specification §7.9.4.
+///
+/// Returns `None` if the time is before UNIX_EPOCH (1970-01-01 00:00:00 UTC),
+/// as PDF date format cannot represent dates before 1970.
+#[cfg(feature = "std")]
+fn format_pdf_date(time: SystemTime) -> Option<String> {
+    use std::time::UNIX_EPOCH;
+
+    // Get the duration since Unix epoch, return None for pre-1970 dates
+    let duration = time.duration_since(UNIX_EPOCH).ok()?;
+
+    let total_seconds = duration.as_secs();
+
+    // Calculate time components
+    let seconds = total_seconds % 60;
+    let total_minutes = total_seconds / 60;
+    let minutes = total_minutes % 60;
+    let total_hours = total_minutes / 60;
+    let hours = total_hours % 24;
+    let total_days = total_hours / 24;
+
+    // Calculate date components using a simple algorithm
+    // Start from 1970-01-01
+    let mut year = 1970u32;
+    let mut days = total_days;
+
+    // Calculate year
+    loop {
+        let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        let year_days = if is_leap { 366 } else { 365 };
+        if days >= year_days {
+            days -= year_days;
+            year += 1;
+        } else {
+            break;
+        }
+    }
+
+    // Calculate month and day
+    let mut month = 1u32;
+    let mut day = days + 1;
+
+    let days_in_month = |m: u32, y: u32| -> u64 {
+        match m {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 => {
+                if (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) {
+                    29
+                } else {
+                    28
+                }
+            }
+            _ => 31,
+        }
+    };
+
+    while month <= 12 && day > days_in_month(month, year) {
+        day -= days_in_month(month, year);
+        month += 1;
+    }
+
+    // Format as PDF date string: D:YYYYMMDDHHmmSSZ00'00'
+    // Using UTC (Z) timezone indicator
+    Some(format!(
+        "D:{:04}{:02}{:02}{:02}{:02}{:02}Z00'00'",
+        year, month, day, hours, minutes, seconds
+    ))
 }
 
 impl Document {
@@ -912,6 +1039,26 @@ impl Document {
         self
     }
 
+    /// Sets creation date to the current time.
+    ///
+    /// By default, creation_date is None for reproducible builds.
+    /// Call this method if you want to include the current timestamp.
+    #[cfg(feature = "std")]
+    pub fn creation_date_now(&mut self) -> &mut Self {
+        self.info.set_creation_date_now();
+        self
+    }
+
+    /// Sets modification date to the current time.
+    ///
+    /// By default, mod_date is None for reproducible builds.
+    /// Call this method if you want to include the current timestamp.
+    #[cfg(feature = "std")]
+    pub fn mod_date_now(&mut self) -> &mut Self {
+        self.info.set_mod_date_now();
+        self
+    }
+
     // =========================================================================
     // Form API
     // =========================================================================
@@ -1312,11 +1459,34 @@ impl Document {
 
         let catalog_ref = self.context.register(PdfObject::Dict(catalog));
 
-        // Create info dictionary
-        let info_ref = if self.info.title.is_some()
+        // Note: mod_date is NOT auto-set for reproducible builds.
+        // Users can call info.set_mod_date_now() before render() if needed.
+
+        // Pre-format dates to determine if they're valid (post-1970)
+        // This ensures has_info is based on actual content, not just Option::is_some()
+        #[cfg(feature = "std")]
+        let creation_date_str = self.info.creation_date.and_then(|d| format_pdf_date(d));
+        #[cfg(feature = "std")]
+        let mod_date_str = self.info.mod_date.and_then(|d| format_pdf_date(d));
+
+        // Create info dictionary only if there's actual content
+        let has_info = self.info.title.is_some()
             || self.info.author.is_some()
             || self.info.producer.is_some()
-        {
+            || self.info.subject.is_some()
+            || self.info.creator.is_some()
+            || {
+                #[cfg(feature = "std")]
+                {
+                    creation_date_str.is_some() || mod_date_str.is_some()
+                }
+                #[cfg(not(feature = "std"))]
+                {
+                    false
+                }
+            };
+
+        let info_ref = if has_info {
             let mut info_dict = PdfDict::new();
             if let Some(title) = &self.info.title {
                 info_dict.set("Title", PdfObject::String(title.as_str().into()));
@@ -1324,8 +1494,23 @@ impl Document {
             if let Some(author) = &self.info.author {
                 info_dict.set("Author", PdfObject::String(author.as_str().into()));
             }
+            if let Some(subject) = &self.info.subject {
+                info_dict.set("Subject", PdfObject::String(subject.as_str().into()));
+            }
+            if let Some(creator) = &self.info.creator {
+                info_dict.set("Creator", PdfObject::String(creator.as_str().into()));
+            }
             if let Some(producer) = &self.info.producer {
                 info_dict.set("Producer", PdfObject::String(producer.as_str().into()));
+            }
+            #[cfg(feature = "std")]
+            {
+                if let Some(date_str) = creation_date_str {
+                    info_dict.set("CreationDate", PdfObject::String(date_str.into()));
+                }
+                if let Some(date_str) = mod_date_str {
+                    info_dict.set("ModDate", PdfObject::String(date_str.into()));
+                }
             }
             Some(self.context.register(PdfObject::Dict(info_dict)))
         } else {
@@ -1731,6 +1916,209 @@ mod tests {
         // Should render without error
         let bytes = doc.render().unwrap();
         assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_pdf_date_format() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        // Test with a known date: 2024-01-15 12:30:45 UTC
+        // Calculation: 2024-01-01 00:00:00 UTC = 1704067200
+        // + 14 days (1209600) + 12 hours (43200) + 30 min (1800) + 45 sec = 1705321845
+        let test_time = UNIX_EPOCH + Duration::from_secs(1705321845);
+        let date_str = format_pdf_date(test_time).expect("valid date should format");
+
+        // Complete string assertion - exact expected output
+        assert_eq!(date_str, "D:20240115123045Z00'00'");
+
+        // Verify format structure
+        assert!(date_str.starts_with("D:"));
+        assert!(date_str.ends_with("Z00'00'"));
+        assert_eq!(date_str.len(), 23); // D: (2) + YYYYMMDDHHmmSS (14) + Z (1) + 00'00' (6)
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_pdf_date_format_pre_epoch() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        // Pre-1970 dates should return None
+        let pre_epoch = UNIX_EPOCH - Duration::from_secs(1);
+        assert!(
+            format_pdf_date(pre_epoch).is_none(),
+            "pre-1970 dates should return None"
+        );
+
+        // Much earlier date
+        let way_before = UNIX_EPOCH - Duration::from_secs(365 * 24 * 60 * 60);
+        assert!(
+            format_pdf_date(way_before).is_none(),
+            "dates before UNIX_EPOCH should return None"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_pdf_date_format_leap_year() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        // Test leap year: 2024-02-29 23:59:59 UTC
+        // 2024 is a leap year, Feb 29 exists
+        // This is 1709251199 seconds since epoch
+        let leap_time = UNIX_EPOCH + Duration::from_secs(1709251199);
+        let date_str = format_pdf_date(leap_time).unwrap();
+        assert_eq!(date_str, "D:20240229235959Z00'00'");
+
+        // Test non-leap year boundary: 2023-02-28 12:00:00 UTC
+        // 2023 is NOT a leap year
+        // This is 1677585600 seconds since epoch
+        let non_leap_time = UNIX_EPOCH + Duration::from_secs(1677585600);
+        let date_str = format_pdf_date(non_leap_time).unwrap();
+        assert_eq!(date_str, "D:20230228120000Z00'00'");
+
+        // Test century non-leap year: 1900 is NOT a leap year (divisible by 100 but not 400)
+        // But we can't easily test 1900 as it's before UNIX_EPOCH (1970)
+        // Test year 2000 which IS a leap year (divisible by 400)
+        // 2000-02-29 00:00:00 UTC = 951782400 seconds since epoch
+        let y2k_leap = UNIX_EPOCH + Duration::from_secs(951782400);
+        let date_str = format_pdf_date(y2k_leap).unwrap();
+        assert_eq!(date_str, "D:20000229000000Z00'00'");
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_pdf_date_format_edge_cases() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        // Test epoch start: 1970-01-01 00:00:00 UTC
+        let epoch = UNIX_EPOCH;
+        let date_str = format_pdf_date(epoch).unwrap();
+        assert_eq!(date_str, "D:19700101000000Z00'00'");
+
+        // Test end of year: 2023-12-31 23:59:59 UTC
+        // This is 1704067199 seconds since epoch
+        let year_end = UNIX_EPOCH + Duration::from_secs(1704067199);
+        let date_str = format_pdf_date(year_end).unwrap();
+        assert_eq!(date_str, "D:20231231235959Z00'00'");
+
+        // Test start of year: 2024-01-01 00:00:00 UTC
+        // This is 1704067200 seconds since epoch
+        let year_start = UNIX_EPOCH + Duration::from_secs(1704067200);
+        let date_str = format_pdf_date(year_start).unwrap();
+        assert_eq!(date_str, "D:20240101000000Z00'00'");
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_document_info_with_dates() {
+        let doc = Document::new();
+
+        // Creation date should be None by default (for reproducible builds)
+        assert!(doc.info.creation_date.is_none());
+
+        // Mod date should be None by default
+        assert!(doc.info.mod_date.is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_document_info_set_dates() {
+        let mut doc = Document::new();
+
+        // Initially None
+        assert!(doc.info.creation_date.is_none());
+        assert!(doc.info.mod_date.is_none());
+
+        // Opt-in to timestamps
+        doc.creation_date_now().mod_date_now();
+
+        // Now should be set
+        assert!(doc.info.creation_date.is_some());
+        assert!(doc.info.mod_date.is_some());
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_document_info_dates_in_pdf_output() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        let mut doc = Document::new();
+        doc.title("Test Doc");
+
+        // Set specific dates (2024-06-15 10:30:00 UTC)
+        let test_time = UNIX_EPOCH + Duration::from_secs(1718444400);
+        doc.info.creation_date = Some(test_time);
+        doc.info.mod_date = Some(test_time);
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Verify CreationDate is in the output
+        assert!(
+            pdf_str.contains("/CreationDate"),
+            "PDF should contain /CreationDate field"
+        );
+        assert!(
+            pdf_str.contains("D:20240615"),
+            "PDF should contain formatted creation date"
+        );
+
+        // Verify ModDate is in the output
+        assert!(
+            pdf_str.contains("/ModDate"),
+            "PDF should contain /ModDate field"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_document_info_no_dates_in_pdf_output() {
+        // By default, dates should NOT be in PDF (reproducible builds)
+        let mut doc = Document::new();
+        doc.title("Test Doc");
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Without explicit dates, they should not appear
+        assert!(
+            !pdf_str.contains("/CreationDate"),
+            "PDF should NOT contain /CreationDate when not set"
+        );
+        assert!(
+            !pdf_str.contains("/ModDate"),
+            "PDF should NOT contain /ModDate when not set"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_document_info_pre1970_dates_not_in_output() {
+        use std::time::{Duration, UNIX_EPOCH};
+
+        let mut doc = Document::new();
+        // Set pre-1970 dates (should be silently skipped)
+        let pre_1970 = UNIX_EPOCH - Duration::from_secs(1);
+        doc.info.creation_date = Some(pre_1970);
+        doc.info.mod_date = Some(pre_1970);
+        // No other info fields set
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Pre-1970 dates should NOT appear in output
+        assert!(
+            !pdf_str.contains("/CreationDate"),
+            "PDF should NOT contain /CreationDate for pre-1970 date"
+        );
+        assert!(
+            !pdf_str.contains("/ModDate"),
+            "PDF should NOT contain /ModDate for pre-1970 date"
+        );
+        // Info dict should not be created at all (no empty /Info)
+        // The producer is set by default, so Info will still exist
+        // But the dates should not be there
     }
 
     #[test]
