@@ -32,6 +32,8 @@ pub mod parser;
 pub mod writer;
 
 pub mod image;
+#[cfg(feature = "svg")]
+pub mod svg;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;

@@ -32,6 +32,10 @@ pub enum Error {
     #[error("Unsupported feature: {0}")]
     Unsupported(String),
 
+    /// SVG error
+    #[error("SVG error: {0}")]
+    Svg(String),
+
     /// Encoding error
     #[error("Encoding error: {0}")]
     Encoding(String),

@@ -8,8 +8,9 @@
 //! - Page 7: CJK font support (Chinese/Japanese/Korean)
 //! - Page 8: Interactive forms (AcroForms)
 //! - Page 9: PDF embedding and merging
+//! - Page 10: SVG barcode (path-only, requires `svg` feature)
 //!
-//! Run with: cargo run --example showcase --features "fonts,text-shaping"
+//! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
 use pdf_rs::image::embed_jpeg;
 use pdf_rs::prelude::{Document, LoadedDocument, PageLayout, PageSize};
@@ -62,6 +63,9 @@ fn main() -> StdResult<(), Box<dyn Error>> {
 
         add_page_forms(doc)?;
         add_page_pdf_embed(doc)?;
+
+        #[cfg(feature = "svg")]
+        add_page_svg_barcode(doc)?;
 
         Ok(())
     })?;
@@ -368,7 +372,7 @@ fn add_page_custom_font(doc: &mut Document) -> PdfResult<()> {
 fn add_page_ligatures(doc: &mut Document) -> PdfResult<()> {
     use std::fs;
 
-    let (page_width, page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
+    let (page_width, _page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
     let margin = 48.0;
 
     doc.start_new_page();
@@ -788,6 +792,87 @@ fn add_page_pdf_embed(doc: &mut Document) -> PdfResult<()> {
     doc.text_at(
         "Use cases: PDF merging, thumbnails, page composition, watermarking.",
         [margin, 85.0],
+    );
+
+    Ok(())
+}
+
+#[cfg(feature = "svg")]
+fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
+    let (page_width, _page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
+    let margin = 48.0;
+
+    doc.start_new_page();
+
+    // Header band
+    doc.fill(|ctx| {
+        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+    });
+
+    doc.font("Helvetica").size(24.0);
+    doc.text_at("SVG Barcode", [margin, 800.0]);
+
+    doc.font("Helvetica").size(11.0);
+    doc.text_at("Page 10: path-only SVG rendering", [margin, 780.0]);
+
+    doc.font("Helvetica").size(12.0);
+    doc.text_at(
+        "The barcode below is drawn from SVG paths (rects are converted to paths).",
+        [margin, 720.0],
+    );
+
+    let barcode_svg = r##"
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="80" viewBox="0 0 220 80">
+  <rect x="8" y="8" width="4" height="64" fill="#000"/>
+  <rect x="16" y="8" width="2" height="64" fill="#000"/>
+  <rect x="22" y="8" width="6" height="64" fill="#000"/>
+  <rect x="32" y="8" width="2" height="64" fill="#000"/>
+  <rect x="38" y="8" width="4" height="64" fill="#000"/>
+  <rect x="46" y="8" width="2" height="64" fill="#000"/>
+  <rect x="52" y="8" width="6" height="64" fill="#000"/>
+  <rect x="62" y="8" width="2" height="64" fill="#000"/>
+  <rect x="68" y="8" width="4" height="64" fill="#000"/>
+  <rect x="76" y="8" width="2" height="64" fill="#000"/>
+  <rect x="82" y="8" width="6" height="64" fill="#000"/>
+  <rect x="92" y="8" width="2" height="64" fill="#000"/>
+  <rect x="98" y="8" width="4" height="64" fill="#000"/>
+  <rect x="106" y="8" width="2" height="64" fill="#000"/>
+  <rect x="112" y="8" width="6" height="64" fill="#000"/>
+  <rect x="122" y="8" width="2" height="64" fill="#000"/>
+  <rect x="128" y="8" width="4" height="64" fill="#000"/>
+  <rect x="136" y="8" width="2" height="64" fill="#000"/>
+  <rect x="142" y="8" width="6" height="64" fill="#000"/>
+  <rect x="152" y="8" width="2" height="64" fill="#000"/>
+  <rect x="158" y="8" width="4" height="64" fill="#000"/>
+  <rect x="166" y="8" width="2" height="64" fill="#000"/>
+  <rect x="172" y="8" width="6" height="64" fill="#000"/>
+  <rect x="182" y="8" width="2" height="64" fill="#000"/>
+  <rect x="188" y="8" width="4" height="64" fill="#000"/>
+  <rect x="196" y="8" width="2" height="64" fill="#000"/>
+  <rect x="202" y="8" width="6" height="64" fill="#000"/>
+</svg>
+"##;
+
+    let target_width = page_width - margin * 2.0;
+    let target_height = 140.0;
+    let x = margin;
+    let y = 520.0;
+
+    doc.fill(|ctx| {
+        ctx.gray(0.97).rectangle([x - 8.0, y - 8.0], target_width + 16.0, target_height + 16.0);
+    });
+    doc.stroke(|ctx| {
+        ctx.gray(0.85)
+            .line_width(0.5)
+            .rectangle([x - 8.0, y - 8.0], target_width + 16.0, target_height + 16.0);
+    });
+
+    doc.draw_svg_paths(barcode_svg, [x, y], target_width, target_height)?;
+
+    doc.font("Helvetica").size(10.0);
+    doc.text_at(
+        "Use SVG for barcodes, charts, and icons without rasterization.",
+        [margin, 470.0],
     );
 
     Ok(())

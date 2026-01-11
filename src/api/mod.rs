@@ -852,6 +852,26 @@ impl Document {
         Ok(image.name)
     }
 
+    // =========================================================================
+    // SVG API (path-only)
+    // =========================================================================
+
+    /// Renders SVG paths at the specified position and size.
+    ///
+    /// This currently supports path-only SVGs (basic shapes are converted to paths).
+    /// Requires the `svg` feature.
+    #[cfg(feature = "svg")]
+    pub fn draw_svg_paths(
+        &mut self,
+        svg: &str,
+        pos: [f64; 2],
+        width: f64,
+        height: f64,
+    ) -> Result<()> {
+        let content = &mut self.pages[self.current_page].content;
+        crate::svg::render_svg_paths(content, svg, pos, width, height)
+    }
+
     /// Strokes a path using a closure
     pub fn stroke<F>(&mut self, f: F) -> &mut Self
     where
