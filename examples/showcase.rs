@@ -9,11 +9,12 @@
 //! - Page 8: Interactive forms (AcroForms)
 //! - Page 9: PDF embedding and merging
 //! - Page 10: SVG barcode (path-only, requires `svg` feature)
+//! - Page 11: LayoutDocument - Prawn-style cursor-based layout
 //!
 //! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
 use pdf_rs::image::embed_jpeg;
-use pdf_rs::prelude::{Document, LoadedDocument, PageLayout, PageSize};
+use pdf_rs::prelude::{Document, LayoutDocument, LoadedDocument, Margin, PageLayout, PageSize};
 use pdf_rs::Result as PdfResult;
 use std::error::Error;
 use std::fs;
@@ -66,6 +67,8 @@ fn main() -> StdResult<(), Box<dyn Error>> {
 
         #[cfg(feature = "svg")]
         add_page_svg_barcode(doc)?;
+
+        add_page_layout(doc)?;
 
         Ok(())
     })?;
@@ -886,6 +889,138 @@ fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
         [margin, 470.0],
     );
 
+    Ok(())
+}
+
+fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
+    let (page_width, _) = PageSize::A4.dimensions(PageLayout::Portrait);
+    let margin = 48.0;
+
+    doc.start_new_page();
+
+    // Header band (drawn with absolute positioning)
+    doc.fill(|ctx| {
+        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+    });
+
+    doc.font("Helvetica").size(24.0);
+    doc.text_at("LayoutDocument Demo", [margin, 800.0]);
+
+    doc.font("Helvetica").size(11.0);
+    doc.text_at(
+        "Page 11: Prawn-style cursor-based layout (no manual coordinate calculation)",
+        [margin, 780.0],
+    );
+
+    // Create LayoutDocument wrapper
+    let doc_owned = std::mem::take(doc);
+    let mut layout =
+        LayoutDocument::with_margin(doc_owned, Margin::new(82.0, margin, margin, margin));
+
+    // Section 1: Bounding Box Demo
+    layout.font("Helvetica").size(14.0);
+    layout.text("Nested Bounding Boxes:");
+    layout.move_down(15.0);
+
+    // Outer box (fixed height)
+    layout.bounding_box([0.0, 0.0], 250.0, Some(120.0), |doc| {
+        doc.stroke_bounds();
+        doc.font("Helvetica").size(11.0);
+        doc.text("Outer box (250x120)");
+
+        // Inner box (nested, stretchy)
+        doc.bounding_box([20.0, 0.0], 180.0, None, |doc| {
+            doc.stroke_bounds();
+            doc.font("Helvetica").size(10.0);
+            doc.text("Inner nested box");
+            doc.text("Auto-height (stretchy)");
+        });
+    });
+
+    // Side-by-side boxes using float
+    layout.move_down(20.0);
+    layout.font("Helvetica").size(14.0);
+    layout.text("Side-by-Side Layout (using float):");
+    layout.move_down(15.0);
+
+    let box_top = layout.cursor();
+
+    // Left box
+    layout.bounding_box([0.0, 0.0], 160.0, Some(80.0), |doc| {
+        doc.stroke_bounds();
+        doc.font("Helvetica").size(10.0);
+        doc.text("Left Box");
+        doc.text("Width: 160pt");
+    });
+
+    // Right box (use float to position at same y level)
+    layout.set_cursor(box_top);
+    layout.bounding_box([180.0, 0.0], 160.0, Some(80.0), |doc| {
+        doc.stroke_bounds();
+        doc.font("Helvetica").size(10.0);
+        doc.text("Right Box");
+        doc.text("Offset: 180pt");
+    });
+
+    layout.move_down(20.0);
+
+    // Section 2: Cursor tracking
+    layout.font("Helvetica").size(14.0);
+    layout.text("Cursor Tracking:");
+    layout.move_down(10.0);
+
+    layout.font("Helvetica").size(11.0);
+    let cursor1 = layout.cursor();
+    layout.text(&format!("Cursor at: {:.1}pt", cursor1));
+    layout.text("Each text() call auto-advances cursor");
+    let cursor2 = layout.cursor();
+    layout.text(&format!(
+        "Now at: {:.1}pt (moved {:.1}pt)",
+        cursor2,
+        cursor1 - cursor2
+    ));
+
+    layout.move_down(20.0);
+
+    // Section 3: Indent
+    layout.font("Helvetica").size(14.0);
+    layout.text("Indent:");
+    layout.move_down(10.0);
+
+    layout.font("Helvetica").size(11.0);
+    layout.text("Normal margin.");
+    layout.indent(40.0, 40.0, |l| {
+        l.text("Indented 40pt left/right.");
+        l.indent(30.0, 30.0, |l| {
+            l.text("Double indent (70pt total).");
+        });
+        l.text("Back to 40pt indent.");
+    });
+    layout.text("Back to normal.");
+
+    layout.move_down(20.0);
+
+    // Section 4: Float
+    layout.font("Helvetica").size(14.0);
+    layout.text("Float (temp position):");
+    layout.move_down(10.0);
+
+    layout.font("Helvetica").size(11.0);
+    layout.text("Before float");
+    layout.float(|l| {
+        l.move_down(60.0);
+        l.font("Helvetica").size(10.0);
+        l.text(">> Floated 60pt down");
+    });
+    layout.text("After float (continues from 'Before')");
+    layout.move_down(70.0); // Make room
+
+    // Section 5: Full bounds visualization
+    layout.font("Helvetica").size(10.0);
+    layout.text("Current bounds shown by stroke_bounds():");
+    layout.stroke_bounds();
+
+    *doc = layout.into_inner();
     Ok(())
 }
 

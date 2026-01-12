@@ -41,7 +41,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Method 2: Using imperative style
     let mut doc = Document::new();
     doc.title("Simple PDF");
-    doc.text("Simple document using imperative style.");
+    doc.text_at("Simple document using imperative style.", [72.0, 700.0]);
     doc.save("simple.pdf")?;
 
     println!("Created: simple.pdf");

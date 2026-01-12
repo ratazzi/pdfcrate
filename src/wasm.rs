@@ -33,11 +33,6 @@ impl WasmDocument {
         self.inner.author(author);
     }
 
-    /// Adds text to the document
-    pub fn text(&mut self, text: &str) {
-        self.inner.text(text);
-    }
-
     /// Adds text at a specific position
     #[wasm_bindgen(js_name = textAt)]
     pub fn text_at(&mut self, text: &str, x: f64, y: f64) {

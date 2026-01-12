@@ -223,7 +223,7 @@ mod tests {
     fn test_extract_page() {
         // Create a simple PDF
         let mut doc = Document::new();
-        doc.text("Hello, World!");
+        doc.text_at("Hello, World!", [72.0, 700.0]);
         let pdf_data = doc.render().unwrap();
 
         // Load and extract
@@ -239,9 +239,9 @@ mod tests {
     fn test_extract_all_pages() {
         // Create a multi-page PDF
         let mut doc = Document::new();
-        doc.text("Page 1");
+        doc.text_at("Page 1", [72.0, 700.0]);
         doc.start_new_page();
-        doc.text("Page 2");
+        doc.text_at("Page 2", [72.0, 700.0]);
         let pdf_data = doc.render().unwrap();
 
         // Load and extract all

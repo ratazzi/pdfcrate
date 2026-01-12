@@ -3,6 +3,7 @@
 //! This module provides the user-facing API for creating and manipulating PDFs.
 
 pub mod image;
+pub mod layout;
 pub mod page;
 
 #[cfg(feature = "std")]
@@ -25,6 +26,7 @@ use crate::forms::{AcroForm, FormField};
 use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
 
 pub use image::{EmbeddedImage, ImageOptions, Position};
+pub use layout::{BoundingBox, LayoutDocument, Margin};
 pub use page::{PageLayout, PageSize};
 
 /// A PDF Document
@@ -37,16 +39,16 @@ pub use page::{PageLayout, PageSize};
 /// use pdf_rs::api::Document;
 ///
 /// let mut doc = Document::new();
-/// doc.text("Hello, World!");
+/// doc.text_at("Hello, World!", [72.0, 700.0]);
 /// doc.save("hello.pdf").unwrap();
 /// ```
 pub struct Document {
     /// PDF object context
     context: PdfContext,
     /// Current page size
-    page_size: PageSize,
+    pub(crate) page_size: PageSize,
     /// Current page layout
-    page_layout: PageLayout,
+    pub(crate) page_layout: PageLayout,
     /// Pages (content builders)
     pages: Vec<PageData>,
     /// Current page index
@@ -65,7 +67,7 @@ pub struct Document {
     /// Current font name
     current_font: String,
     /// Current font size
-    current_font_size: f64,
+    pub(crate) current_font_size: f64,
     /// Whether current font is embedded (TrueType)
     current_font_embedded: bool,
     /// Document info
@@ -262,7 +264,7 @@ impl Document {
     /// use pdf_rs::api::Document;
     ///
     /// Document::generate("hello.pdf", |doc| {
-    ///     doc.text("Hello, World!");
+    ///     doc.text_at("Hello, World!", [72.0, 700.0]);
     ///     Ok(())
     /// }).unwrap();
     /// ```
@@ -401,47 +403,6 @@ impl Document {
             self.current_font_embedded = false;
         }
         FontBuilder { doc: self }
-    }
-
-    /// Draws text at the current position
-    pub fn text(&mut self, text: &str) -> &mut Self {
-        // Ensure font is registered
-        self.ensure_font(&self.current_font.clone());
-
-        let font_name = self.current_font.clone();
-        let font_size = self.current_font_size;
-        let is_embedded = self.current_font_embedded;
-        let (page_size, page_layout) = {
-            let page = &self.pages[self.current_page];
-            (page.size, page.layout)
-        };
-        let dims = page_size.dimensions(page_layout);
-
-        // Position text at top of page, flowing down
-        let y = dims.1 - 72.0; // 1 inch from top
-        let x = 72.0; // 1 inch from left
-
-        #[cfg(feature = "fonts")]
-        {
-            if is_embedded {
-                self.draw_embedded_text(text, [x, y]);
-                return self;
-            }
-        }
-        #[cfg(not(feature = "fonts"))]
-        {
-            let _ = is_embedded;
-        }
-
-        self.pages[self.current_page]
-            .content
-            .begin_text()
-            .set_font(&font_name, font_size)
-            .move_text_pos(x, y)
-            .show_text(text)
-            .end_text();
-
-        self
     }
 
     /// Draws text at a specific position
@@ -1799,7 +1760,7 @@ mod tests {
     #[test]
     fn test_document_render() {
         let mut doc = Document::new();
-        doc.text("Hello World");
+        doc.text_at("Hello World", [72.0, 700.0]);
         let bytes = doc.render().unwrap();
 
         // Check PDF header
@@ -1815,7 +1776,7 @@ mod tests {
     fn test_document_generate() {
         // This test would write to disk, so we just test the API compiles
         let _ = Document::generate("/tmp/test.pdf", |doc| {
-            doc.text("Test");
+            doc.text_at("Test", [72.0, 700.0]);
             Ok(())
         });
     }
@@ -1909,9 +1870,9 @@ mod tests {
 
         // Create source PDF
         let mut source = Document::new();
-        source.text("Source Page 1");
+        source.text_at("Source Page 1", [72.0, 700.0]);
         source.start_new_page();
-        source.text("Source Page 2");
+        source.text_at("Source Page 2", [72.0, 700.0]);
         let source_bytes = source.render().unwrap();
 
         // Load and embed
@@ -1930,11 +1891,11 @@ mod tests {
 
         // Create source PDF with 3 pages
         let mut source = Document::new();
-        source.text("Page 1");
+        source.text_at("Page 1", [72.0, 700.0]);
         source.start_new_page();
-        source.text("Page 2");
+        source.text_at("Page 2", [72.0, 700.0]);
         source.start_new_page();
-        source.text("Page 3");
+        source.text_at("Page 3", [72.0, 700.0]);
         let source_bytes = source.render().unwrap();
 
         // Load and embed all
@@ -1951,7 +1912,7 @@ mod tests {
 
         // Create source PDF
         let mut source = Document::new();
-        source.text("Source content");
+        source.text_at("Source content", [72.0, 700.0]);
         let source_bytes = source.render().unwrap();
 
         // Load, embed, and draw
@@ -2174,7 +2135,7 @@ mod tests {
 
         // Create source PDF with A4 page
         let mut source = Document::new();
-        source.text("A4 content");
+        source.text_at("A4 content", [72.0, 700.0]);
         let source_bytes = source.render().unwrap();
 
         // Load, embed, and draw with fit
@@ -2195,11 +2156,11 @@ mod tests {
 
         // Create source PDF with 3 pages
         let mut source = Document::new();
-        source.text("Page 1");
+        source.text_at("Page 1", [72.0, 700.0]);
         source.start_new_page();
-        source.text("Page 2");
+        source.text_at("Page 2", [72.0, 700.0]);
         source.start_new_page();
-        source.text("Page 3");
+        source.text_at("Page 3", [72.0, 700.0]);
         let source_bytes = source.render().unwrap();
 
         // Copy pages 0 and 2
@@ -2220,9 +2181,9 @@ mod tests {
 
         // Create source PDF with 2 pages
         let mut source = Document::new();
-        source.text("Source Page 1");
+        source.text_at("Source Page 1", [72.0, 700.0]);
         source.start_new_page();
-        source.text("Source Page 2");
+        source.text_at("Source Page 2", [72.0, 700.0]);
         let source_bytes = source.render().unwrap();
 
         // Copy all pages
@@ -2243,19 +2204,19 @@ mod tests {
 
         // Create first source PDF
         let mut source1 = Document::new();
-        source1.text("Document 1 - Page 1");
+        source1.text_at("Document 1 - Page 1", [72.0, 700.0]);
         let source1_bytes = source1.render().unwrap();
 
         // Create second source PDF
         let mut source2 = Document::new();
-        source2.text("Document 2 - Page 1");
+        source2.text_at("Document 2 - Page 1", [72.0, 700.0]);
         source2.start_new_page();
-        source2.text("Document 2 - Page 2");
+        source2.text_at("Document 2 - Page 2", [72.0, 700.0]);
         let source2_bytes = source2.render().unwrap();
 
         // Merge both PDFs
         let mut doc = Document::new();
-        doc.text("Merged Document - Cover");
+        doc.text_at("Merged Document - Cover", [72.0, 700.0]);
 
         let mut loaded1 = LoadedDocument::load(source1_bytes).unwrap();
         doc.copy_all_pages(&mut loaded1).unwrap();

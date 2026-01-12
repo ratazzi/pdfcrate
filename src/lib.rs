@@ -7,7 +7,7 @@
 //!
 //! fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //!     Document::generate("hello.pdf", |doc| {
-//!         doc.text("Hello, World!");
+//!         doc.text_at("Hello, World!", [72.0, 700.0]);
 //!         Ok(())
 //!     })?;
 //!     Ok(())
@@ -45,6 +45,7 @@ pub use error::{Error, Result};
 /// Prelude module for convenient imports
 pub mod prelude {
     pub use crate::api::image::{EmbeddedImage, ImageOptions, Position};
+    pub use crate::api::layout::{BoundingBox, LayoutDocument, Margin};
     pub use crate::api::page::{PageLayout, PageSize};
     pub use crate::api::Document;
     pub use crate::content::{LineCap, LineJoin};

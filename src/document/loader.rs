@@ -451,7 +451,7 @@ mod tests {
         let mut doc = Document::new();
         doc.title("Test Document");
         doc.author("Test Author");
-        doc.text("Hello, World!");
+        doc.text_at("Hello, World!", [72.0, 700.0]);
         let pdf_data = doc.render().unwrap();
 
         // Load it back
@@ -476,11 +476,11 @@ mod tests {
 
         // Generate a multi-page PDF
         let mut doc = Document::new();
-        doc.text("Page 1");
+        doc.text_at("Page 1", [72.0, 700.0]);
         doc.start_new_page();
-        doc.text("Page 2");
+        doc.text_at("Page 2", [72.0, 700.0]);
         doc.start_new_page();
-        doc.text("Page 3");
+        doc.text_at("Page 3", [72.0, 700.0]);
         let pdf_data = doc.render().unwrap();
 
         // Load it back

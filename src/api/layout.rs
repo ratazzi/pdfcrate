@@ -1,0 +1,897 @@
+//! Layout system for Prawn-style document creation
+//!
+//! This module provides a wrapper around `Document` that adds cursor-based
+//! layout functionality, allowing text and graphics to flow automatically
+//! without manual coordinate calculations.
+//!
+//! # Example
+//!
+//! ```rust,no_run
+//! use pdf_rs::api::{Document, LayoutDocument, Margin};
+//!
+//! let doc = Document::new();
+//! let mut layout = LayoutDocument::new(doc);
+//!
+//! layout.font("Helvetica").size(24.0);
+//! layout.text("Hello, World!");  // Draws at cursor, cursor moves down
+//! layout.move_down(20.0);
+//! layout.text("Next paragraph");
+//! ```
+
+use std::ops::{Deref, DerefMut};
+
+use super::Document;
+
+/// Page margins in points
+///
+/// Default is 36pt (0.5 inch) on all sides, matching Prawn's default.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Margin {
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub left: f64,
+}
+
+impl Margin {
+    /// Creates margins with the same value on all sides
+    pub fn all(value: f64) -> Self {
+        Self {
+            top: value,
+            right: value,
+            bottom: value,
+            left: value,
+        }
+    }
+
+    /// Creates margins with vertical (top/bottom) and horizontal (left/right) values
+    pub fn symmetric(vertical: f64, horizontal: f64) -> Self {
+        Self {
+            top: vertical,
+            right: horizontal,
+            bottom: vertical,
+            left: horizontal,
+        }
+    }
+
+    /// Creates margins with individual values (top, right, bottom, left)
+    pub fn new(top: f64, right: f64, bottom: f64, left: f64) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
+    }
+
+    /// Creates zero margins
+    pub fn zero() -> Self {
+        Self::all(0.0)
+    }
+}
+
+impl Default for Margin {
+    /// Default margin is 36pt (0.5 inch) on all sides
+    fn default() -> Self {
+        Self::all(36.0)
+    }
+}
+
+/// A bounding box defining a rectangular region for layout
+///
+/// Coordinates use PDF's coordinate system where (0,0) is at the bottom-left
+/// of the page and Y increases upward.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoundingBox {
+    /// Absolute x coordinate of the left edge
+    x: f64,
+    /// Absolute y coordinate of the top edge
+    y: f64,
+    /// Width of the bounding box
+    width: f64,
+    /// Fixed height, or None for stretchy box
+    height: Option<f64>,
+    /// Actual height used (for stretchy boxes)
+    stretched_height: f64,
+    /// Left padding (for indent)
+    left_padding: f64,
+    /// Right padding (for indent)
+    right_padding: f64,
+}
+
+impl BoundingBox {
+    /// Creates a new bounding box
+    pub fn new(x: f64, y: f64, width: f64, height: Option<f64>) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            stretched_height: 0.0,
+            left_padding: 0.0,
+            right_padding: 0.0,
+        }
+    }
+
+    // === Relative coordinates (relative to this box's origin) ===
+
+    /// Left edge in relative coordinates (always 0)
+    pub fn left(&self) -> f64 {
+        0.0
+    }
+
+    /// Right edge in relative coordinates
+    pub fn right(&self) -> f64 {
+        self.width
+    }
+
+    /// Top edge in relative coordinates
+    pub fn top(&self) -> f64 {
+        self.height()
+    }
+
+    /// Bottom edge in relative coordinates (always 0)
+    pub fn bottom(&self) -> f64 {
+        0.0
+    }
+
+    /// Top-left corner in relative coordinates
+    pub fn top_left(&self) -> [f64; 2] {
+        [self.left(), self.top()]
+    }
+
+    /// Top-right corner in relative coordinates
+    pub fn top_right(&self) -> [f64; 2] {
+        [self.right(), self.top()]
+    }
+
+    /// Bottom-left corner in relative coordinates
+    pub fn bottom_left(&self) -> [f64; 2] {
+        [self.left(), self.bottom()]
+    }
+
+    /// Bottom-right corner in relative coordinates
+    pub fn bottom_right(&self) -> [f64; 2] {
+        [self.right(), self.bottom()]
+    }
+
+    // === Absolute coordinates (page coordinates) ===
+
+    /// Absolute left x coordinate
+    pub fn absolute_left(&self) -> f64 {
+        self.x + self.left_padding
+    }
+
+    /// Absolute right x coordinate
+    pub fn absolute_right(&self) -> f64 {
+        self.x + self.width - self.right_padding
+    }
+
+    /// Absolute top y coordinate
+    pub fn absolute_top(&self) -> f64 {
+        self.y
+    }
+
+    /// Absolute bottom y coordinate
+    pub fn absolute_bottom(&self) -> f64 {
+        self.y - self.height()
+    }
+
+    /// Absolute top-left corner
+    pub fn absolute_top_left(&self) -> [f64; 2] {
+        [self.absolute_left(), self.absolute_top()]
+    }
+
+    /// Absolute top-right corner
+    pub fn absolute_top_right(&self) -> [f64; 2] {
+        [self.absolute_right(), self.absolute_top()]
+    }
+
+    /// Absolute bottom-left corner
+    pub fn absolute_bottom_left(&self) -> [f64; 2] {
+        [self.absolute_left(), self.absolute_bottom()]
+    }
+
+    /// Absolute bottom-right corner
+    pub fn absolute_bottom_right(&self) -> [f64; 2] {
+        [self.absolute_right(), self.absolute_bottom()]
+    }
+
+    // === Properties ===
+
+    /// Width of the bounding box
+    pub fn width(&self) -> f64 {
+        self.width - self.left_padding - self.right_padding
+    }
+
+    /// Height of the bounding box
+    ///
+    /// For fixed-height boxes, returns the fixed height.
+    /// For stretchy boxes, returns the actual height used so far.
+    pub fn height(&self) -> f64 {
+        self.height.unwrap_or(self.stretched_height)
+    }
+
+    /// Returns true if this is a stretchy (auto-height) box
+    pub fn stretchy(&self) -> bool {
+        self.height.is_none()
+    }
+
+    /// Updates the stretched height based on cursor position
+    pub(crate) fn update_stretched_height(&mut self, cursor_y: f64) {
+        if self.stretchy() {
+            let used = self.y - cursor_y;
+            self.stretched_height = self.stretched_height.max(used);
+        }
+    }
+
+    /// Adds left padding (for indent)
+    pub(crate) fn add_left_padding(&mut self, padding: f64) {
+        self.left_padding += padding;
+    }
+
+    /// Adds right padding (for indent)
+    pub(crate) fn add_right_padding(&mut self, padding: f64) {
+        self.right_padding += padding;
+    }
+
+    /// Removes left padding
+    pub(crate) fn subtract_left_padding(&mut self, padding: f64) {
+        self.left_padding -= padding;
+    }
+
+    /// Removes right padding
+    pub(crate) fn subtract_right_padding(&mut self, padding: f64) {
+        self.right_padding -= padding;
+    }
+}
+
+/// Internal layout state
+struct LayoutState {
+    /// Current y position (cursor)
+    cursor_y: f64,
+    /// Stack of bounding boxes (innermost last)
+    bounds_stack: Vec<BoundingBox>,
+    /// Page margins (reserved for future auto-pagination)
+    #[allow(dead_code)]
+    margin: Margin,
+}
+
+impl LayoutState {
+    fn new(margin: Margin, page_width: f64, page_height: f64) -> Self {
+        // Create the margin box as the default bounding box
+        let margin_box = BoundingBox::new(
+            margin.left,
+            page_height - margin.top,
+            page_width - margin.left - margin.right,
+            Some(page_height - margin.top - margin.bottom),
+        );
+
+        let cursor_y = margin_box.absolute_top();
+
+        Self {
+            cursor_y,
+            bounds_stack: vec![margin_box],
+            margin,
+        }
+    }
+
+    fn bounds(&self) -> &BoundingBox {
+        self.bounds_stack
+            .last()
+            .expect("bounds stack should never be empty")
+    }
+
+    fn bounds_mut(&mut self) -> &mut BoundingBox {
+        self.bounds_stack
+            .last_mut()
+            .expect("bounds stack should never be empty")
+    }
+}
+
+/// A document with layout capabilities
+///
+/// This wraps a `Document` and adds cursor-based layout, allowing
+/// content to flow automatically without manual coordinate calculations.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdf_rs::api::{Document, LayoutDocument};
+///
+/// // Create from existing document
+/// let doc = Document::new();
+/// let mut layout = LayoutDocument::new(doc);
+///
+/// // Use layout methods
+/// layout.text("Hello!");
+/// layout.move_down(20.0);
+/// layout.text("World!");
+///
+/// // Document methods still work via Deref
+/// layout.title("My Document");
+/// layout.save("output.pdf").unwrap();
+/// ```
+pub struct LayoutDocument {
+    inner: Document,
+    state: LayoutState,
+}
+
+impl LayoutDocument {
+    /// Creates a new LayoutDocument wrapping the given Document
+    ///
+    /// Uses default margins (36pt / 0.5 inch on all sides).
+    pub fn new(doc: Document) -> Self {
+        Self::with_margin(doc, Margin::default())
+    }
+
+    /// Creates a new LayoutDocument with custom margins
+    pub fn with_margin(doc: Document, margin: Margin) -> Self {
+        let (width, height) = {
+            let dims = doc.page_size.dimensions(doc.page_layout);
+            (dims.0, dims.1)
+        };
+
+        Self {
+            state: LayoutState::new(margin, width, height),
+            inner: doc,
+        }
+    }
+
+    /// Unwraps the LayoutDocument and returns the inner Document
+    pub fn into_inner(self) -> Document {
+        self.inner
+    }
+
+    /// Returns a reference to the inner Document
+    pub fn inner(&self) -> &Document {
+        &self.inner
+    }
+
+    /// Returns a mutable reference to the inner Document
+    pub fn inner_mut(&mut self) -> &mut Document {
+        &mut self.inner
+    }
+
+    // === Cursor methods ===
+
+    /// Returns the current cursor y position (absolute page coordinates)
+    pub fn cursor(&self) -> f64 {
+        self.state.cursor_y
+    }
+
+    /// Moves the cursor down by the specified amount
+    pub fn move_down(&mut self, amount: f64) -> &mut Self {
+        self.state.cursor_y -= amount;
+        self
+    }
+
+    /// Moves the cursor up by the specified amount
+    pub fn move_up(&mut self, amount: f64) -> &mut Self {
+        self.state.cursor_y += amount;
+        self
+    }
+
+    /// Moves the cursor to the specified y position (relative to bounds top)
+    pub fn move_cursor_to(&mut self, y: f64) -> &mut Self {
+        let top = self.state.bounds().absolute_top();
+        self.state.cursor_y = top - y;
+        self
+    }
+
+    // === Bounds methods ===
+
+    /// Returns the current bounding box
+    pub fn bounds(&self) -> &BoundingBox {
+        self.state.bounds()
+    }
+
+    /// Draws the current bounding box outline (for debugging)
+    pub fn stroke_bounds(&mut self) -> &mut Self {
+        let bounds = self.state.bounds();
+        let x = bounds.absolute_left();
+        let y = bounds.absolute_bottom();
+        let w = bounds.width();
+        let h = bounds.height();
+
+        self.inner.stroke(|ctx| {
+            ctx.rectangle([x, y], w, h);
+        });
+        self
+    }
+
+    // === Text methods ===
+
+    /// Draws text at the current cursor position
+    ///
+    /// The cursor is moved down by the line height after drawing.
+    /// Text is not wrapped - use `text_wrap` for automatic wrapping.
+    pub fn text(&mut self, text: &str) -> &mut Self {
+        let x = self.state.bounds().absolute_left();
+        let y = self.state.cursor_y;
+
+        // Draw text at cursor position
+        self.inner.text_at(text, [x, y]);
+
+        // Move cursor down by line height (font size + leading)
+        let line_height = self.inner.current_font_size * 1.2; // Default leading
+        self.state.cursor_y -= line_height;
+
+        // Update stretched height if in stretchy box
+        let cursor_y = self.state.cursor_y;
+        self.state.bounds_mut().update_stretched_height(cursor_y);
+
+        self
+    }
+
+    // === Layout methods ===
+
+    /// Executes a block without affecting the cursor position
+    ///
+    /// After the block executes, the cursor returns to its original position.
+    pub fn float<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        let saved_cursor = self.state.cursor_y;
+        f(self);
+        self.state.cursor_y = saved_cursor;
+        self
+    }
+
+    /// Temporarily indents content from left and/or right
+    pub fn indent<F>(&mut self, left: f64, right: f64, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.state.bounds_mut().add_left_padding(left);
+        self.state.bounds_mut().add_right_padding(right);
+        f(self);
+        self.state.bounds_mut().subtract_left_padding(left);
+        self.state.bounds_mut().subtract_right_padding(right);
+        self
+    }
+
+    /// Adds vertical padding before and after the block
+    pub fn pad<F>(&mut self, amount: f64, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.move_down(amount);
+        f(self);
+        self.move_down(amount);
+        self
+    }
+
+    /// Adds vertical padding before the block
+    pub fn pad_top<F>(&mut self, amount: f64, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.move_down(amount);
+        f(self);
+        self
+    }
+
+    /// Adds vertical padding after the block
+    pub fn pad_bottom<F>(&mut self, amount: f64, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        f(self);
+        self.move_down(amount);
+        self
+    }
+
+    // === Bounding Box methods ===
+
+    /// Creates a nested bounding box for layout
+    ///
+    /// Content inside the bounding box uses coordinates relative to the box.
+    /// After the closure executes, the cursor moves below the bounding box.
+    ///
+    /// # Arguments
+    ///
+    /// * `point` - Position of the box's top-left corner:
+    ///   - `point[0]`: x offset from current bounds left edge
+    ///   - `point[1]`: y offset downward from current cursor position
+    ///     (e.g., `[0.0, 0.0]` = at cursor, `[50.0, 20.0]` = 50pt right, 20pt below cursor)
+    /// * `width` - Width of the bounding box
+    /// * `height` - Fixed height, or `None` for stretchy box that grows with content
+    /// * `f` - Closure to execute within the bounding box
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::{Document, LayoutDocument};
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    ///
+    /// layout.text("Before box");
+    ///
+    /// // Box at current cursor position
+    /// layout.bounding_box([0.0, 0.0], 200.0, Some(100.0), |doc| {
+    ///     doc.text("Inside the box");
+    ///     doc.stroke_bounds();
+    /// });
+    ///
+    /// // Stretchy box (height determined by content)
+    /// layout.bounding_box([0.0, 0.0], 200.0, None, |doc| {
+    ///     doc.text("Line 1");
+    ///     doc.text("Line 2");
+    /// });
+    /// ```
+    pub fn bounding_box<F>(
+        &mut self,
+        point: [f64; 2],
+        width: f64,
+        height: Option<f64>,
+        f: F,
+    ) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        let parent = self.state.bounds();
+
+        // Calculate absolute coordinates
+        // point[0] is x offset from parent's left edge
+        // point[1] is y offset downward from cursor
+        let abs_x = parent.absolute_left() + point[0];
+        let abs_y = self.state.cursor_y - point[1]; // Always relative to cursor
+
+        let bbox = BoundingBox::new(abs_x, abs_y, width, height);
+
+        // Push to stack
+        self.state.bounds_stack.push(bbox);
+
+        // Save cursor, set new cursor to bbox top
+        let old_cursor = self.state.cursor_y;
+        self.state.cursor_y = abs_y;
+
+        // Execute closure
+        f(self);
+
+        // Update stretched height before popping
+        let cursor_y = self.state.cursor_y;
+        if let Some(bbox) = self.state.bounds_stack.last_mut() {
+            bbox.update_stretched_height(cursor_y);
+        }
+
+        // Pop and get the finished bbox
+        let finished_bbox = self.state.bounds_stack.pop().unwrap();
+
+        // Update parent cursor position
+        if height.is_some() {
+            // Fixed height: cursor moves to below the fixed-height box
+            self.state.cursor_y = abs_y - height.unwrap();
+        } else {
+            // Stretchy: cursor is at the bottom of content
+            self.state.cursor_y = abs_y - finished_bbox.height();
+        }
+
+        // If cursor moved below old cursor, keep the new position
+        // Otherwise, restore to maintain flow from before the box
+        if self.state.cursor_y > old_cursor {
+            self.state.cursor_y = old_cursor;
+        }
+
+        self
+    }
+
+    /// Sets the cursor to a specific absolute y position
+    pub fn set_cursor(&mut self, y: f64) -> &mut Self {
+        self.state.cursor_y = y;
+        self
+    }
+}
+
+// Allow LayoutDocument to be used like Document
+impl Deref for LayoutDocument {
+    type Target = Document;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for LayoutDocument {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_margin_default() {
+        let margin = Margin::default();
+        assert_eq!(margin.top, 36.0);
+        assert_eq!(margin.right, 36.0);
+        assert_eq!(margin.bottom, 36.0);
+        assert_eq!(margin.left, 36.0);
+    }
+
+    #[test]
+    fn test_margin_all() {
+        let margin = Margin::all(72.0);
+        assert_eq!(margin.top, 72.0);
+        assert_eq!(margin.right, 72.0);
+        assert_eq!(margin.bottom, 72.0);
+        assert_eq!(margin.left, 72.0);
+    }
+
+    #[test]
+    fn test_margin_symmetric() {
+        let margin = Margin::symmetric(50.0, 100.0);
+        assert_eq!(margin.top, 50.0);
+        assert_eq!(margin.bottom, 50.0);
+        assert_eq!(margin.left, 100.0);
+        assert_eq!(margin.right, 100.0);
+    }
+
+    #[test]
+    fn test_bounding_box_fixed() {
+        let bbox = BoundingBox::new(72.0, 720.0, 468.0, Some(648.0));
+
+        assert_eq!(bbox.absolute_left(), 72.0);
+        assert_eq!(bbox.absolute_right(), 540.0); // 72 + 468
+        assert_eq!(bbox.absolute_top(), 720.0);
+        assert_eq!(bbox.absolute_bottom(), 72.0); // 720 - 648
+
+        assert_eq!(bbox.left(), 0.0);
+        assert_eq!(bbox.right(), 468.0);
+        assert_eq!(bbox.top(), 648.0);
+        assert_eq!(bbox.bottom(), 0.0);
+
+        assert!(!bbox.stretchy());
+    }
+
+    #[test]
+    fn test_bounding_box_stretchy() {
+        let mut bbox = BoundingBox::new(72.0, 720.0, 468.0, None);
+        assert!(bbox.stretchy());
+        assert_eq!(bbox.height(), 0.0);
+
+        // Simulate cursor moving down
+        bbox.update_stretched_height(620.0); // cursor moved from 720 to 620
+        assert_eq!(bbox.height(), 100.0);
+
+        bbox.update_stretched_height(520.0); // cursor moved further
+        assert_eq!(bbox.height(), 200.0);
+    }
+
+    #[test]
+    fn test_layout_document_cursor() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Cursor should start at top of margin box
+        // A4 size: 595.28 x 841.89, margin 36pt
+        // Top of margin box = 841.89 - 36 = 805.89
+        let initial_cursor = layout.cursor();
+        assert!((initial_cursor - 805.89).abs() < 0.01);
+
+        // Move down
+        layout.move_down(100.0);
+        assert!((layout.cursor() - 705.89).abs() < 0.01);
+
+        // Move up
+        layout.move_up(50.0);
+        assert!((layout.cursor() - 755.89).abs() < 0.01);
+
+        // Move to specific position (relative to bounds top)
+        layout.move_cursor_to(200.0);
+        assert!((layout.cursor() - 605.89).abs() < 0.01); // 805.89 - 200
+    }
+
+    #[test]
+    fn test_layout_document_bounds() {
+        let doc = Document::new();
+        let layout = LayoutDocument::new(doc);
+
+        let bounds = layout.bounds();
+
+        // A4 size: 595.28 x 841.89, margin 36pt
+        assert_eq!(bounds.absolute_left(), 36.0);
+        assert!((bounds.absolute_right() - 559.28).abs() < 0.01); // 595.28 - 36
+        assert!((bounds.absolute_top() - 805.89).abs() < 0.01); // 841.89 - 36
+        assert_eq!(bounds.absolute_bottom(), 36.0);
+
+        assert!((bounds.width() - 523.28).abs() < 0.01); // 595.28 - 36 - 36
+        assert!((bounds.height() - 769.89).abs() < 0.01); // 841.89 - 36 - 36
+    }
+
+    #[test]
+    fn test_layout_document_text() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.font("Helvetica").size(12.0);
+        let cursor_before = layout.cursor();
+
+        layout.text("Hello, World!");
+
+        // Cursor should have moved down by line height
+        let expected_line_height = 12.0 * 1.2;
+        assert_eq!(layout.cursor(), cursor_before - expected_line_height);
+    }
+
+    #[test]
+    fn test_layout_document_float() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        let cursor_before = layout.cursor();
+
+        layout.float(|doc| {
+            doc.move_down(200.0);
+            // Cursor is now 200pt lower
+        });
+
+        // After float, cursor should be restored
+        assert_eq!(layout.cursor(), cursor_before);
+    }
+
+    #[test]
+    fn test_layout_document_indent() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        let original_left = layout.bounds().absolute_left();
+        let original_right = layout.bounds().absolute_right();
+
+        layout.indent(50.0, 30.0, |doc| {
+            assert_eq!(doc.bounds().absolute_left(), original_left + 50.0);
+            assert_eq!(doc.bounds().absolute_right(), original_right - 30.0);
+        });
+
+        // After indent, bounds should be restored
+        assert_eq!(layout.bounds().absolute_left(), original_left);
+        assert_eq!(layout.bounds().absolute_right(), original_right);
+    }
+
+    #[test]
+    fn test_layout_document_pad() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        let cursor_before = layout.cursor();
+
+        layout.pad(20.0, |doc| {
+            // Inside pad, cursor has moved down by 20
+            assert_eq!(doc.cursor(), cursor_before - 20.0);
+        });
+
+        // After pad, cursor should have moved down by 40 total
+        assert_eq!(layout.cursor(), cursor_before - 40.0);
+    }
+
+    #[test]
+    fn test_layout_document_deref() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Should be able to use Document methods via Deref
+        layout.title("Test Document");
+        layout.author("Test Author");
+
+        // text_at should work
+        layout.text_at("Absolute position", [100.0, 500.0]);
+    }
+
+    #[test]
+    fn test_layout_document_render() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.font("Helvetica").size(24.0);
+        layout.text("Hello, World!");
+        layout.move_down(20.0);
+        layout.text("This is a test.");
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_layout_document_custom_margin() {
+        let doc = Document::new();
+        let layout = LayoutDocument::with_margin(doc, Margin::all(72.0));
+
+        let bounds = layout.bounds();
+
+        // A4 size: 595.28 x 841.89, margin 72pt
+        assert_eq!(bounds.absolute_left(), 72.0);
+        assert!((bounds.absolute_right() - 523.28).abs() < 0.01); // 595.28 - 72
+        assert!((bounds.absolute_top() - 769.89).abs() < 0.01); // 841.89 - 72
+        assert_eq!(bounds.absolute_bottom(), 72.0);
+    }
+
+    #[test]
+    fn test_bounding_box_fixed_height() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        let initial_cursor = layout.cursor();
+
+        // Create a fixed-height bounding box at cursor position
+        layout.bounding_box([50.0, 0.0], 200.0, Some(150.0), |doc| {
+            // Inside the box, bounds should reflect the new box
+            let inner_bounds = doc.bounds();
+            assert_eq!(inner_bounds.absolute_left(), 36.0 + 50.0); // margin + offset
+            assert!((inner_bounds.width() - 200.0).abs() < 0.01);
+            assert!((inner_bounds.height() - 150.0).abs() < 0.01);
+
+            doc.text("Inside box");
+        });
+
+        // After the box, cursor should be below the box
+        // Box top was at cursor (initial_cursor - 0 offset)
+        // Box bottom is at: initial_cursor - 150 (fixed height)
+        let expected_cursor = initial_cursor - 150.0;
+        assert!((layout.cursor() - expected_cursor).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_bounding_box_method_stretchy() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.font("Helvetica").size(12.0);
+        let initial_cursor = layout.cursor();
+
+        // Create a stretchy bounding box at cursor position
+        layout.bounding_box([0.0, 0.0], 200.0, None, |doc| {
+            doc.text("Line 1");
+            doc.text("Line 2");
+            doc.text("Line 3");
+        });
+
+        // The box should have stretched to fit 3 lines
+        // Each line is 12.0 * 1.2 = 14.4pt
+        // Total height should be about 43.2pt
+        let expected_height = 12.0 * 1.2 * 3.0;
+        assert!((initial_cursor - layout.cursor() - expected_height).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_bounding_box_method_nested() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        let outer_left = layout.bounds().absolute_left();
+
+        // Outer box at cursor position
+        layout.bounding_box([20.0, 0.0], 300.0, Some(200.0), |doc| {
+            let inner_bounds = doc.bounds();
+            assert_eq!(inner_bounds.absolute_left(), outer_left + 20.0);
+
+            // Nested bounding box (offset from inner cursor)
+            doc.bounding_box([30.0, 0.0], 150.0, Some(100.0), |doc| {
+                let nested_bounds = doc.bounds();
+                assert_eq!(nested_bounds.absolute_left(), outer_left + 20.0 + 30.0);
+                assert!((nested_bounds.width() - 150.0).abs() < 0.01);
+                assert!((nested_bounds.height() - 100.0).abs() < 0.01);
+
+                doc.text("Deeply nested");
+            });
+        });
+    }
+
+    #[test]
+    fn test_bounding_box_with_stroke() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.bounding_box([50.0, 50.0], 200.0, Some(100.0), |doc| {
+            doc.stroke_bounds();
+            doc.text("Boxed content");
+        });
+
+        // Should render without errors
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+}
