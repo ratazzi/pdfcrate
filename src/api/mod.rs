@@ -980,14 +980,62 @@ impl Document {
     }
 
     // =========================================================================
-    // SVG API (path-only)
+    // SVG API
     // =========================================================================
+
+    /// Renders an SVG at the specified position and size.
+    ///
+    /// This method supports SVG paths and basic shapes (rect, circle, ellipse, etc.),
+    /// which are automatically converted to paths. The SVG is rendered directly into
+    /// the PDF content stream.
+    ///
+    /// # Supported Features
+    ///
+    /// - Paths (`<path>`)
+    /// - Basic shapes (`<rect>`, `<circle>`, `<ellipse>`, `<line>`, `<polygon>`, `<polyline>`)
+    /// - Fill and stroke with RGB colors
+    /// - Stroke styles (width, linecap, linejoin, dasharray)
+    /// - Transforms (translate, rotate, scale, matrix)
+    /// - Nested groups (`<g>`)
+    /// - Fill rules (even-odd, non-zero)
+    ///
+    /// # Unsupported Features
+    ///
+    /// - Gradients (linearGradient, radialGradient)
+    /// - Patterns
+    /// - Images (`<image>`)
+    /// - Text (`<text>`)
+    /// - Filters and effects
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::prelude::*;
+    ///
+    /// let mut doc = Document::new();
+    /// let svg = r#"
+    ///     <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+    ///         <rect x="10" y="10" width="80" height="80" fill="red"/>
+    ///     </svg>
+    /// "#;
+    /// doc.draw_svg(svg, [100.0, 700.0], 200.0, 200.0)?;
+    /// # Ok::<(), pdf_rs::Error>(())
+    /// ```
+    ///
+    /// Requires the `svg` feature.
+    #[cfg(feature = "svg")]
+    pub fn draw_svg(&mut self, svg: &str, pos: [f64; 2], width: f64, height: f64) -> Result<()> {
+        let content = &mut self.pages[self.current_page].content;
+        crate::svg::render_svg_paths(content, svg, pos, width, height)
+    }
 
     /// Renders SVG paths at the specified position and size.
     ///
-    /// This currently supports path-only SVGs (basic shapes are converted to paths).
-    /// Requires the `svg` feature.
+    /// **Deprecated**: Use [`draw_svg`](Self::draw_svg) instead.
+    ///
+    /// This method is kept for backward compatibility but will be removed in a future version.
     #[cfg(feature = "svg")]
+    #[deprecated(note = "Use draw_svg instead")]
     pub fn draw_svg_paths(
         &mut self,
         svg: &str,
@@ -995,8 +1043,7 @@ impl Document {
         width: f64,
         height: f64,
     ) -> Result<()> {
-        let content = &mut self.pages[self.current_page].content;
-        crate::svg::render_svg_paths(content, svg, pos, width, height)
+        self.draw_svg(svg, pos, width, height)
     }
 
     /// Strokes a path using a closure

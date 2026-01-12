@@ -818,11 +818,11 @@ fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("SVG Barcode", [margin, 800.0]);
 
     doc.font("Helvetica").size(11.0);
-    doc.text_at("Page 10: path-only SVG rendering", [margin, 780.0]);
+    doc.text_at("Page 10: SVG rendering", [margin, 780.0]);
 
     doc.font("Helvetica").size(12.0);
     doc.text_at(
-        "The barcode below is drawn from SVG paths (rects are converted to paths).",
+        "The barcode below is drawn from SVG (basic shapes are converted to paths).",
         [margin, 720.0],
     );
 
@@ -878,7 +878,7 @@ fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
         );
     });
 
-    doc.draw_svg_paths(barcode_svg, [x, y], target_width, target_height)?;
+    doc.draw_svg(barcode_svg, [x, y], target_width, target_height)?;
 
     doc.font("Helvetica").size(10.0);
     doc.text_at(
