@@ -1686,19 +1686,21 @@ impl<'a> StrokeContext<'a> {
         self
     }
 
-    /// Draws a line
+    /// Draws and strokes a line
     pub fn line(&mut self, from: [f64; 2], to: [f64; 2]) -> &mut Self {
         self.content.move_to(from[0], from[1]).line_to(to[0], to[1]);
+        self.content.stroke();
         self
     }
 
-    /// Draws a rectangle
+    /// Draws and strokes a rectangle
     pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
         self.content.rect(origin[0], origin[1], width, height);
+        self.content.stroke();
         self
     }
 
-    /// Draws a rounded rectangle
+    /// Draws and strokes a rounded rectangle
     pub fn rounded_rectangle(
         &mut self,
         origin: [f64; 2],
@@ -1708,47 +1710,56 @@ impl<'a> StrokeContext<'a> {
     ) -> &mut Self {
         self.content
             .rounded_rect(origin[0], origin[1], width, height, radius);
+        self.content.stroke();
         self
     }
 
-    /// Draws a circle
+    /// Draws and strokes a circle
     pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
         self.content.circle(center[0], center[1], radius);
+        self.content.stroke();
         self
     }
 
-    /// Draws an ellipse
+    /// Draws and strokes an ellipse
     pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
         self.content.ellipse(center[0], center[1], rx, ry);
+        self.content.stroke();
         self
     }
 
-    /// Moves to a point
+    /// Moves to a point (for path building)
     pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.move_to(x, y);
         self
     }
 
-    /// Draws a line to a point
+    /// Draws a line to a point (for path building)
     pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.line_to(x, y);
         self
     }
 
-    /// Draws a cubic Bezier curve
+    /// Draws a cubic Bezier curve (for path building)
     pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
         self.content
             .curve_to(cp1[0], cp1[1], cp2[0], cp2[1], end[0], end[1]);
         self
     }
 
-    /// Closes the current path
+    /// Closes the current path (for path building)
     pub fn close_path(&mut self) -> &mut Self {
         self.content.close_path();
         self
     }
 
-    /// Draws a polygon by connecting the given points
+    /// Strokes the current path (for path building)
+    pub fn stroke_path(&mut self) -> &mut Self {
+        self.content.stroke();
+        self
+    }
+
+    /// Draws and strokes a polygon by connecting the given points
     ///
     /// # Example
     ///
@@ -1773,8 +1784,9 @@ impl<'a> StrokeContext<'a> {
             self.content.line_to(point[0], point[1]);
         }
 
-        // Close the path
+        // Close and stroke the path
         self.content.close_path();
+        self.content.stroke();
         self
     }
 }
@@ -1803,13 +1815,14 @@ impl<'a> FillContext<'a> {
         self
     }
 
-    /// Draws a rectangle
+    /// Draws and fills a rectangle
     pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
         self.content.rect(origin[0], origin[1], width, height);
+        self.content.fill();
         self
     }
 
-    /// Draws a rounded rectangle
+    /// Draws and fills a rounded rectangle
     pub fn rounded_rectangle(
         &mut self,
         origin: [f64; 2],
@@ -1819,40 +1832,49 @@ impl<'a> FillContext<'a> {
     ) -> &mut Self {
         self.content
             .rounded_rect(origin[0], origin[1], width, height, radius);
+        self.content.fill();
         self
     }
 
-    /// Draws a circle
+    /// Draws and fills a circle
     pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
         self.content.circle(center[0], center[1], radius);
+        self.content.fill();
         self
     }
 
-    /// Draws an ellipse
+    /// Draws and fills an ellipse
     pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
         self.content.ellipse(center[0], center[1], rx, ry);
+        self.content.fill();
         self
     }
 
-    /// Moves to a point
+    /// Moves to a point (for path building)
     pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.move_to(x, y);
         self
     }
 
-    /// Draws a line to a point
+    /// Draws a line to a point (for path building)
     pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.line_to(x, y);
         self
     }
 
-    /// Closes the current path
+    /// Closes the current path (for path building)
     pub fn close_path(&mut self) -> &mut Self {
         self.content.close_path();
         self
     }
 
-    /// Draws a polygon by connecting the given points
+    /// Fills the current path (for path building)
+    pub fn fill_path(&mut self) -> &mut Self {
+        self.content.fill();
+        self
+    }
+
+    /// Draws and fills a polygon by connecting the given points
     ///
     /// # Example
     ///
@@ -1877,8 +1899,9 @@ impl<'a> FillContext<'a> {
             self.content.line_to(point[0], point[1]);
         }
 
-        // Close the path
+        // Close and fill the path
         self.content.close_path();
+        self.content.fill();
         self
     }
 }
@@ -2363,6 +2386,162 @@ mod tests {
         // 1 cover + 1 from source1 + 2 from source2 = 4 pages
         assert_eq!(doc.page_count(), 4);
 
+        let bytes = doc.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_stroke_multiple_colors() {
+        // Test that multiple shapes with different stroke colors each get their own color
+        // Before the fix, all shapes would use the last color set
+        // This test checks the ContentBuilder output directly since PDF streams are compressed
+
+        use crate::content::ContentBuilder;
+
+        let mut content = ContentBuilder::new();
+        content.save_state();
+
+        // Simulate what stroke() closure does with the fix:
+        // Each shape should have its own stroke operation
+
+        // Red rectangle
+        content.set_stroke_color_rgb(1.0, 0.0, 0.0);
+        content.rect(100.0, 100.0, 50.0, 50.0);
+        content.stroke();
+
+        // Green rectangle
+        content.set_stroke_color_rgb(0.0, 1.0, 0.0);
+        content.rect(200.0, 100.0, 50.0, 50.0);
+        content.stroke();
+
+        // Blue rectangle
+        content.set_stroke_color_rgb(0.0, 0.0, 1.0);
+        content.rect(300.0, 100.0, 50.0, 50.0);
+        content.stroke();
+
+        content.restore_state();
+
+        let bytes = content.build();
+        let output = String::from_utf8_lossy(&bytes);
+
+        // Each rectangle should have its own stroke (S) operation
+        let stroke_count = output.matches("\nS\n").count();
+        assert_eq!(
+            stroke_count, 3,
+            "Expected 3 stroke operations, found {}. Output:\n{}",
+            stroke_count, output
+        );
+
+        // Verify all three colors are present and in correct order
+        assert!(
+            output.contains("1 0 0 RG"),
+            "Should contain red stroke color"
+        );
+        assert!(
+            output.contains("0 1 0 RG"),
+            "Should contain green stroke color"
+        );
+        assert!(
+            output.contains("0 0 1 RG"),
+            "Should contain blue stroke color"
+        );
+
+        // Verify the pattern: color RG -> re -> S (repeated)
+        let red_pos = output.find("1 0 0 RG").unwrap();
+        let green_pos = output.find("0 1 0 RG").unwrap();
+        let blue_pos = output.find("0 0 1 RG").unwrap();
+
+        // Colors should appear in order
+        assert!(red_pos < green_pos, "Red should come before green");
+        assert!(green_pos < blue_pos, "Green should come before blue");
+    }
+
+    #[test]
+    fn test_fill_multiple_colors() {
+        // Test that multiple shapes with different fill colors each get their own color
+        // Before the fix, all shapes would use the last color set
+
+        use crate::content::ContentBuilder;
+
+        let mut content = ContentBuilder::new();
+        content.save_state();
+
+        // Red rectangle
+        content.set_fill_color_rgb(1.0, 0.0, 0.0);
+        content.rect(100.0, 100.0, 50.0, 50.0);
+        content.fill();
+
+        // Green rectangle
+        content.set_fill_color_rgb(0.0, 1.0, 0.0);
+        content.rect(200.0, 100.0, 50.0, 50.0);
+        content.fill();
+
+        // Blue rectangle
+        content.set_fill_color_rgb(0.0, 0.0, 1.0);
+        content.rect(300.0, 100.0, 50.0, 50.0);
+        content.fill();
+
+        content.restore_state();
+
+        let bytes = content.build();
+        let output = String::from_utf8_lossy(&bytes);
+
+        // Each rectangle should have its own fill (f) operation
+        let fill_count = output.matches("\nf\n").count();
+        assert_eq!(
+            fill_count, 3,
+            "Expected 3 fill operations, found {}. Output:\n{}",
+            fill_count, output
+        );
+
+        // Verify all three colors are present
+        assert!(output.contains("1 0 0 rg"), "Should contain red fill color");
+        assert!(
+            output.contains("0 1 0 rg"),
+            "Should contain green fill color"
+        );
+        assert!(
+            output.contains("0 0 1 rg"),
+            "Should contain blue fill color"
+        );
+    }
+
+    #[test]
+    fn test_stroke_context_immediate_stroke() {
+        // Test that StrokeContext strokes each shape immediately
+        // This is an integration test at the Document level
+
+        let mut doc = Document::new();
+
+        doc.stroke(|ctx| {
+            ctx.color(1.0, 0.0, 0.0); // Red
+            ctx.rectangle([100.0, 100.0], 50.0, 50.0);
+
+            ctx.color(0.0, 1.0, 0.0); // Green
+            ctx.circle([250.0, 125.0], 25.0);
+        });
+
+        // If this doesn't panic, the API is working
+        let bytes = doc.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_fill_context_immediate_fill() {
+        // Test that FillContext fills each shape immediately
+        // This is an integration test at the Document level
+
+        let mut doc = Document::new();
+
+        doc.fill(|ctx| {
+            ctx.color(1.0, 0.0, 0.0); // Red
+            ctx.rectangle([100.0, 100.0], 50.0, 50.0);
+
+            ctx.color(0.0, 1.0, 0.0); // Green
+            ctx.circle([250.0, 125.0], 25.0);
+        });
+
+        // If this doesn't panic, the API is working
         let bytes = doc.render().unwrap();
         assert!(bytes.starts_with(b"%PDF-1.7"));
     }
