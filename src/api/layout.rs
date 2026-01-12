@@ -22,6 +22,25 @@ use std::ops::{Deref, DerefMut};
 
 use super::Document;
 
+/// Text alignment options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextAlign {
+    /// Align text to the left edge
+    Left,
+    /// Center text horizontally
+    Center,
+    /// Align text to the right edge
+    Right,
+    /// Justify text (stretch to fill width, except last line)
+    Justify,
+}
+
+impl Default for TextAlign {
+    fn default() -> Self {
+        TextAlign::Left
+    }
+}
+
 /// Page margins in points
 ///
 /// Default is 36pt (0.5 inch) on all sides, matching Prawn's default.
@@ -255,6 +274,10 @@ struct LayoutState {
     /// Page margins (reserved for future auto-pagination)
     #[allow(dead_code)]
     margin: Margin,
+    /// Current text alignment
+    text_align: TextAlign,
+    /// Current leading (line spacing multiplier)
+    leading: f64,
 }
 
 impl LayoutState {
@@ -273,6 +296,8 @@ impl LayoutState {
             cursor_y,
             bounds_stack: vec![margin_box],
             margin,
+            text_align: TextAlign::Left,
+            leading: 1.2,
         }
     }
 
@@ -402,19 +427,56 @@ impl LayoutDocument {
 
     // === Text methods ===
 
+    /// Sets the text alignment for subsequent text operations
+    pub fn align(&mut self, align: TextAlign) -> &mut Self {
+        self.state.text_align = align;
+        self
+    }
+
+    /// Sets the leading (line spacing multiplier) for subsequent text operations
+    ///
+    /// Default is 1.2 (20% spacing between lines).
+    /// Leading is multiplied by the font size to determine the line height.
+    pub fn leading(&mut self, leading: f64) -> &mut Self {
+        self.state.leading = leading;
+        self
+    }
+
+    /// Returns the current line height based on font size and leading
+    pub fn line_height(&self) -> f64 {
+        self.inner.current_font_size * self.state.leading
+    }
+
     /// Draws text at the current cursor position
     ///
     /// The cursor is moved down by the line height after drawing.
     /// Text is not wrapped - use `text_wrap` for automatic wrapping.
     pub fn text(&mut self, text: &str) -> &mut Self {
-        let x = self.state.bounds().absolute_left();
+        let bounds = self.state.bounds();
+        let left = bounds.absolute_left();
+        let right = bounds.absolute_right();
+        let width = right - left;
         let y = self.state.cursor_y;
 
-        // Draw text at cursor position
+        // Calculate x position based on alignment
+        let x = match self.state.text_align {
+            TextAlign::Left => left,
+            TextAlign::Center => {
+                let text_width = self.measure_text_width(text);
+                left + (width - text_width) / 2.0
+            }
+            TextAlign::Right => {
+                let text_width = self.measure_text_width(text);
+                right - text_width
+            }
+            TextAlign::Justify => left, // Justify not supported for single-line text
+        };
+
+        // Draw text at calculated position
         self.inner.text_at(text, [x, y]);
 
-        // Move cursor down by line height (font size + leading)
-        let line_height = self.inner.current_font_size * 1.2; // Default leading
+        // Move cursor down by line height
+        let line_height = self.line_height();
         self.state.cursor_y -= line_height;
 
         // Update stretched height if in stretchy box
@@ -422,6 +484,128 @@ impl LayoutDocument {
         self.state.bounds_mut().update_stretched_height(cursor_y);
 
         self
+    }
+
+    /// Draws wrapped text at the current cursor position
+    ///
+    /// Text is automatically wrapped to fit within the current bounds width.
+    /// Each line respects the current alignment setting.
+    pub fn text_wrap(&mut self, text: &str) -> &mut Self {
+        let bounds = self.state.bounds();
+        let width = bounds.width();
+        
+        let lines = self.wrap_text_to_width(text, width);
+        
+        for line in lines {
+            self.text(&line);
+        }
+        
+        self
+    }
+
+    /// Draws text in a bounding box with automatic wrapping
+    ///
+    /// This is similar to Prawn's `text_box` method. Text is wrapped to fit
+    /// within the specified dimensions, and overflow is silently clipped.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The text to render
+    /// * `point` - Position offset from current cursor [x, y]
+    /// * `width` - Width of the text box
+    /// * `height` - Fixed height of the text box
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::{Document, LayoutDocument};
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    /// layout.text_box("Long text that will wrap...", [0.0, 0.0], 200.0, 100.0);
+    /// ```
+    pub fn text_box(&mut self, text: &str, point: [f64; 2], width: f64, height: f64) -> &mut Self {
+        self.bounding_box(point, width, Some(height), |doc| {
+            let bounds_height = doc.bounds().height();
+            let line_height = doc.line_height();
+            let max_lines = (bounds_height / line_height).floor() as usize;
+            
+            let lines = doc.wrap_text_to_width(text, width);
+            
+            for (i, line) in lines.iter().enumerate() {
+                if i >= max_lines {
+                    break; // Stop if we exceed the box height
+                }
+                doc.text(line);
+            }
+        });
+        
+        self
+    }
+
+    /// Measures the width of text with the current font
+    fn measure_text_width(&self, text: &str) -> f64 {
+        #[cfg(feature = "fonts")]
+        {
+            self.inner.measure_text(text)
+        }
+        #[cfg(not(feature = "fonts"))]
+        {
+            // Approximate width for standard fonts
+            text.len() as f64 * self.inner.current_font_size * 0.5
+        }
+    }
+
+    /// Wraps text to fit within the specified width
+    fn wrap_text_to_width(&self, text: &str, max_width: f64) -> Vec<String> {
+        let mut lines = Vec::new();
+        
+        for paragraph in text.split('\n') {
+            if paragraph.is_empty() {
+                lines.push(String::new());
+                continue;
+            }
+            
+            let words: Vec<&str> = paragraph.split_whitespace().collect();
+            if words.is_empty() {
+                lines.push(String::new());
+                continue;
+            }
+            
+            let mut current_line = String::new();
+            
+            for word in words {
+                let test_line = if current_line.is_empty() {
+                    word.to_string()
+                } else {
+                    format!("{} {}", current_line, word)
+                };
+                
+                let width = self.measure_text_width(&test_line);
+                
+                if width <= max_width {
+                    current_line = test_line;
+                } else {
+                    // Line is too long
+                    if !current_line.is_empty() {
+                        lines.push(current_line.clone());
+                        current_line = word.to_string();
+                    } else {
+                        // Single word is too long, just add it anyway
+                        lines.push(word.to_string());
+                    }
+                }
+            }
+            
+            if !current_line.is_empty() {
+                lines.push(current_line);
+            }
+        }
+        
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        
+        lines
     }
 
     // === Layout methods ===

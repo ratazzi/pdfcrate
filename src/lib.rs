@@ -45,13 +45,14 @@ pub use error::{Error, Result};
 /// Prelude module for convenient imports
 pub mod prelude {
     pub use crate::api::image::{EmbeddedImage, ImageOptions, Position};
-    pub use crate::api::layout::{BoundingBox, LayoutDocument, Margin};
+    pub use crate::api::layout::{BoundingBox, LayoutDocument, Margin, TextAlign};
     pub use crate::api::page::{PageLayout, PageSize};
     pub use crate::api::Document;
     pub use crate::content::{LineCap, LineJoin};
     pub use crate::document::{EmbeddedPage, LoadedDocument};
     pub use crate::error::{Error, Result};
-    pub use crate::forms::{AcroForm, FieldFlags, FieldType, FormField, TextAlign};
+    pub use crate::forms::{AcroForm, FieldFlags, FieldType, FormField};
+    pub use crate::forms::TextAlign as FormTextAlign; // Rename to avoid conflict
 
     #[cfg(feature = "fonts")]
     pub use crate::font::EmbeddedFont;
