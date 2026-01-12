@@ -1,15 +1,15 @@
 //! Showcase PDF demonstrating pdf_rs features:
-//! - Page 1: Drawing primitives (shapes, strokes, fills)
-//! - Page 2: Embedded PNG image
-//! - Page 3: Embedded JPEG image
-//! - Page 4: PNG with alpha transparency
-//! - Page 5: Custom TrueType font embedding (requires `fonts` feature)
-//! - Page 6: MapleMono ligatures (best with `text-shaping` feature)
-//! - Page 7: CJK font support (Chinese/Japanese/Korean)
-//! - Page 8: Interactive forms (AcroForms)
-//! - Page 9: PDF embedding and merging
-//! - Page 10: SVG barcode (path-only, requires `svg` feature)
-//! - Page 11: LayoutDocument - Prawn-style cursor-based layout
+//! - Drawing primitives (shapes, strokes, fills)
+//! - Embedded PNG image
+//! - Embedded JPEG image
+//! - PNG with alpha transparency
+//! - Custom TrueType font embedding (requires `fonts` feature)
+//! - MapleMono ligatures (best with `text-shaping` feature)
+//! - CJK font support (Chinese/Japanese/Korean)
+//! - Interactive forms (AcroForms)
+//! - PDF embedding and merging
+//! - SVG barcode (path-only, requires `svg` feature)
+//! - LayoutDocument - Prawn-style cursor-based layout
 //!
 //! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
@@ -86,7 +86,7 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
     doc.font("Helvetica").size(24.0);
     doc.text_at("pdf_rs Showcase", [48.0, 804.0]);
     doc.font("Helvetica").size(11.0);
-    doc.text_at("Page 1: drawing primitives", [48.0, 784.0]);
+    doc.text_at("Drawing primitives", [48.0, 784.0]);
 
     doc.font("Helvetica").size(12.0);
     doc.text_at("Strokes", [60.0, 720.0]);
@@ -139,10 +139,7 @@ fn add_page_png(doc: &mut Document, png_bytes: &[u8], width: u32, height: u32) -
     );
 
     doc.font("Helvetica").size(14.0);
-    doc.text_at(
-        "Page 2: embedded PNG",
-        [margin, page_height - margin - 16.0],
-    );
+    doc.text_at("Embedded PNG", [margin, page_height - margin - 16.0]);
     doc.image_png(png_bytes, [draw_x, draw_y], draw_width, draw_height)?;
     Ok(())
 }
@@ -161,10 +158,7 @@ fn add_page_jpeg(doc: &mut Document, jpeg_bytes: &[u8], width: u32, height: u32)
         height,
     );
     doc.font("Helvetica").size(14.0);
-    doc.text_at(
-        "Page 3: embedded JPEG",
-        [margin, page_height - margin - 16.0],
-    );
+    doc.text_at("Embedded JPEG", [margin, page_height - margin - 16.0]);
     doc.image_jpeg(jpeg_bytes, [draw_x, draw_y], draw_width, draw_height)?;
     Ok(())
 }
@@ -193,7 +187,7 @@ fn add_page_alpha(
     });
     doc.font("Helvetica").size(14.0);
     doc.text_at(
-        "Page 4: example-alpha.png over green background",
+        "PNG with alpha over green background",
         [margin, page_height - margin - 16.0],
     );
     doc.image_png(alpha_bytes, [draw_x, draw_y], draw_width, draw_height)?;
@@ -257,7 +251,7 @@ fn add_page_custom_font(doc: &mut Document) -> PdfResult<()> {
 
     doc.font(&font_regular).size(12.0);
     doc.text_at(
-        "Page 5: TrueType fonts with full Unicode support",
+        "TrueType fonts with full Unicode support",
         [margin, 778.0],
     );
 
@@ -391,7 +385,7 @@ fn add_page_ligatures(doc: &mut Document) -> PdfResult<()> {
 
     doc.font("Helvetica").size(12.0);
     doc.text_at(
-        "Page 6: ligatures, kerning, and line spacing",
+        "Ligatures, kerning, and line spacing",
         [margin, 778.0],
     );
 
@@ -499,7 +493,7 @@ fn add_page_cjk(doc: &mut Document) -> PdfResult<()> {
 
     doc.font(&cjk_regular).size(12.0);
     doc.text_at(
-        "Page 7: 中日韩文字渲染 / Chinese, Japanese, Korean",
+        "中日韩文字渲染 / Chinese, Japanese, Korean",
         [margin, 778.0],
     );
 
@@ -607,7 +601,7 @@ fn add_page_forms(doc: &mut Document) -> PdfResult<()> {
 
     doc.font("Helvetica").size(11.0);
     doc.text_at(
-        "Page 8: AcroForms - text fields, checkboxes, and dropdowns",
+        "AcroForms - text fields, checkboxes, and dropdowns",
         [margin, 780.0],
     );
 
@@ -721,7 +715,7 @@ fn add_page_pdf_embed(doc: &mut Document) -> PdfResult<()> {
 
     doc.font("Helvetica").size(11.0);
     doc.text_at(
-        "Page 9: Embed and draw pages from other PDFs",
+        "Embed and draw pages from other PDFs",
         [margin, 780.0],
     );
 
@@ -821,7 +815,7 @@ fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("SVG Barcode", [margin, 800.0]);
 
     doc.font("Helvetica").size(11.0);
-    doc.text_at("Page 10: SVG rendering", [margin, 780.0]);
+    doc.text_at("SVG rendering", [margin, 780.0]);
 
     doc.font("Helvetica").size(12.0);
     doc.text_at(
@@ -908,7 +902,7 @@ fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
 
     doc.font("Helvetica").size(11.0);
     doc.text_at(
-        "Page 11: Prawn-style cursor-based layout (no manual coordinate calculation)",
+        "Prawn-style cursor-based layout (no manual coordinate calculation)",
         [margin, 780.0],
     );
 
