@@ -11,6 +11,8 @@
 //! - SVG barcode (path-only, requires `svg` feature)
 //! - LayoutDocument - Prawn-style cursor-based layout
 //! - Advanced layout: text alignment, leading, wrapping, text boxes
+//! - Transparency support for overlapping graphics
+//! - Polygon drawing (stroke and fill)
 //!
 //! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
@@ -88,7 +90,7 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
     doc.font("Helvetica").size(24.0);
     doc.text_at("pdf_rs Showcase", [48.0, 804.0]);
     doc.font("Helvetica").size(11.0);
-    doc.text_at("Drawing primitives", [48.0, 784.0]);
+    doc.text_at("Drawing primitives, polygons & transparency", [48.0, 784.0]);
 
     doc.font("Helvetica").size(12.0);
     doc.text_at("Strokes", [60.0, 720.0]);
@@ -122,6 +124,115 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
             .ellipse([430.0, 520.0], 90.0, 45.0);
         ctx.color(0.9, 0.5, 0.6).circle([430.0, 420.0], 45.0);
     });
+
+    // Polygons section
+    doc.font("Helvetica").size(12.0);
+    doc.text_at("Polygons", [60.0, 320.0]);
+
+    // Triangle (stroke)
+    doc.stroke(|ctx| {
+        ctx.color(0.8, 0.2, 0.2)
+            .line_width(2.5)
+            .polygon(&[[100.0, 280.0], [140.0, 280.0], [120.0, 240.0]]);
+    });
+
+    // Pentagon (fill)
+    doc.fill(|ctx| {
+        ctx.color(0.2, 0.6, 0.8).polygon(&[
+            [200.0, 280.0],
+            [220.0, 270.0],
+            [215.0, 245.0],
+            [185.0, 245.0],
+            [180.0, 270.0],
+        ]);
+    });
+
+    // Star (fill)
+    doc.fill(|ctx| {
+        ctx.color(0.9, 0.8, 0.2).polygon(&[
+            [310.0, 280.0],
+            [315.0, 265.0],
+            [330.0, 265.0],
+            [320.0, 255.0],
+            [325.0, 240.0],
+            [310.0, 248.0],
+            [295.0, 240.0],
+            [300.0, 255.0],
+            [290.0, 265.0],
+            [305.0, 265.0],
+        ]);
+    });
+
+    // Hexagon (stroke + fill with transparency)
+    doc.transparent(0.6, |doc| {
+        doc.fill(|ctx| {
+            ctx.color(0.5, 0.3, 0.8).polygon(&[
+                [430.0, 280.0],
+                [450.0, 270.0],
+                [450.0, 250.0],
+                [430.0, 240.0],
+                [410.0, 250.0],
+                [410.0, 270.0],
+            ]);
+        });
+    });
+    doc.stroke(|ctx| {
+        ctx.color(0.3, 0.1, 0.5)
+            .line_width(2.0)
+            .polygon(&[
+                [430.0, 280.0],
+                [450.0, 270.0],
+                [450.0, 250.0],
+                [430.0, 240.0],
+                [410.0, 250.0],
+                [410.0, 270.0],
+            ]);
+    });
+
+    // Transparency section
+    doc.font("Helvetica").size(12.0);
+    doc.text_at("Transparency", [60.0, 200.0]);
+
+    // Overlapping circles with transparency
+    let circle_cx = 120.0;
+    let circle_cy = 130.0;
+    
+    doc.fill(|ctx| {
+        ctx.color(1.0, 0.0, 0.0).circle([circle_cx, circle_cy], 35.0);
+    });
+    doc.transparent(0.7, |d| {
+        d.fill(|ctx| {
+            ctx.color(0.0, 1.0, 0.0).circle([circle_cx + 40.0, circle_cy], 35.0);
+        });
+    });
+    doc.transparent(0.4, |d| {
+        d.fill(|ctx| {
+            ctx.color(0.0, 0.0, 1.0).circle([circle_cx + 20.0, circle_cy - 35.0], 35.0);
+        });
+    });
+
+    // Overlapping rectangles with transparency
+    let rect_x = 320.0;
+    let rect_y = 100.0;
+    
+    doc.fill(|ctx| {
+        ctx.color(0.85, 0.2, 0.3).rectangle([rect_x, rect_y], 80.0, 55.0);
+    });
+    doc.transparent(0.65, |d| {
+        d.fill(|ctx| {
+            ctx.color(0.2, 0.6, 0.9).rectangle([rect_x + 45.0, rect_y], 80.0, 55.0);
+        });
+    });
+    doc.transparent(0.35, |d| {
+        d.fill(|ctx| {
+            ctx.color(0.3, 0.85, 0.3).rectangle([rect_x + 22.0, rect_y + 30.0], 80.0, 55.0);
+        });
+    });
+
+    // Labels
+    doc.font("Helvetica").size(9.0);
+    doc.text_at("Circles: 100%, 70%, 40%", [60.0, 70.0]);
+    doc.text_at("Rectangles: 100%, 65%, 35%", [320.0, 70.0]);
 
     Ok(())
 }

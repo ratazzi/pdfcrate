@@ -78,6 +78,8 @@ pub struct Document {
     image_counter: usize,
     /// Form fields
     form: AcroForm,
+    /// ExtGState resources for transparency (name -> ref)
+    ext_gstates: Vec<(String, PdfRef)>,
 }
 
 /// Internal page data
@@ -247,6 +249,7 @@ impl Document {
             images: Vec::new(),
             image_counter: 0,
             form: AcroForm::new(),
+            ext_gstates: Vec::new(),
         };
 
         // Start with one page
@@ -1035,6 +1038,67 @@ impl Document {
         self
     }
 
+    /// Applies transparency to operations within the closure
+    ///
+    /// # Arguments
+    ///
+    /// * `opacity` - Opacity value from 0.0 (fully transparent) to 1.0 (fully opaque)
+    /// * `f` - Closure containing operations to be drawn with transparency
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// doc.transparent(0.5, |doc| {
+    ///     doc.fill(|ctx| {
+    ///         ctx.color(1.0, 0.0, 0.0);
+    ///         ctx.rectangle([100.0, 100.0], 200.0, 100.0);
+    ///     });
+    /// });
+    /// ```
+    pub fn transparent<F>(&mut self, opacity: f64, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        // Clamp opacity to valid range
+        let opacity = opacity.clamp(0.0, 1.0);
+        
+        // Create ExtGState dictionary for transparency
+        let gs_ref = self.context.alloc_ref();
+        let gs_name = format!("GS{}", gs_ref.object_number());
+        
+        let mut gs_dict = PdfDict::new();
+        gs_dict.set("Type", PdfObject::Name("ExtGState".into()));
+        gs_dict.set("CA", PdfObject::Real(opacity)); // Stroke alpha
+        gs_dict.set("ca", PdfObject::Real(opacity)); // Fill alpha
+        
+        self.context.assign(gs_ref, PdfObject::Dict(gs_dict));
+        
+        // Add to current page resources
+        let page = &mut self.pages[self.current_page];
+        page.content.save_state();
+        page.content.set_graphics_state(&gs_name);
+        
+        // Store the gs resource reference for later use during render
+        // We'll need to add it to the page's ExtGState resources
+        self.ensure_extgstate_resource(&gs_name, gs_ref);
+        
+        f(self);
+        
+        self.pages[self.current_page].content.restore_state();
+        self
+    }
+
+    /// Ensures ExtGState resource is registered (internal helper)
+    fn ensure_extgstate_resource(&mut self, name: &str, gs_ref: PdfRef) {
+        // Add to ext_gstates if not already present
+        if !self.ext_gstates.iter().any(|(n, _)| n == name) {
+            self.ext_gstates.push((name.to_string(), gs_ref));
+        }
+    }
+
     /// Sets document title
     pub fn title(&mut self, title: &str) -> &mut Self {
         self.info.title = Some(title.to_string());
@@ -1353,12 +1417,21 @@ impl Document {
             xobject_dict.set(name, PdfObject::Reference(*img_ref));
         }
 
+        // Build ExtGState resources dictionary (transparency)
+        let mut extgstate_dict = PdfDict::new();
+        for (name, gs_ref) in &self.ext_gstates {
+            extgstate_dict.set(name, PdfObject::Reference(*gs_ref));
+        }
+
         let mut resources = PdfDict::new();
         if !self.fonts.is_empty() {
             resources.set("Font", PdfObject::Dict(font_dict.clone()));
         }
         if !self.images.is_empty() {
             resources.set("XObject", PdfObject::Dict(xobject_dict));
+        }
+        if !self.ext_gstates.is_empty() {
+            resources.set("ExtGState", PdfObject::Dict(extgstate_dict));
         }
         let resources_ref = self.context.register(PdfObject::Dict(resources));
 
@@ -1671,6 +1744,36 @@ impl<'a> StrokeContext<'a> {
         self.content.close_path();
         self
     }
+
+    /// Draws a polygon by connecting the given points
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// doc.stroke(|ctx| {
+    ///     ctx.polygon(&[[100.0, 100.0], [150.0, 150.0], [100.0, 200.0]]);
+    /// });
+    /// ```
+    pub fn polygon(&mut self, points: &[[f64; 2]]) -> &mut Self {
+        if points.is_empty() {
+            return self;
+        }
+
+        // Move to first point
+        self.content.move_to(points[0][0], points[0][1]);
+
+        // Draw lines to remaining points
+        for point in &points[1..] {
+            self.content.line_to(point[0], point[1]);
+        }
+
+        // Close the path
+        self.content.close_path();
+        self
+    }
 }
 
 /// Context for fill operations
@@ -1742,6 +1845,36 @@ impl<'a> FillContext<'a> {
 
     /// Closes the current path
     pub fn close_path(&mut self) -> &mut Self {
+        self.content.close_path();
+        self
+    }
+
+    /// Draws a polygon by connecting the given points
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// doc.fill(|ctx| {
+    ///     ctx.polygon(&[[100.0, 100.0], [150.0, 150.0], [100.0, 200.0]]);
+    /// });
+    /// ```
+    pub fn polygon(&mut self, points: &[[f64; 2]]) -> &mut Self {
+        if points.is_empty() {
+            return self;
+        }
+
+        // Move to first point
+        self.content.move_to(points[0][0], points[0][1]);
+
+        // Draw lines to remaining points
+        for point in &points[1..] {
+            self.content.line_to(point[0], point[1]);
+        }
+
+        // Close the path
         self.content.close_path();
         self
     }
