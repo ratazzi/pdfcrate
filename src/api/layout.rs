@@ -41,6 +41,152 @@ impl Default for TextAlign {
     }
 }
 
+/// Specifies which pages a repeater should apply to
+#[derive(Debug, Clone)]
+pub enum RepeaterPages {
+    /// Apply to all pages
+    All,
+    /// Apply to odd pages only (1, 3, 5, ...)
+    Odd,
+    /// Apply to even pages only (2, 4, 6, ...)
+    Even,
+    /// Apply to specific page numbers (1-indexed)
+    Pages(Vec<usize>),
+    /// Apply to a range of pages (1-indexed, inclusive)
+    Range(usize, usize),
+    /// Apply to all pages except the specified ones
+    Except(Vec<usize>),
+}
+
+impl RepeaterPages {
+    /// Returns true if this repeater should apply to the given page number (1-indexed)
+    pub fn applies_to(&self, page: usize) -> bool {
+        match self {
+            RepeaterPages::All => true,
+            RepeaterPages::Odd => page % 2 == 1,
+            RepeaterPages::Even => page % 2 == 0,
+            RepeaterPages::Pages(pages) => pages.contains(&page),
+            RepeaterPages::Range(start, end) => page >= *start && page <= *end,
+            RepeaterPages::Except(pages) => !pages.contains(&page),
+        }
+    }
+}
+
+/// Position for page numbers
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageNumberPosition {
+    /// Top left corner
+    TopLeft,
+    /// Top center
+    TopCenter,
+    /// Top right corner
+    TopRight,
+    /// Bottom left corner
+    BottomLeft,
+    /// Bottom center
+    BottomCenter,
+    /// Bottom right corner
+    BottomRight,
+}
+
+/// Configuration for page numbering
+#[derive(Debug, Clone)]
+pub struct PageNumberConfig {
+    /// Position of page numbers
+    pub position: PageNumberPosition,
+    /// Format string with placeholders: <page>, <total>
+    /// e.g., "Page <page> of <total>" or just "<page>"
+    pub format: String,
+    /// Which pages to number
+    pub pages: RepeaterPages,
+    /// Starting page number (default 1)
+    pub start_count_at: usize,
+    /// Font name (default: current font)
+    pub font: Option<String>,
+    /// Font size (default: 10.0)
+    pub font_size: f64,
+    /// Color as RGB (default: black)
+    pub color: Option<(f64, f64, f64)>,
+}
+
+impl Default for PageNumberConfig {
+    fn default() -> Self {
+        Self {
+            position: PageNumberPosition::BottomCenter,
+            format: "<page>".to_string(),
+            pages: RepeaterPages::All,
+            start_count_at: 1,
+            font: None,
+            font_size: 10.0,
+            color: None,
+        }
+    }
+}
+
+impl PageNumberConfig {
+    /// Creates a new config with the given format
+    pub fn new(format: &str) -> Self {
+        Self {
+            format: format.to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// Sets the position
+    pub fn position(mut self, position: PageNumberPosition) -> Self {
+        self.position = position;
+        self
+    }
+
+    /// Sets which pages to number
+    pub fn pages(mut self, pages: RepeaterPages) -> Self {
+        self.pages = pages;
+        self
+    }
+
+    /// Sets the starting count
+    pub fn start_at(mut self, start: usize) -> Self {
+        self.start_count_at = start;
+        self
+    }
+
+    /// Sets the font
+    pub fn font(mut self, font: &str) -> Self {
+        self.font = Some(font.to_string());
+        self
+    }
+
+    /// Sets the font size
+    pub fn font_size(mut self, size: f64) -> Self {
+        self.font_size = size;
+        self
+    }
+
+    /// Sets the color
+    pub fn color(mut self, r: f64, g: f64, b: f64) -> Self {
+        self.color = Some((r, g, b));
+        self
+    }
+}
+
+/// Stored content for a repeater (header/footer)
+#[derive(Clone)]
+struct RepeaterContent {
+    /// Which pages to apply to
+    pages: RepeaterPages,
+    /// Text content
+    text: String,
+    /// Position [x, y]
+    position: [f64; 2],
+    /// Font name
+    font: String,
+    /// Font size
+    font_size: f64,
+    /// Text alignment (reserved for future use)
+    #[allow(dead_code)]
+    align: TextAlign,
+}
+
 /// Page margins in points
 ///
 /// Default is 36pt (0.5 inch) on all sides, matching Prawn's default.
@@ -340,6 +486,10 @@ impl LayoutState {
 pub struct LayoutDocument {
     inner: Document,
     state: LayoutState,
+    /// Stored repeaters (headers/footers)
+    repeaters: Vec<RepeaterContent>,
+    /// Page number configuration
+    page_number_config: Option<PageNumberConfig>,
 }
 
 impl LayoutDocument {
@@ -360,6 +510,8 @@ impl LayoutDocument {
         Self {
             state: LayoutState::new(margin, width, height),
             inner: doc,
+            repeaters: Vec::new(),
+            page_number_config: None,
         }
     }
 
@@ -493,13 +645,13 @@ impl LayoutDocument {
     pub fn text_wrap(&mut self, text: &str) -> &mut Self {
         let bounds = self.state.bounds();
         let width = bounds.width();
-        
+
         let lines = self.wrap_text_to_width(text, width);
-        
+
         for line in lines {
             self.text(&line);
         }
-        
+
         self
     }
 
@@ -528,9 +680,9 @@ impl LayoutDocument {
             let bounds_height = doc.bounds().height();
             let line_height = doc.line_height();
             let max_lines = (bounds_height / line_height).floor() as usize;
-            
+
             let lines = doc.wrap_text_to_width(text, width);
-            
+
             for (i, line) in lines.iter().enumerate() {
                 if i >= max_lines {
                     break; // Stop if we exceed the box height
@@ -538,7 +690,7 @@ impl LayoutDocument {
                 doc.text(line);
             }
         });
-        
+
         self
     }
 
@@ -558,30 +710,30 @@ impl LayoutDocument {
     /// Wraps text to fit within the specified width
     fn wrap_text_to_width(&self, text: &str, max_width: f64) -> Vec<String> {
         let mut lines = Vec::new();
-        
+
         for paragraph in text.split('\n') {
             if paragraph.is_empty() {
                 lines.push(String::new());
                 continue;
             }
-            
+
             let words: Vec<&str> = paragraph.split_whitespace().collect();
             if words.is_empty() {
                 lines.push(String::new());
                 continue;
             }
-            
+
             let mut current_line = String::new();
-            
+
             for word in words {
                 let test_line = if current_line.is_empty() {
                     word.to_string()
                 } else {
                     format!("{} {}", current_line, word)
                 };
-                
+
                 let width = self.measure_text_width(&test_line);
-                
+
                 if width <= max_width {
                     current_line = test_line;
                 } else {
@@ -595,17 +747,213 @@ impl LayoutDocument {
                     }
                 }
             }
-            
+
             if !current_line.is_empty() {
                 lines.push(current_line);
             }
         }
-        
+
         if lines.is_empty() {
             lines.push(String::new());
         }
-        
+
         lines
+    }
+
+    // === Repeater methods (headers/footers/page numbers) ===
+
+    /// Adds a repeating text element (header or footer)
+    ///
+    /// The text will be rendered on the specified pages at the given position.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::{Document, LayoutDocument, RepeaterPages};
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    ///
+    /// // Add header to all pages
+    /// layout.repeat(RepeaterPages::All, "My Document", [36.0, 800.0]);
+    ///
+    /// // Add footer to odd pages only
+    /// layout.repeat(RepeaterPages::Odd, "Confidential", [36.0, 30.0]);
+    /// ```
+    pub fn repeat(&mut self, pages: RepeaterPages, text: &str, position: [f64; 2]) -> &mut Self {
+        self.repeaters.push(RepeaterContent {
+            pages,
+            text: text.to_string(),
+            position,
+            font: self.inner.current_font.clone(),
+            font_size: self.inner.current_font_size,
+            align: self.state.text_align,
+        });
+        self
+    }
+
+    /// Adds a header that repeats on specified pages
+    ///
+    /// The header is positioned at the top of the page within the margin area.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::{Document, LayoutDocument, RepeaterPages};
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    /// layout.header(RepeaterPages::All, "Chapter 1: Introduction");
+    /// ```
+    pub fn header(&mut self, pages: RepeaterPages, text: &str) -> &mut Self {
+        let margin = self.state.margin;
+        let (_, page_height) = self.inner.page_size.dimensions(self.inner.page_layout);
+        let y = page_height - margin.top / 2.0;
+        self.repeat(pages, text, [margin.left, y])
+    }
+
+    /// Adds a footer that repeats on specified pages
+    ///
+    /// The footer is positioned at the bottom of the page within the margin area.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::{Document, LayoutDocument, RepeaterPages};
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    /// layout.footer(RepeaterPages::All, "© 2024 My Company");
+    /// ```
+    pub fn footer(&mut self, pages: RepeaterPages, text: &str) -> &mut Self {
+        let margin = self.state.margin;
+        let y = margin.bottom / 2.0;
+        self.repeat(pages, text, [margin.left, y])
+    }
+
+    /// Configures automatic page numbering
+    ///
+    /// Page numbers are rendered when `apply_repeaters()` is called or
+    /// when the document is rendered.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::{Document, LayoutDocument, PageNumberConfig, PageNumberPosition};
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    ///
+    /// // Simple page numbers at bottom center
+    /// layout.number_pages(PageNumberConfig::default());
+    ///
+    /// // Custom format "Page X of Y" at bottom right
+    /// layout.number_pages(
+    ///     PageNumberConfig::new("Page <page> of <total>")
+    ///         .position(PageNumberPosition::BottomRight)
+    /// );
+    /// ```
+    pub fn number_pages(&mut self, config: PageNumberConfig) -> &mut Self {
+        self.page_number_config = Some(config);
+        self
+    }
+
+    /// Applies all repeaters and page numbers to the document
+    ///
+    /// This should be called after all content has been added to the document,
+    /// as it needs to know the total page count for page numbering.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::{Document, LayoutDocument, PageNumberConfig};
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    /// layout.number_pages(PageNumberConfig::new("<page> / <total>"));
+    ///
+    /// // Add content...
+    /// layout.text("Page 1 content");
+    /// layout.start_new_page();
+    /// layout.text("Page 2 content");
+    ///
+    /// // Apply page numbers after all content is added
+    /// layout.apply_repeaters();
+    /// ```
+    pub fn apply_repeaters(&mut self) -> &mut Self {
+        let total_pages = self.inner.page_count();
+        let (page_width, page_height) = self.inner.page_size.dimensions(self.inner.page_layout);
+        let margin = self.state.margin;
+
+        // Clone repeaters to avoid borrow issues
+        let repeaters = self.repeaters.clone();
+        let page_number_config = self.page_number_config.clone();
+
+        // Apply repeaters to each page
+        for page_idx in 0..total_pages {
+            let page_num = page_idx + 1; // 1-indexed
+
+            // Apply text repeaters
+            for repeater in &repeaters {
+                if repeater.pages.applies_to(page_num) {
+                    self.inner.go_to_page(page_idx);
+                    self.inner.font(&repeater.font).size(repeater.font_size);
+                    self.inner.text_at(&repeater.text, repeater.position);
+                }
+            }
+
+            // Apply page numbers
+            if let Some(ref config) = page_number_config {
+                if config.pages.applies_to(page_num) {
+                    self.inner.go_to_page(page_idx);
+
+                    // Set font
+                    let font = config.font.as_deref().unwrap_or("Helvetica");
+                    self.inner.font(font).size(config.font_size);
+
+                    // Format the page number string
+                    let display_page = page_num - 1 + config.start_count_at;
+                    let text = config
+                        .format
+                        .replace("<page>", &display_page.to_string())
+                        .replace("<total>", &total_pages.to_string());
+
+                    // Calculate position based on config
+                    let (x, y) = match config.position {
+                        PageNumberPosition::TopLeft => {
+                            (margin.left, page_height - margin.top / 2.0)
+                        }
+                        PageNumberPosition::TopCenter => {
+                            let text_width = self.measure_text_width(&text);
+                            (
+                                (page_width - text_width) / 2.0,
+                                page_height - margin.top / 2.0,
+                            )
+                        }
+                        PageNumberPosition::TopRight => {
+                            let text_width = self.measure_text_width(&text);
+                            (
+                                page_width - margin.right - text_width,
+                                page_height - margin.top / 2.0,
+                            )
+                        }
+                        PageNumberPosition::BottomLeft => (margin.left, margin.bottom / 2.0),
+                        PageNumberPosition::BottomCenter => {
+                            let text_width = self.measure_text_width(&text);
+                            ((page_width - text_width) / 2.0, margin.bottom / 2.0)
+                        }
+                        PageNumberPosition::BottomRight => {
+                            let text_width = self.measure_text_width(&text);
+                            (page_width - margin.right - text_width, margin.bottom / 2.0)
+                        }
+                    };
+
+                    self.inner.text_at(&text, [x, y]);
+                }
+            }
+        }
+
+        // Return to last page
+        if total_pages > 0 {
+            self.inner.go_to_page(total_pages - 1);
+        }
+
+        self
     }
 
     // === Layout methods ===
@@ -765,6 +1113,20 @@ impl LayoutDocument {
     /// Sets the cursor to a specific absolute y position
     pub fn set_cursor(&mut self, y: f64) -> &mut Self {
         self.state.cursor_y = y;
+        self
+    }
+
+    /// Starts a new page and resets the cursor to the top of the margin box
+    ///
+    /// This method should be used instead of calling `start_new_page()` directly
+    /// on the inner Document, as it properly resets the layout cursor position.
+    pub fn start_new_page(&mut self) -> &mut Self {
+        self.inner.start_new_page();
+
+        // Reset cursor to top of margin box for the new page
+        let (_, page_height) = self.inner.page_size.dimensions(self.inner.page_layout);
+        self.state.cursor_y = page_height - self.state.margin.top;
+
         self
     }
 }
@@ -1077,5 +1439,120 @@ mod tests {
         // Should render without errors
         let bytes = layout.render().unwrap();
         assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_repeater_pages_all() {
+        let pages = RepeaterPages::All;
+        assert!(pages.applies_to(1));
+        assert!(pages.applies_to(2));
+        assert!(pages.applies_to(100));
+    }
+
+    #[test]
+    fn test_repeater_pages_odd_even() {
+        let odd = RepeaterPages::Odd;
+        let even = RepeaterPages::Even;
+
+        assert!(odd.applies_to(1));
+        assert!(!odd.applies_to(2));
+        assert!(odd.applies_to(3));
+
+        assert!(!even.applies_to(1));
+        assert!(even.applies_to(2));
+        assert!(!even.applies_to(3));
+    }
+
+    #[test]
+    fn test_repeater_pages_specific() {
+        let pages = RepeaterPages::Pages(vec![1, 3, 5]);
+        assert!(pages.applies_to(1));
+        assert!(!pages.applies_to(2));
+        assert!(pages.applies_to(3));
+        assert!(!pages.applies_to(4));
+        assert!(pages.applies_to(5));
+    }
+
+    #[test]
+    fn test_repeater_pages_range() {
+        let pages = RepeaterPages::Range(2, 5);
+        assert!(!pages.applies_to(1));
+        assert!(pages.applies_to(2));
+        assert!(pages.applies_to(3));
+        assert!(pages.applies_to(5));
+        assert!(!pages.applies_to(6));
+    }
+
+    #[test]
+    fn test_repeater_pages_except() {
+        let pages = RepeaterPages::Except(vec![1, 10]);
+        assert!(!pages.applies_to(1));
+        assert!(pages.applies_to(2));
+        assert!(pages.applies_to(5));
+        assert!(!pages.applies_to(10));
+    }
+
+    #[test]
+    fn test_page_number_config() {
+        let config = PageNumberConfig::new("Page <page> of <total>")
+            .position(PageNumberPosition::BottomRight)
+            .font_size(12.0)
+            .start_at(1);
+
+        assert_eq!(config.format, "Page <page> of <total>");
+        assert_eq!(config.position, PageNumberPosition::BottomRight);
+        assert_eq!(config.font_size, 12.0);
+        assert_eq!(config.start_count_at, 1);
+    }
+
+    #[test]
+    fn test_number_pages_render() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.number_pages(PageNumberConfig::new("<page>"));
+        layout.text("Page 1 content");
+        layout.start_new_page();
+        layout.text("Page 2 content");
+
+        layout.apply_repeaters();
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_header_footer() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.header(RepeaterPages::All, "Document Header");
+        layout.footer(RepeaterPages::All, "Document Footer");
+
+        layout.text("Page content");
+
+        layout.apply_repeaters();
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_start_new_page_resets_cursor() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        let initial_cursor = layout.cursor();
+
+        // Move cursor down
+        layout.move_down(200.0);
+        assert_eq!(layout.cursor(), initial_cursor - 200.0);
+
+        // Start new page - cursor should reset to top of margin box
+        layout.start_new_page();
+
+        // Cursor should be at the same position as the initial cursor
+        // (top of margin box for the new page)
+        assert!((layout.cursor() - initial_cursor).abs() < 0.01);
     }
 }

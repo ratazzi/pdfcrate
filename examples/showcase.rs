@@ -131,9 +131,11 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
 
     // Triangle (stroke)
     doc.stroke(|ctx| {
-        ctx.color(0.8, 0.2, 0.2)
-            .line_width(2.5)
-            .polygon(&[[100.0, 280.0], [140.0, 280.0], [120.0, 240.0]]);
+        ctx.color(0.8, 0.2, 0.2).line_width(2.5).polygon(&[
+            [100.0, 280.0],
+            [140.0, 280.0],
+            [120.0, 240.0],
+        ]);
     });
 
     // Pentagon (fill)
@@ -177,16 +179,14 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
         });
     });
     doc.stroke(|ctx| {
-        ctx.color(0.3, 0.1, 0.5)
-            .line_width(2.0)
-            .polygon(&[
-                [430.0, 280.0],
-                [450.0, 270.0],
-                [450.0, 250.0],
-                [430.0, 240.0],
-                [410.0, 250.0],
-                [410.0, 270.0],
-            ]);
+        ctx.color(0.3, 0.1, 0.5).line_width(2.0).polygon(&[
+            [430.0, 280.0],
+            [450.0, 270.0],
+            [450.0, 250.0],
+            [430.0, 240.0],
+            [410.0, 250.0],
+            [410.0, 270.0],
+        ]);
     });
 
     // Transparency section
@@ -196,36 +196,42 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
     // Overlapping circles with transparency
     let circle_cx = 120.0;
     let circle_cy = 130.0;
-    
+
     doc.fill(|ctx| {
-        ctx.color(1.0, 0.0, 0.0).circle([circle_cx, circle_cy], 35.0);
+        ctx.color(1.0, 0.0, 0.0)
+            .circle([circle_cx, circle_cy], 35.0);
     });
     doc.transparent(0.7, |d| {
         d.fill(|ctx| {
-            ctx.color(0.0, 1.0, 0.0).circle([circle_cx + 40.0, circle_cy], 35.0);
+            ctx.color(0.0, 1.0, 0.0)
+                .circle([circle_cx + 40.0, circle_cy], 35.0);
         });
     });
     doc.transparent(0.4, |d| {
         d.fill(|ctx| {
-            ctx.color(0.0, 0.0, 1.0).circle([circle_cx + 20.0, circle_cy - 35.0], 35.0);
+            ctx.color(0.0, 0.0, 1.0)
+                .circle([circle_cx + 20.0, circle_cy - 35.0], 35.0);
         });
     });
 
     // Overlapping rectangles with transparency
     let rect_x = 320.0;
     let rect_y = 100.0;
-    
+
     doc.fill(|ctx| {
-        ctx.color(0.85, 0.2, 0.3).rectangle([rect_x, rect_y], 80.0, 55.0);
+        ctx.color(0.85, 0.2, 0.3)
+            .rectangle([rect_x, rect_y], 80.0, 55.0);
     });
     doc.transparent(0.65, |d| {
         d.fill(|ctx| {
-            ctx.color(0.2, 0.6, 0.9).rectangle([rect_x + 45.0, rect_y], 80.0, 55.0);
+            ctx.color(0.2, 0.6, 0.9)
+                .rectangle([rect_x + 45.0, rect_y], 80.0, 55.0);
         });
     });
     doc.transparent(0.35, |d| {
         d.fill(|ctx| {
-            ctx.color(0.3, 0.85, 0.3).rectangle([rect_x + 22.0, rect_y + 30.0], 80.0, 55.0);
+            ctx.color(0.3, 0.85, 0.3)
+                .rectangle([rect_x + 22.0, rect_y + 30.0], 80.0, 55.0);
         });
     });
 
@@ -363,10 +369,7 @@ fn add_page_custom_font(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("Custom Font Embedding", [margin, 800.0]);
 
     doc.font(&font_regular).size(12.0);
-    doc.text_at(
-        "TrueType fonts with full Unicode support",
-        [margin, 778.0],
-    );
+    doc.text_at("TrueType fonts with full Unicode support", [margin, 778.0]);
 
     // Section 1: Font showcase
     let mut y = 700.0;
@@ -497,10 +500,7 @@ fn add_page_ligatures(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("MapleMono Ligatures", [margin, 800.0]);
 
     doc.font("Helvetica").size(12.0);
-    doc.text_at(
-        "Ligatures, kerning, and line spacing",
-        [margin, 778.0],
-    );
+    doc.text_at("Ligatures, kerning, and line spacing", [margin, 778.0]);
 
     let mut y = 700.0;
     doc.font(&font_name).size(22.0);
@@ -827,10 +827,7 @@ fn add_page_pdf_embed(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("PDF Embedding", [margin, 800.0]);
 
     doc.font("Helvetica").size(11.0);
-    doc.text_at(
-        "Embed and draw pages from other PDFs",
-        [margin, 780.0],
-    );
+    doc.text_at("Embed and draw pages from other PDFs", [margin, 780.0]);
 
     // Create a sample "source" PDF in memory
     let source_pdf = create_sample_source_pdf()?;
@@ -1143,7 +1140,10 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
     doc.font("Helvetica").size(24.0);
     doc.text_at("Text Layout Features", [48.0, 804.0]);
     doc.font("Helvetica").size(11.0);
-    doc.text_at("Text alignment, leading, wrapping & text boxes", [48.0, 784.0]);
+    doc.text_at(
+        "Text alignment, leading, wrapping & text boxes",
+        [48.0, 784.0],
+    );
 
     // Use absolute positioning for content
     let left_margin = 48.0;
@@ -1157,13 +1157,13 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
     doc.font("Helvetica").size(9.0);
     doc.text_at("Left aligned text (default)", [left_margin, y]);
     y -= 12.0;
-    
+
     // Center: measure text and center it
     let center_text = "Center aligned text";
     let page_width = 595.0;
     doc.text_at(center_text, [(page_width - 120.0) / 2.0, y]); // approximate center
     y -= 12.0;
-    
+
     // Right aligned
     doc.text_at("Right aligned text", [page_width - left_margin - 100.0, y]);
     y -= 20.0;
@@ -1186,7 +1186,7 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
     y -= 10.0;
     doc.text_at("  Line 2 with normal spacing", [col1_x, y]);
     y -= 14.0;
-    
+
     doc.font("Helvetica").size(8.5);
     doc.text_at("Tight leading (1.0x):", [col1_x, y]);
     y -= 9.0;
@@ -1237,7 +1237,8 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
     let box_bottom = y - box_height;
 
     doc.stroke(|ctx| {
-        ctx.gray(0.6).line_width(0.5)
+        ctx.gray(0.6)
+            .line_width(0.5)
             .rectangle([box1_x, box_bottom], box_width, box_height)
             .rectangle([box2_x, box_bottom], box_width, box_height);
     });
@@ -1254,13 +1255,13 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
         "Each box can have different content while",
         "maintaining consistent structure.",
     ];
-    
+
     let mut by = box_top - 10.0;
     for line in &box1_lines {
         doc.text_at(line, [box1_x + 4.0, by]);
         by -= 9.0;
     }
-    
+
     by = box_top - 10.0;
     for line in &box2_lines {
         doc.text_at(line, [box2_x + 4.0, by]);
@@ -1271,7 +1272,10 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
 
     // Footer
     doc.font("Helvetica-Oblique").size(8.0);
-    doc.text_at("All text layout features work seamlessly with LayoutDocument", [130.0, y]);
+    doc.text_at(
+        "All text layout features work seamlessly with LayoutDocument",
+        [130.0, y],
+    );
 
     Ok(())
 }

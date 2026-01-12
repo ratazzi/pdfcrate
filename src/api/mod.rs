@@ -26,7 +26,10 @@ use crate::forms::{AcroForm, FormField};
 use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
 
 pub use image::{EmbeddedImage, ImageOptions, Position};
-pub use layout::{BoundingBox, LayoutDocument, Margin};
+pub use layout::{
+    BoundingBox, LayoutDocument, Margin, PageNumberConfig, PageNumberPosition, RepeaterPages,
+    TextAlign,
+};
 pub use page::{PageLayout, PageSize};
 
 /// A PDF Document
@@ -1064,29 +1067,29 @@ impl Document {
     {
         // Clamp opacity to valid range
         let opacity = opacity.clamp(0.0, 1.0);
-        
+
         // Create ExtGState dictionary for transparency
         let gs_ref = self.context.alloc_ref();
         let gs_name = format!("GS{}", gs_ref.object_number());
-        
+
         let mut gs_dict = PdfDict::new();
         gs_dict.set("Type", PdfObject::Name("ExtGState".into()));
         gs_dict.set("CA", PdfObject::Real(opacity)); // Stroke alpha
         gs_dict.set("ca", PdfObject::Real(opacity)); // Fill alpha
-        
+
         self.context.assign(gs_ref, PdfObject::Dict(gs_dict));
-        
+
         // Add to current page resources
         let page = &mut self.pages[self.current_page];
         page.content.save_state();
         page.content.set_graphics_state(&gs_name);
-        
+
         // Store the gs resource reference for later use during render
         // We'll need to add it to the page's ExtGState resources
         self.ensure_extgstate_resource(&gs_name, gs_ref);
-        
+
         f(self);
-        
+
         self.pages[self.current_page].content.restore_state();
         self
     }
