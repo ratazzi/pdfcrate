@@ -98,6 +98,262 @@ pub struct TextBoxResult {
     pub total_lines: usize,
 }
 
+/// RGB color for text and graphics
+///
+/// Supports parsing from CSS color strings using `csscolorparser`.
+///
+/// # Examples
+///
+/// ```rust
+/// use pdfcrate::api::Color;
+///
+/// // Named colors
+/// let red = Color::parse("red");
+/// let coral = Color::parse("coral");
+///
+/// // Hex colors
+/// let hex = Color::parse("#FF5733");
+/// let hex_short = Color::parse("#F53");
+///
+/// // RGB/RGBA
+/// let rgb = Color::parse("rgb(255, 87, 51)");
+/// let rgba = Color::parse("rgba(255, 87, 51, 0.5)");
+///
+/// // HSL/HSLA
+/// let hsl = Color::parse("hsl(14, 100%, 60%)");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Color {
+    /// Red component (0.0-1.0)
+    pub r: f64,
+    /// Green component (0.0-1.0)
+    pub g: f64,
+    /// Blue component (0.0-1.0)
+    pub b: f64,
+    /// Alpha component (0.0-1.0)
+    pub a: f64,
+}
+
+impl Color {
+    /// Creates a new RGB color (alpha = 1.0)
+    pub fn rgb(r: f64, g: f64, b: f64) -> Self {
+        Color { r, g, b, a: 1.0 }
+    }
+
+    /// Creates a new RGBA color
+    pub fn rgba(r: f64, g: f64, b: f64, a: f64) -> Self {
+        Color { r, g, b, a }
+    }
+
+    /// Creates a grayscale color
+    pub fn gray(value: f64) -> Self {
+        Color {
+            r: value,
+            g: value,
+            b: value,
+            a: 1.0,
+        }
+    }
+
+    /// Parses a color from any CSS color string
+    ///
+    /// Supports:
+    /// - Named colors: "red", "blue", "coral", "rebeccapurple", etc.
+    /// - Hex: "#RGB", "#RRGGBB", "#RRGGBBAA"
+    /// - RGB/RGBA: "rgb(255, 0, 0)", "rgba(255, 0, 0, 0.5)"
+    /// - HSL/HSLA: "hsl(0, 100%, 50%)", "hsla(0, 100%, 50%, 0.5)"
+    /// - HWB: "hwb(0 0% 0%)"
+    ///
+    /// Returns black if parsing fails.
+    pub fn parse(s: &str) -> Self {
+        s.parse::<csscolorparser::Color>()
+            .map(|c| {
+                let [r, g, b, a] = c.to_array();
+                Color {
+                    r: r.into(),
+                    g: g.into(),
+                    b: b.into(),
+                    a: a.into(),
+                }
+            })
+            .unwrap_or(Color::BLACK)
+    }
+
+    /// Creates a color from hex string (e.g., "FF0000" or "#FF0000")
+    ///
+    /// This is a convenience method. For full CSS color support, use `parse()`.
+    pub fn hex(hex: &str) -> Self {
+        let hex = hex.trim_start_matches('#');
+        // Try parsing with csscolorparser first
+        if let Ok(c) = format!("#{}", hex).parse::<csscolorparser::Color>() {
+            let [r, g, b, a] = c.to_array();
+            return Color {
+                r: r.into(),
+                g: g.into(),
+                b: b.into(),
+                a: a.into(),
+            };
+        }
+        Color::BLACK
+    }
+
+    /// Black color
+    pub const BLACK: Color = Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+
+    /// White color
+    pub const WHITE: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+
+    /// Red color
+    pub const RED: Color = Color {
+        r: 1.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+
+    /// Green color
+    pub const GREEN: Color = Color {
+        r: 0.0,
+        g: 1.0,
+        b: 0.0,
+        a: 1.0,
+    };
+
+    /// Blue color
+    pub const BLUE: Color = Color {
+        r: 0.0,
+        g: 0.0,
+        b: 1.0,
+        a: 1.0,
+    };
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Color::BLACK
+    }
+}
+
+impl core::str::FromStr for Color {
+    type Err = csscolorparser::ParseColorError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let c = s.parse::<csscolorparser::Color>()?;
+        let [r, g, b, a] = c.to_array();
+        Ok(Color {
+            r: r.into(),
+            g: g.into(),
+            b: b.into(),
+            a: a.into(),
+        })
+    }
+}
+
+impl From<csscolorparser::Color> for Color {
+    fn from(c: csscolorparser::Color) -> Self {
+        let [r, g, b, a] = c.to_array();
+        Color {
+            r: r.into(),
+            g: g.into(),
+            b: b.into(),
+            a: a.into(),
+        }
+    }
+}
+
+/// Font style for text rendering
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FontStyle {
+    /// Normal (regular) font style
+    #[default]
+    Normal,
+    /// Bold font style
+    Bold,
+    /// Italic font style
+    Italic,
+    /// Bold and italic font style
+    BoldItalic,
+}
+
+/// A fragment of formatted text with optional styling
+///
+/// Used with `formatted_text` to render text with mixed styles.
+#[derive(Debug, Clone)]
+pub struct TextFragment {
+    /// The text content
+    pub text: String,
+    /// Font style (normal, bold, italic, bold-italic)
+    pub style: FontStyle,
+    /// Text color (None = use current color)
+    pub color: Option<Color>,
+    /// Font size (None = use current font size)
+    pub size: Option<f64>,
+    /// Font name (None = use current font family)
+    pub font: Option<String>,
+}
+
+impl TextFragment {
+    /// Creates a new text fragment with the given text
+    pub fn new(text: impl Into<String>) -> Self {
+        TextFragment {
+            text: text.into(),
+            style: FontStyle::Normal,
+            color: None,
+            size: None,
+            font: None,
+        }
+    }
+
+    /// Sets the font style
+    pub fn style(mut self, style: FontStyle) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Sets the text color
+    pub fn color(mut self, color: Color) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    /// Sets the font size
+    pub fn size(mut self, size: f64) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// Sets the font name
+    pub fn font(mut self, font: impl Into<String>) -> Self {
+        self.font = Some(font.into());
+        self
+    }
+
+    /// Sets bold style (convenience method)
+    pub fn bold(self) -> Self {
+        self.style(FontStyle::Bold)
+    }
+
+    /// Sets italic style (convenience method)
+    pub fn italic(self) -> Self {
+        self.style(FontStyle::Italic)
+    }
+
+    /// Sets bold-italic style (convenience method)
+    pub fn bold_italic(self) -> Self {
+        self.style(FontStyle::BoldItalic)
+    }
+}
+
 /// Specifies which pages a repeater should apply to
 #[derive(Debug, Clone)]
 pub enum RepeaterPages {
@@ -747,6 +1003,166 @@ impl LayoutDocument {
         self.state.bounds_mut().update_stretched_height(cursor_y);
 
         self
+    }
+
+    /// Draws formatted text with mixed styles at the current cursor position
+    ///
+    /// This method allows rendering text with different styles (bold, italic),
+    /// colors, and sizes within the same line, similar to Prawn's `formatted_text`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{LayoutDocument, Document, TextFragment, FontStyle, Color};
+    ///
+    /// let doc = Document::new();
+    /// let mut layout = LayoutDocument::new(doc);
+    /// layout.formatted_text(&[
+    ///     TextFragment::new("Bold ").bold(),
+    ///     TextFragment::new("and "),
+    ///     TextFragment::new("Red").color(Color::RED),
+    /// ]);
+    /// ```
+    pub fn formatted_text(&mut self, fragments: &[TextFragment]) -> &mut Self {
+        if fragments.is_empty() {
+            return self;
+        }
+
+        let bounds = self.state.bounds();
+        let left = bounds.absolute_left();
+        let right = bounds.absolute_right();
+        let width = right - left;
+
+        let base_font = self.inner.current_font.clone();
+        let base_size = self.inner.current_font_size;
+
+        // Calculate total width for alignment
+        let total_width: f64 = fragments
+            .iter()
+            .filter(|f| !f.text.is_empty())
+            .map(|f| {
+                let font_name = if let Some(ref font) = f.font {
+                    font.clone()
+                } else {
+                    Self::get_styled_font_name(&base_font, f.style)
+                };
+                let font_size = f.size.unwrap_or(base_size);
+                Self::measure_fragment_width(&font_name, &f.text, font_size)
+            })
+            .sum();
+
+        // Calculate starting x position based on alignment
+        let start_x = match self.state.text_align {
+            TextAlign::Left => left,
+            TextAlign::Center => left + (width - total_width) / 2.0,
+            TextAlign::Right => right - total_width,
+            TextAlign::Justify => left,
+        };
+
+        // Calculate y position (baseline)
+        let font_size = base_size;
+        let ascender_offset = font_size * 0.78;
+        let y = self.state.cursor_y - ascender_offset;
+
+        let mut x = start_x;
+
+        for fragment in fragments {
+            if fragment.text.is_empty() {
+                continue;
+            }
+
+            // Determine font name based on style
+            let font_name = if let Some(ref font) = fragment.font {
+                font.clone()
+            } else {
+                Self::get_styled_font_name(&base_font, fragment.style)
+            };
+
+            let frag_font_size = fragment.size.unwrap_or(base_size);
+
+            // Ensure font is registered
+            self.inner.ensure_font(&font_name);
+
+            // Measure text width for positioning next fragment
+            let text_width =
+                Self::measure_fragment_width(&font_name, &fragment.text, frag_font_size);
+
+            // Get mutable access to content
+            let page = &mut self.inner.pages[self.inner.current_page];
+
+            // Save state if we need to change color
+            let needs_color_change = fragment.color.is_some();
+            if needs_color_change {
+                page.content.save_state();
+                if let Some(color) = fragment.color {
+                    page.content.set_fill_color_rgb(color.r, color.g, color.b);
+                }
+            }
+
+            // Draw the text
+            page.content
+                .begin_text()
+                .set_font(&font_name, frag_font_size)
+                .move_text_pos(x, y)
+                .show_text(&fragment.text)
+                .end_text();
+
+            // Restore state if we changed color
+            if needs_color_change {
+                page.content.restore_state();
+            }
+
+            x += text_width;
+        }
+
+        // Move cursor down by line height
+        let line_height = self.line_height();
+        self.state.cursor_y -= line_height;
+
+        // Update stretched height if in stretchy box
+        let cursor_y = self.state.cursor_y;
+        self.state.bounds_mut().update_stretched_height(cursor_y);
+
+        self
+    }
+
+    /// Returns the styled font name for standard fonts
+    fn get_styled_font_name(base_font: &str, style: FontStyle) -> String {
+        let base = if base_font.starts_with("Helvetica") {
+            "Helvetica"
+        } else if base_font.starts_with("Times") {
+            "Times"
+        } else if base_font.starts_with("Courier") {
+            "Courier"
+        } else {
+            return base_font.to_string();
+        };
+
+        match (base, style) {
+            ("Helvetica", FontStyle::Normal) => "Helvetica".to_string(),
+            ("Helvetica", FontStyle::Bold) => "Helvetica-Bold".to_string(),
+            ("Helvetica", FontStyle::Italic) => "Helvetica-Oblique".to_string(),
+            ("Helvetica", FontStyle::BoldItalic) => "Helvetica-BoldOblique".to_string(),
+            ("Times", FontStyle::Normal) => "Times-Roman".to_string(),
+            ("Times", FontStyle::Bold) => "Times-Bold".to_string(),
+            ("Times", FontStyle::Italic) => "Times-Italic".to_string(),
+            ("Times", FontStyle::BoldItalic) => "Times-BoldItalic".to_string(),
+            ("Courier", FontStyle::Normal) => "Courier".to_string(),
+            ("Courier", FontStyle::Bold) => "Courier-Bold".to_string(),
+            ("Courier", FontStyle::Italic) => "Courier-Oblique".to_string(),
+            ("Courier", FontStyle::BoldItalic) => "Courier-BoldOblique".to_string(),
+            _ => base_font.to_string(),
+        }
+    }
+
+    /// Measures text width for a given font (static helper)
+    fn measure_fragment_width(font_name: &str, text: &str, font_size: f64) -> f64 {
+        use crate::font::StandardFont;
+        if let Some(font) = StandardFont::from_name(font_name) {
+            font.string_width(text) as f64 * font_size / 1000.0
+        } else {
+            text.len() as f64 * font_size * 0.5
+        }
     }
 
     /// Draws wrapped text at the current cursor position

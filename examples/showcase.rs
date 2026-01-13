@@ -16,7 +16,7 @@
 //!
 //! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
-use pdfcrate::api::AxisOptions;
+use pdfcrate::api::{AxisOptions, Color, TextFragment};
 use pdfcrate::image::embed_jpeg;
 use pdfcrate::prelude::{
     Document, LayoutDocument, LoadedDocument, Margin, Overflow, PageLayout, PageSize,
@@ -1097,9 +1097,34 @@ fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
 
     layout.move_down(15.0);
 
-    // Section 2: Cursor tracking
+    // Section 2: Formatted text (mixed styles)
     layout.font("Helvetica").size(12.0);
-    layout.text("3. Cursor Tracking:");
+    layout.text("3. Formatted Text (Mixed Styles):");
+    layout.move_down(8.0);
+
+    layout.font("Helvetica").size(10.0);
+    layout.formatted_text(&[
+        TextFragment::new("This is "),
+        TextFragment::new("bold").bold(),
+        TextFragment::new(", "),
+        TextFragment::new("italic").italic(),
+        TextFragment::new(", and "),
+        TextFragment::new("red").color(Color::RED),
+        TextFragment::new(" text in one line."),
+    ]);
+    layout.formatted_text(&[
+        TextFragment::new("Mixed: ").bold(),
+        TextFragment::new("Times ").font("Times-Roman"),
+        TextFragment::new("and "),
+        TextFragment::new("Courier").font("Courier"),
+        TextFragment::new(" fonts."),
+    ]);
+
+    layout.move_down(10.0);
+
+    // Section 3: Cursor tracking
+    layout.font("Helvetica").size(12.0);
+    layout.text("4. Cursor Tracking:");
     layout.move_down(8.0);
 
     layout.font("Helvetica").size(10.0);
@@ -1115,9 +1140,9 @@ fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
 
     layout.move_down(15.0);
 
-    // Section 3: Indent
+    // Section 4: Indent
     layout.font("Helvetica").size(12.0);
-    layout.text("4. Indent:");
+    layout.text("5. Indent:");
     layout.move_down(8.0);
 
     layout.font("Helvetica").size(10.0);
@@ -1133,9 +1158,9 @@ fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
 
     layout.move_down(15.0);
 
-    // Section 4: Float
+    // Section 5: Float
     layout.font("Helvetica").size(12.0);
-    layout.text("5. Float (temp position):");
+    layout.text("6. Float (temp position):");
     layout.move_down(8.0);
 
     layout.font("Helvetica").size(10.0);
@@ -1148,9 +1173,9 @@ fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
     layout.text("After float (continues from 'Before')");
     layout.move_down(50.0);
 
-    // Section 5: Bounds visualization (compact)
+    // Section 6: Bounds visualization (compact)
     layout.font("Helvetica").size(12.0);
-    layout.text("6. Bounds Visualization:");
+    layout.text("7. Bounds Visualization:");
     layout.move_down(8.0);
 
     layout.bounding_box([0.0, 0.0], 200.0, Some(50.0), |doc| {

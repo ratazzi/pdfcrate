@@ -31,6 +31,9 @@ svg2pdf = { version = "0.12", optional = true }
 qrcode = { version = "0.14", optional = true }
 barcoders = { version = "2.0", optional = true }
 
+# Color parsing (CSS color strings)
+csscolorparser = { version = "0.8", default-features = false, features = ["named-colors"] }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 
