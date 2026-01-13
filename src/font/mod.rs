@@ -9,6 +9,7 @@ pub mod truetype;
 pub use truetype::{EmbeddedFont, ShapedGlyph};
 
 use crate::objects::{PdfDict, PdfName, PdfObject};
+use pdf_canvas::{BuiltinFont, FontSource};
 
 /// Standard PDF fonts
 ///
@@ -101,12 +102,41 @@ pub struct FontMetrics {
     pub cap_height: i32,
     /// x height
     pub x_height: i32,
+    /// Line gap (extra space between lines, in 1/1000 of text space)
+    pub line_gap: i32,
 }
 
 impl StandardFont {
+    /// Returns the corresponding pdf_canvas::BuiltinFont
+    fn to_builtin_font(&self) -> BuiltinFont {
+        match self {
+            StandardFont::Courier => BuiltinFont::Courier,
+            StandardFont::CourierBold => BuiltinFont::Courier_Bold,
+            StandardFont::CourierOblique => BuiltinFont::Courier_Oblique,
+            StandardFont::CourierBoldOblique => BuiltinFont::Courier_BoldOblique,
+            StandardFont::Helvetica => BuiltinFont::Helvetica,
+            StandardFont::HelveticaBold => BuiltinFont::Helvetica_Bold,
+            StandardFont::HelveticaOblique => BuiltinFont::Helvetica_Oblique,
+            StandardFont::HelveticaBoldOblique => BuiltinFont::Helvetica_BoldOblique,
+            StandardFont::TimesRoman => BuiltinFont::Times_Roman,
+            StandardFont::TimesBold => BuiltinFont::Times_Bold,
+            StandardFont::TimesItalic => BuiltinFont::Times_Italic,
+            StandardFont::TimesBoldItalic => BuiltinFont::Times_BoldItalic,
+            StandardFont::Symbol => BuiltinFont::Symbol,
+            StandardFont::ZapfDingbats => BuiltinFont::ZapfDingbats,
+        }
+    }
+
+    /// Measures the width of a string in 1/1000 em units
+    ///
+    /// Uses AFM metrics from pdf-canvas for accurate text measurement.
+    pub fn string_width(&self, text: &str) -> i32 {
+        self.to_builtin_font().get_width_raw(text) as i32
+    }
+
     /// Returns approximate metrics for this font
     pub fn metrics(&self) -> FontMetrics {
-        // Simplified metrics - in production, load from AFM files
+        // Metrics from AFM files, line_gap calculated to match Prawn behavior
         match self {
             StandardFont::Courier
             | StandardFont::CourierBold
@@ -117,6 +147,7 @@ impl StandardFont {
                 descender: -157,
                 cap_height: 562,
                 x_height: 426,
+                line_gap: 214, // Matches Prawn's line spacing
             },
             StandardFont::Helvetica
             | StandardFont::HelveticaBold
@@ -127,6 +158,7 @@ impl StandardFont {
                 descender: -207,
                 cap_height: 718,
                 x_height: 523,
+                line_gap: 231, // From Prawn: 3.234/14*1000 ≈ 231
             },
             StandardFont::TimesRoman
             | StandardFont::TimesBold
@@ -137,6 +169,7 @@ impl StandardFont {
                 descender: -217,
                 cap_height: 662,
                 x_height: 450,
+                line_gap: 200, // Approximate
             },
             StandardFont::Symbol => FontMetrics {
                 avg_width: 500,
@@ -144,6 +177,7 @@ impl StandardFont {
                 descender: -293,
                 cap_height: 1010,
                 x_height: 500,
+                line_gap: 200,
             },
             StandardFont::ZapfDingbats => FontMetrics {
                 avg_width: 500,
@@ -151,6 +185,7 @@ impl StandardFont {
                 descender: -143,
                 cap_height: 820,
                 x_height: 500,
+                line_gap: 200,
             },
         }
     }
@@ -180,5 +215,16 @@ mod tests {
             Some(StandardFont::Helvetica)
         );
         assert_eq!(StandardFont::from_name("Unknown"), None);
+    }
+
+    #[test]
+    fn test_string_width() {
+        // Uses pdf-canvas for AFM metrics
+        // "Hello World" in Helvetica should match pdf-canvas's get_width_raw
+        assert_eq!(StandardFont::Helvetica.string_width("Hello World"), 5167);
+
+        // Courier is monospace: 600 per character
+        assert_eq!(StandardFont::Courier.string_width("ABCD"), 2400);
+        assert_eq!(StandardFont::Courier.string_width("abcd"), 2400);
     }
 }

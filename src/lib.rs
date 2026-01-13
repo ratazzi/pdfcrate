@@ -46,8 +46,8 @@ pub use error::{Error, Result};
 pub mod prelude {
     pub use crate::api::image::{EmbeddedImage, ImageOptions, Position};
     pub use crate::api::layout::{
-        BoundingBox, LayoutDocument, Margin, PageNumberConfig, PageNumberPosition, RepeaterPages,
-        TextAlign,
+        BoundingBox, LayoutDocument, Margin, Overflow, PageNumberConfig, PageNumberPosition,
+        RepeaterPages, TextAlign, TextBoxResult,
     };
     pub use crate::api::page::{PageLayout, PageSize};
     pub use crate::api::Document;

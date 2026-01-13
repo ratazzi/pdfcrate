@@ -23,9 +23,10 @@ use std::ops::{Deref, DerefMut};
 use super::Document;
 
 /// Text alignment options
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextAlign {
     /// Align text to the left edge
+    #[default]
     Left,
     /// Center text horizontally
     Center,
@@ -35,10 +36,66 @@ pub enum TextAlign {
     Justify,
 }
 
-impl Default for TextAlign {
-    fn default() -> Self {
-        TextAlign::Left
+/// Text overflow behavior for text boxes
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Overflow {
+    /// Truncate text that exceeds the box height (default behavior)
+    ///
+    /// Text that doesn't fit is silently discarded.
+    #[default]
+    Truncate,
+
+    /// Shrink the font size to fit all text within the box
+    ///
+    /// The font will be reduced until all text fits, down to the specified
+    /// minimum size. If text still doesn't fit at min size, it will be truncated.
+    ///
+    /// The parameter is the minimum font size (default: 6.0 if using `ShrinkToFit::default()`).
+    ShrinkToFit(f64),
+
+    /// Expand the box height to accommodate all text
+    ///
+    /// The box will grow vertically as needed. The actual height used
+    /// is returned in `TextBoxResult::height`.
+    Expand,
+}
+
+impl Overflow {
+    /// Create a ShrinkToFit overflow with default minimum size (6.0pt)
+    pub fn shrink_to_fit() -> Self {
+        Overflow::ShrinkToFit(6.0)
     }
+
+    /// Create a ShrinkToFit overflow with custom minimum size
+    pub fn shrink_to_fit_min(min_size: f64) -> Self {
+        Overflow::ShrinkToFit(min_size)
+    }
+}
+
+/// Result information from text_box rendering
+#[derive(Debug, Clone)]
+pub struct TextBoxResult {
+    /// Actual height used by the text box
+    ///
+    /// For `Overflow::Expand`, this may be larger than the requested height.
+    /// For other modes, this equals the requested height.
+    pub height: f64,
+
+    /// Whether text was truncated due to overflow
+    pub truncated: bool,
+
+    /// Actual font size used for rendering
+    ///
+    /// For `Overflow::ShrinkToFit`, this may be smaller than the original font size.
+    pub font_size: f64,
+
+    /// Number of lines actually rendered
+    pub lines_rendered: usize,
+
+    /// Total number of lines in the wrapped text
+    ///
+    /// If `truncated` is true, `total_lines > lines_rendered`.
+    pub total_lines: usize,
 }
 
 /// Specifies which pages a repeater should apply to
@@ -443,7 +500,7 @@ impl LayoutState {
             bounds_stack: vec![margin_box],
             margin,
             text_align: TextAlign::Left,
-            leading: 1.2,
+            leading: 1.0, // Default 1.0 matches Prawn's default (no extra leading)
         }
     }
 
@@ -587,16 +644,58 @@ impl LayoutDocument {
 
     /// Sets the leading (line spacing multiplier) for subsequent text operations
     ///
-    /// Default is 1.2 (20% spacing between lines).
-    /// Leading is multiplied by the font size to determine the line height.
+    /// Default is 1.0 (no extra spacing, matching Prawn's default).
+    /// Leading is multiplied by the font height (ascender - descender) to determine line height.
     pub fn leading(&mut self, leading: f64) -> &mut Self {
         self.state.leading = leading;
         self
     }
 
-    /// Returns the current line height based on font size and leading
+    /// Returns the current line height based on font metrics and leading
+    ///
+    /// Uses actual AFM metrics (ascender - descender) for standard fonts,
+    /// multiplied by the leading factor. This provides more accurate
+    /// line spacing that matches Prawn's behavior.
     pub fn line_height(&self) -> f64 {
-        self.inner.current_font_size * self.state.leading
+        self.font_height() * self.state.leading
+    }
+
+    /// Returns the natural height of the current font (ascender - descender + line_gap)
+    ///
+    /// This matches Prawn's line height calculation which includes line_gap.
+    fn font_height(&self) -> f64 {
+        use crate::font::StandardFont;
+
+        let font_size = self.inner.current_font_size;
+
+        // Try to get actual metrics for standard fonts
+        if let Some(font) = StandardFont::from_name(&self.inner.current_font) {
+            let metrics = font.metrics();
+            // Height = ascender - descender + line_gap (descender is negative)
+            // This matches Prawn: font.ascender + font.descender + font.line_gap
+            let height_units = metrics.ascender - metrics.descender + metrics.line_gap;
+            return height_units as f64 * font_size / 1000.0;
+        }
+
+        // Fallback: approximate as 115% of em (matches typical Prawn behavior)
+        font_size * 1.15
+    }
+
+    /// Returns the ascender height of the current font
+    ///
+    /// This is the height from baseline to top of tallest character.
+    fn ascender_height(&self) -> f64 {
+        use crate::font::StandardFont;
+
+        let font_size = self.inner.current_font_size;
+
+        if let Some(font) = StandardFont::from_name(&self.inner.current_font) {
+            let metrics = font.metrics();
+            return metrics.ascender as f64 * font_size / 1000.0;
+        }
+
+        // Fallback: approximate as 72% of em (typical for Latin fonts)
+        font_size * 0.72
     }
 
     /// Draws text at the current cursor position
@@ -670,7 +769,8 @@ impl LayoutDocument {
     /// Draws text in a bounding box with automatic wrapping
     ///
     /// This is similar to Prawn's `text_box` method. Text is wrapped to fit
-    /// within the specified dimensions, and overflow is silently clipped.
+    /// within the specified dimensions. Overflow behavior is controlled by
+    /// the `overflow` parameter.
     ///
     /// # Arguments
     ///
@@ -678,32 +778,226 @@ impl LayoutDocument {
     /// * `point` - Position offset from current cursor [x, y]
     /// * `width` - Width of the text box
     /// * `height` - Fixed height of the text box
+    /// * `overflow` - How to handle text that doesn't fit
+    ///
+    /// # Returns
+    ///
+    /// A `TextBoxResult` containing information about the rendered text,
+    /// including actual height used and whether text was truncated.
     ///
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdfcrate::api::{Document, LayoutDocument};
+    /// use pdfcrate::api::{Document, LayoutDocument, Overflow};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
-    /// layout.text_box("Long text that will wrap...", [0.0, 0.0], 200.0, 100.0);
+    ///
+    /// // Simple truncation (default)
+    /// let result = layout.text_box(
+    ///     "Long text that will wrap...",
+    ///     [0.0, 0.0], 200.0, 100.0,
+    ///     Overflow::Truncate,
+    /// );
+    ///
+    /// // Shrink font to fit
+    /// let result = layout.text_box(
+    ///     "Text that must fit...",
+    ///     [0.0, 0.0], 200.0, 50.0,
+    ///     Overflow::ShrinkToFit(6.0),  // min 6pt
+    /// );
+    ///
+    /// // Expand box height
+    /// let result = layout.text_box(
+    ///     "Lots of text...",
+    ///     [0.0, 0.0], 200.0, 50.0,  // initial height
+    ///     Overflow::Expand,
+    /// );
+    /// println!("Actual height: {}", result.height);
     /// ```
-    pub fn text_box(&mut self, text: &str, point: [f64; 2], width: f64, height: f64) -> &mut Self {
+    pub fn text_box(
+        &mut self,
+        text: &str,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+        overflow: Overflow,
+    ) -> TextBoxResult {
+        match overflow {
+            Overflow::Truncate => self.text_box_truncate(text, point, width, height),
+            Overflow::ShrinkToFit(min_size) => {
+                self.text_box_shrink(text, point, width, height, min_size)
+            }
+            Overflow::Expand => self.text_box_expand(text, point, width, height),
+        }
+    }
+
+    /// Text box with truncation (default behavior)
+    fn text_box_truncate(
+        &mut self,
+        text: &str,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+    ) -> TextBoxResult {
+        let original_size = self.inner.current_font_size;
+        let line_height = self.line_height();
+        // Prawn calculates that last line only needs ascender height, not full line_height
+        // Space for n lines = (n-1) * line_height + ascender
+        // So max_lines = floor((height - ascender) / line_height) + 1
+        let ascender = self.ascender_height();
+        let max_lines = if height >= ascender {
+            ((height - ascender) / line_height + 1.0).floor() as usize
+        } else {
+            0
+        };
+        let lines = self.wrap_text_to_width(text, width);
+        let total_lines = lines.len();
+        let lines_to_render = lines.len().min(max_lines);
+
         self.bounding_box(point, width, Some(height), |doc| {
-            let bounds_height = doc.bounds().height();
-            let line_height = doc.line_height();
-            let max_lines = (bounds_height / line_height).floor() as usize;
-
-            let lines = doc.wrap_text_to_width(text, width);
-
-            for (i, line) in lines.iter().enumerate() {
-                if i >= max_lines {
-                    break; // Stop if we exceed the box height
-                }
+            for line in lines.iter().take(lines_to_render) {
                 doc.text(line);
             }
         });
 
-        self
+        TextBoxResult {
+            height,
+            truncated: total_lines > lines_to_render,
+            font_size: original_size,
+            lines_rendered: lines_to_render,
+            total_lines,
+        }
+    }
+
+    /// Text box with font shrinking to fit
+    fn text_box_shrink(
+        &mut self,
+        text: &str,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+        min_size: f64,
+    ) -> TextBoxResult {
+        let original_size = self.inner.current_font_size;
+        let mut current_size = original_size;
+
+        // Binary search for the best font size
+        let mut low = min_size;
+        let mut high = original_size;
+
+        // First check if original size fits
+        let lines_at_original = self.wrap_text_to_width(text, width);
+        let line_height_at_original = self.line_height();
+        let ascender_at_original = self.ascender_height();
+        let max_lines_at_original = if height >= ascender_at_original {
+            ((height - ascender_at_original) / line_height_at_original + 1.0).floor() as usize
+        } else {
+            0
+        };
+
+        if lines_at_original.len() <= max_lines_at_original {
+            // Original size fits, use it
+            return self.text_box_truncate(text, point, width, height);
+        }
+
+        // Need to shrink - binary search for best size
+        for _ in 0..10 {
+            // Max 10 iterations for precision
+            let mid = (low + high) / 2.0;
+            self.inner.current_font_size = mid;
+
+            let lines = self.wrap_text_to_width(text, width);
+            let line_height = self.line_height();
+            let ascender = self.ascender_height();
+            let max_lines = if height >= ascender {
+                ((height - ascender) / line_height + 1.0).floor() as usize
+            } else {
+                0
+            };
+
+            if lines.len() <= max_lines {
+                // Fits at this size, try larger
+                low = mid;
+                current_size = mid;
+            } else {
+                // Doesn't fit, try smaller
+                high = mid;
+            }
+
+            if high - low < 0.5 {
+                break;
+            }
+        }
+
+        // Use the found size (or min_size if nothing fits)
+        current_size = current_size.max(min_size);
+        self.inner.current_font_size = current_size;
+
+        let lines = self.wrap_text_to_width(text, width);
+        let line_height = self.line_height();
+        let ascender = self.ascender_height();
+        let max_lines = if height >= ascender {
+            ((height - ascender) / line_height + 1.0).floor() as usize
+        } else {
+            0
+        };
+        let total_lines = lines.len();
+        let lines_to_render = lines.len().min(max_lines);
+
+        self.bounding_box(point, width, Some(height), |doc| {
+            for line in lines.iter().take(lines_to_render) {
+                doc.text(line);
+            }
+        });
+
+        // Restore original font size
+        self.inner.current_font_size = original_size;
+
+        TextBoxResult {
+            height,
+            truncated: total_lines > lines_to_render,
+            font_size: current_size,
+            lines_rendered: lines_to_render,
+            total_lines,
+        }
+    }
+
+    /// Text box that expands to fit content
+    fn text_box_expand(
+        &mut self,
+        text: &str,
+        point: [f64; 2],
+        width: f64,
+        min_height: f64,
+    ) -> TextBoxResult {
+        let original_size = self.inner.current_font_size;
+        let line_height = self.line_height();
+        let ascender = self.ascender_height();
+        let lines = self.wrap_text_to_width(text, width);
+        let total_lines = lines.len();
+
+        // Calculate required height: (n-1) * line_height + ascender
+        // This matches Prawn's calculation where last line only needs ascender height
+        let required_height = if total_lines > 0 {
+            (total_lines - 1) as f64 * line_height + ascender
+        } else {
+            0.0
+        };
+        let actual_height = required_height.max(min_height);
+
+        self.bounding_box(point, width, Some(actual_height), |doc| {
+            for line in &lines {
+                doc.text(line);
+            }
+        });
+
+        TextBoxResult {
+            height: actual_height,
+            truncated: false,
+            font_size: original_size,
+            lines_rendered: total_lines,
+            total_lines,
+        }
     }
 
     /// Measures the width of text with the current font
@@ -714,8 +1008,14 @@ impl LayoutDocument {
         }
         #[cfg(not(feature = "fonts"))]
         {
-            // Approximate width for standard fonts
-            text.len() as f64 * self.inner.current_font_size * 0.5
+            // Use proper AFM metrics for standard fonts
+            use crate::font::StandardFont;
+            if let Some(font) = StandardFont::from_name(&self.inner.current_font) {
+                font.string_width(text) as f64 * self.inner.current_font_size / 1000.0
+            } else {
+                // Fallback for unknown fonts
+                text.len() as f64 * self.inner.current_font_size * 0.5
+            }
         }
     }
 
@@ -1268,12 +1568,13 @@ mod tests {
 
         layout.font("Helvetica").size(12.0);
         let cursor_before = layout.cursor();
+        let expected_line_height = layout.line_height();
 
         layout.text("Hello, World!");
 
         // Cursor should have moved down by line height
-        let expected_line_height = 12.0 * 1.2;
-        assert_eq!(layout.cursor(), cursor_before - expected_line_height);
+        // Using actual font metrics: Helvetica (718 - -207) / 1000 * 12 * 1.0 = 11.1pt
+        assert!((layout.cursor() - (cursor_before - expected_line_height)).abs() < 0.01);
     }
 
     #[test]
@@ -1398,6 +1699,7 @@ mod tests {
         let mut layout = LayoutDocument::new(doc);
 
         layout.font("Helvetica").size(12.0);
+        let line_height = layout.line_height();
         let initial_cursor = layout.cursor();
 
         // Create a stretchy bounding box at cursor position
@@ -1408,9 +1710,8 @@ mod tests {
         });
 
         // The box should have stretched to fit 3 lines
-        // Each line is 12.0 * 1.2 = 14.4pt
-        // Total height should be about 43.2pt
-        let expected_height = 12.0 * 1.2 * 3.0;
+        // Using actual font metrics: Helvetica height = 11.1pt per line
+        let expected_height = line_height * 3.0;
         assert!((initial_cursor - layout.cursor() - expected_height).abs() < 0.1);
     }
 

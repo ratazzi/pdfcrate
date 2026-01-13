@@ -27,8 +27,8 @@ use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
 
 pub use image::{EmbeddedImage, ImageOptions, Position};
 pub use layout::{
-    BoundingBox, LayoutDocument, Margin, PageNumberConfig, PageNumberPosition, RepeaterPages,
-    TextAlign,
+    BoundingBox, LayoutDocument, Margin, Overflow, PageNumberConfig, PageNumberPosition,
+    RepeaterPages, TextAlign, TextBoxResult,
 };
 pub use page::{PageLayout, PageSize};
 
@@ -594,8 +594,20 @@ impl Document {
                 return total_advance as f64 * self.current_font_size / 1000.0;
             }
         }
-        // Fallback for standard fonts (approximate)
-        text.len() as f64 * self.current_font_size * 0.5
+        // Use proper AFM metrics for standard fonts
+        self.measure_standard_font_text(text)
+    }
+
+    /// Measures text width using standard font AFM metrics
+    fn measure_standard_font_text(&self, text: &str) -> f64 {
+        use crate::font::StandardFont;
+
+        if let Some(font) = StandardFont::from_name(&self.current_font) {
+            font.string_width(text) as f64 * self.current_font_size / 1000.0
+        } else {
+            // Fallback for unknown fonts
+            text.len() as f64 * self.current_font_size * 0.5
+        }
     }
 
     #[cfg(feature = "fonts")]

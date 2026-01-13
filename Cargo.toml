@@ -14,6 +14,9 @@ flate2 = { version = "1.0", default-features = false, features = ["zlib-rs"] }
 thiserror = "1.0"
 log = "0.4"
 
+# Font metrics for PDF standard fonts (AFM data)
+pdf-canvas = "0.7"
+
 # Optional dependencies for extended functionality
 png = { version = "0.17", optional = true }
 ttf-parser = { version = "0.24", optional = true }
