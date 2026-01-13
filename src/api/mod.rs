@@ -151,6 +151,96 @@ impl DocumentInfo {
     }
 }
 
+/// Options for stroke_axis
+///
+/// Configures the appearance of coordinate axes drawn by `stroke_axis`.
+#[derive(Debug, Clone)]
+pub struct AxisOptions {
+    /// Origin point for the axes (default: [0, 0])
+    pub at: [f64; 2],
+    /// Width of the horizontal axis (default: page width - at.x)
+    pub width: Option<f64>,
+    /// Height of the vertical axis (default: page height - at.y)
+    pub height: Option<f64>,
+    /// Distance between tick marks (default: 100)
+    pub step_length: f64,
+    /// How far axes extend below/left of origin (default: 20)
+    pub negative_axes_length: f64,
+    /// Color for axes and labels as hex string (default: "000000")
+    pub color: [f64; 3],
+}
+
+impl Default for AxisOptions {
+    fn default() -> Self {
+        AxisOptions {
+            at: [0.0, 0.0],
+            width: None,
+            height: None,
+            step_length: 100.0,
+            negative_axes_length: 20.0,
+            color: [0.0, 0.0, 0.0], // Black
+        }
+    }
+}
+
+impl AxisOptions {
+    /// Creates new axis options with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the origin point for the axes
+    pub fn at(mut self, x: f64, y: f64) -> Self {
+        self.at = [x, y];
+        self
+    }
+
+    /// Sets the width of the horizontal axis
+    pub fn width(mut self, width: f64) -> Self {
+        self.width = Some(width);
+        self
+    }
+
+    /// Sets the height of the vertical axis
+    pub fn height(mut self, height: f64) -> Self {
+        self.height = Some(height);
+        self
+    }
+
+    /// Sets the distance between tick marks
+    pub fn step_length(mut self, step: f64) -> Self {
+        self.step_length = step;
+        self
+    }
+
+    /// Sets how far axes extend below/left of origin
+    pub fn negative_axes_length(mut self, length: f64) -> Self {
+        self.negative_axes_length = length;
+        self
+    }
+
+    /// Sets the color for axes and labels (RGB, 0.0-1.0)
+    pub fn color(mut self, r: f64, g: f64, b: f64) -> Self {
+        self.color = [r, g, b];
+        self
+    }
+
+    /// Sets the color for axes and labels from hex string (e.g., "ff0000" for red)
+    pub fn color_hex(mut self, hex: &str) -> Self {
+        let hex = hex.trim_start_matches('#');
+        if hex.len() >= 6 {
+            if let (Ok(r), Ok(g), Ok(b)) = (
+                u8::from_str_radix(&hex[0..2], 16),
+                u8::from_str_radix(&hex[2..4], 16),
+                u8::from_str_radix(&hex[4..6], 16),
+            ) {
+                self.color = [r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0];
+            }
+        }
+        self
+    }
+}
+
 /// Formats a SystemTime as a PDF date string (PDF 1.7 §7.9.4)
 ///
 /// Format: D:YYYYMMDDHHmmSSOHH'mm'
@@ -1112,6 +1202,133 @@ impl Document {
         if !self.ext_gstates.iter().any(|(n, _)| n == name) {
             self.ext_gstates.push((name.to_string(), gs_ref));
         }
+    }
+
+    /// Draws X and Y coordinate axes with tick marks and labels
+    ///
+    /// This is a helper method for visualizing PDF coordinates, similar to Prawn's
+    /// `stroke_axis`. It draws dashed axes with tick marks at regular intervals
+    /// and coordinate labels.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, AxisOptions};
+    ///
+    /// let mut doc = Document::new();
+    /// // Draw axes with default options
+    /// doc.stroke_axis(AxisOptions::default());
+    ///
+    /// // Or with custom options
+    /// doc.stroke_axis(
+    ///     AxisOptions::new()
+    ///         .at(50.0, 50.0)
+    ///         .step_length(50.0)
+    ///         .color(0.5, 0.5, 0.5)
+    /// );
+    /// ```
+    pub fn stroke_axis(&mut self, options: AxisOptions) -> &mut Self {
+        let page = &self.pages[self.current_page];
+        let (page_width, page_height) = page.size.dimensions(page.layout);
+        let at = options.at;
+        let width = options.width.unwrap_or(page_width - at[0]);
+        let height = options.height.unwrap_or(page_height - at[1]);
+        let step = options.step_length;
+        let neg_len = options.negative_axes_length;
+        let [r, g, b] = options.color;
+
+        // Save graphics state
+        self.pages[self.current_page].content.save_state();
+
+        // Set colors
+        self.pages[self.current_page]
+            .content
+            .set_stroke_color_rgb(r, g, b);
+        self.pages[self.current_page]
+            .content
+            .set_fill_color_rgb(r, g, b);
+
+        // Draw dashed axes (dash length 1, space 4 - matches Prawn)
+        self.pages[self.current_page]
+            .content
+            .set_dash(&[1.0, 4.0], 0.0);
+
+        // Horizontal axis (X)
+        self.pages[self.current_page]
+            .content
+            .move_to(at[0] - neg_len, at[1])
+            .line_to(at[0] + width, at[1])
+            .stroke();
+
+        // Vertical axis (Y)
+        self.pages[self.current_page]
+            .content
+            .move_to(at[0], at[1] - neg_len)
+            .line_to(at[0], at[1] + height)
+            .stroke();
+
+        // Clear dash for circles
+        self.pages[self.current_page].content.clear_dash();
+
+        // Draw origin circle
+        self.pages[self.current_page]
+            .content
+            .circle(at[0], at[1], 1.0)
+            .fill();
+
+        // Ensure Helvetica font is registered for labels
+        self.ensure_font("Helvetica");
+        let font_name = "Helvetica";
+
+        // Draw X axis tick marks and labels
+        let mut point = step;
+        while point <= width {
+            let x = at[0] + point;
+            // Tick mark circle
+            self.pages[self.current_page]
+                .content
+                .circle(x, at[1], 1.0)
+                .fill();
+
+            // Label
+            let label = format!("{}", point as i32);
+            self.pages[self.current_page]
+                .content
+                .begin_text()
+                .set_font(&font_name, 7.0)
+                .set_text_matrix(1.0, 0.0, 0.0, 1.0, x - 5.0, at[1] - 10.0)
+                .show_text(&label)
+                .end_text();
+
+            point += step;
+        }
+
+        // Draw Y axis tick marks and labels
+        let mut point = step;
+        while point <= height {
+            let y = at[1] + point;
+            // Tick mark circle
+            self.pages[self.current_page]
+                .content
+                .circle(at[0], y, 1.0)
+                .fill();
+
+            // Label
+            let label = format!("{}", point as i32);
+            self.pages[self.current_page]
+                .content
+                .begin_text()
+                .set_font(&font_name, 7.0)
+                .set_text_matrix(1.0, 0.0, 0.0, 1.0, at[0] - 17.0, y - 2.0)
+                .show_text(&label)
+                .end_text();
+
+            point += step;
+        }
+
+        // Restore graphics state
+        self.pages[self.current_page].content.restore_state();
+        self
     }
 
     /// Sets document title

@@ -16,6 +16,7 @@
 //!
 //! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
+use pdfcrate::api::AxisOptions;
 use pdfcrate::image::embed_jpeg;
 use pdfcrate::prelude::{
     Document, LayoutDocument, LoadedDocument, Margin, Overflow, PageLayout, PageSize,
@@ -85,6 +86,15 @@ fn main() -> StdResult<(), Box<dyn Error>> {
 }
 
 fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
+    // Draw coordinate axes for visual reference (gray)
+    // at(20, 20) offset so labels are visible (not clipped by page edge)
+    doc.stroke_axis(
+        AxisOptions::new()
+            .at(20.0, 20.0)
+            .color(0.6, 0.6, 0.6)
+            .step_length(100.0),
+    );
+
     // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
         ctx.gray(0.95).rect_tl([0.0, 842.0], 595.0, 82.0);
