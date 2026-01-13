@@ -603,12 +603,24 @@ impl LayoutDocument {
     ///
     /// The cursor is moved down by the line height after drawing.
     /// Text is not wrapped - use `text_wrap` for automatic wrapping.
+    ///
+    /// Note: Like Prawn, the cursor represents the TOP of the text line.
+    /// The text baseline is positioned below the cursor by the font ascender.
     pub fn text(&mut self, text: &str) -> &mut Self {
         let bounds = self.state.bounds();
         let left = bounds.absolute_left();
         let right = bounds.absolute_right();
         let width = right - left;
-        let y = self.state.cursor_y;
+
+        // In Prawn, cursor is at the TOP of the text line.
+        // Text baseline should be below cursor by approximately (font_size - descender).
+        // For most fonts, ascender is about 80% of em height, descender about 20%.
+        // So baseline = cursor - ascender ≈ cursor - (font_size * 0.8)
+        // But Prawn uses a simpler model: baseline = cursor - (font_size - descender_height)
+        // Approximating descender as 20% of font_size: baseline = cursor - font_size * 0.8
+        let font_size = self.inner.current_font_size;
+        let ascender_offset = font_size * 0.78; // Approximate ascender ratio
+        let y = self.state.cursor_y - ascender_offset;
 
         // Calculate x position based on alignment
         let x = match self.state.text_align {
@@ -624,7 +636,7 @@ impl LayoutDocument {
             TextAlign::Justify => left, // Justify not supported for single-line text
         };
 
-        // Draw text at calculated position
+        // Draw text at calculated position (y is the baseline)
         self.inner.text_at(text, [x, y]);
 
         // Move cursor down by line height

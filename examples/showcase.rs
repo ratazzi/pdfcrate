@@ -82,9 +82,9 @@ fn main() -> StdResult<(), Box<dyn Error>> {
 }
 
 fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
-    // Header band
+    // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], 595.0, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], 595.0, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -96,32 +96,36 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("Strokes", [60.0, 720.0]);
     doc.text_at("Fills", [320.0, 720.0]);
 
-    // Stroke-only shapes
+    // Stroke-only shapes (using rect_tl with top-left coordinates like Prawn)
     doc.stroke(|ctx| {
+        // Blue rectangle (top-left: 60, 700)
         ctx.color(0.15, 0.45, 0.85)
             .line_width(2.0)
-            .rectangle([60.0, 610.0], 180.0, 90.0);
-        ctx.color(0.9, 0.3, 0.2).line_width(3.0).rounded_rectangle(
-            [60.0, 490.0],
-            180.0,
-            90.0,
-            14.0,
-        );
+            .rect_tl([60.0, 700.0], 180.0, 90.0);
+        // Red rounded rectangle (top-left: 60, 580)
+        ctx.color(0.9, 0.3, 0.2)
+            .line_width(3.0)
+            .rounded_rect_tl([60.0, 580.0], 180.0, 90.0, 14.0);
+        // Green circle (center coordinates - same as Prawn)
         ctx.color(0.2, 0.7, 0.4)
             .line_width(2.5)
             .circle([150.0, 420.0], 40.0);
+        // Dashed line (same coordinates as Prawn)
         ctx.color(0.2, 0.2, 0.2)
             .dash(&[6.0, 4.0])
             .line([60.0, 360.0], [240.0, 360.0])
             .undash();
     });
 
-    // Filled shapes
+    // Filled shapes (using rect_tl with top-left coordinates like Prawn)
     doc.fill(|ctx| {
+        // Yellow rounded rectangle (top-left: 320, 700)
         ctx.color(0.98, 0.85, 0.25)
-            .rounded_rectangle([320.0, 610.0], 220.0, 90.0, 18.0);
+            .rounded_rect_tl([320.0, 700.0], 220.0, 90.0, 18.0);
+        // Blue ellipse (center coordinates - same as Prawn)
         ctx.color(0.2, 0.62, 0.95)
             .ellipse([430.0, 520.0], 90.0, 45.0);
+        // Pink circle (center coordinates - same as Prawn)
         ctx.color(0.9, 0.5, 0.6).circle([430.0, 420.0], 45.0);
     });
 
@@ -214,24 +218,27 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
         });
     });
 
-    // Overlapping rectangles with transparency
+    // Overlapping rectangles with transparency (using top-left coordinates like Prawn)
     let rect_x = 320.0;
-    let rect_y = 100.0;
+    let rect_top_y = 155.0; // top-left y coordinate (Prawn style)
 
+    // Red rect (100%)
     doc.fill(|ctx| {
         ctx.color(0.85, 0.2, 0.3)
-            .rectangle([rect_x, rect_y], 80.0, 55.0);
+            .rect_tl([rect_x, rect_top_y], 80.0, 55.0);
     });
+    // Blue rect (65%)
     doc.transparent(0.65, |d| {
         d.fill(|ctx| {
             ctx.color(0.2, 0.6, 0.9)
-                .rectangle([rect_x + 45.0, rect_y], 80.0, 55.0);
+                .rect_tl([rect_x + 45.0, rect_top_y], 80.0, 55.0);
         });
     });
+    // Green rect (35%) - offset 30pt higher (185 in Prawn top-left coords)
     doc.transparent(0.35, |d| {
         d.fill(|ctx| {
             ctx.color(0.3, 0.85, 0.3)
-                .rectangle([rect_x + 22.0, rect_y + 30.0], 80.0, 55.0);
+                .rect_tl([rect_x + 22.0, rect_top_y + 30.0], 80.0, 55.0);
         });
     });
 
@@ -300,9 +307,10 @@ fn add_page_alpha(
         width,
         height,
     );
+    // Green background (full page, top-left origin)
     doc.fill(|ctx| {
         ctx.color(0.92, 0.98, 0.92)
-            .rectangle([0.0, 0.0], page_width, page_height);
+            .rect_tl([0.0, page_height], page_width, page_height);
     });
     doc.font("Helvetica").size(14.0);
     doc.text_at(
@@ -354,9 +362,9 @@ fn add_page_custom_font(doc: &mut Document) -> PdfResult<()> {
 
     doc.start_new_page();
 
-    // Header band (light gray)
+    // Header band (light gray, top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
     });
 
     // Embed fonts
@@ -451,10 +459,10 @@ fn add_page_custom_font(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("Mixed Fonts in Document:", [margin, y]);
     y -= 30.0;
 
-    // Draw a box with mixed font content
+    // Draw a box with mixed font content (using top-left origin)
     doc.stroke(|ctx| {
-        ctx.gray(0.7).line_width(1.0).rounded_rectangle(
-            [margin, y - 80.0],
+        ctx.gray(0.7).line_width(1.0).rounded_rect_tl(
+            [margin, y + 10.0],
             page_width - margin * 2.0,
             90.0,
             8.0,
@@ -490,8 +498,9 @@ fn add_page_ligatures(doc: &mut Document) -> PdfResult<()> {
 
     doc.start_new_page();
 
+    // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
     });
 
     let font_name = doc.embed_font(fs::read(MAPLE_FONT_PATH)?)?;
@@ -590,9 +599,9 @@ fn add_page_cjk(doc: &mut Document) -> PdfResult<()> {
 
     doc.start_new_page();
 
-    // Header band
+    // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
     });
 
     // Embed CJK fonts
@@ -704,9 +713,9 @@ fn add_page_forms(doc: &mut Document) -> PdfResult<()> {
 
     doc.start_new_page();
 
-    // Header band
+    // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -818,9 +827,9 @@ fn add_page_pdf_embed(doc: &mut Document) -> PdfResult<()> {
 
     doc.start_new_page();
 
-    // Header band
+    // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -857,10 +866,10 @@ fn add_page_pdf_embed(doc: &mut Document) -> PdfResult<()> {
 
     let mut x = margin;
     for (i, page) in embedded_pages.iter().enumerate() {
-        // Draw a border around the thumbnail
+        // Draw a border around the thumbnail (using top-left origin)
         doc.stroke(|ctx| {
-            ctx.gray(0.7).line_width(1.0).rectangle(
-                [x - 2.0, y - thumbnail_height - 2.0],
+            ctx.gray(0.7).line_width(1.0).rect_tl(
+                [x - 2.0, y + 2.0],
                 thumbnail_width + 4.0,
                 thumbnail_height + 4.0,
             );
@@ -916,9 +925,9 @@ fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
 
     doc.start_new_page();
 
-    // Header band
+    // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -970,16 +979,18 @@ fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
     let x = margin;
     let y = 520.0;
 
+    // Background rectangles (using top-left origin)
+    let rect_top_y = y + target_height + 8.0;
     doc.fill(|ctx| {
-        ctx.gray(0.97).rectangle(
-            [x - 8.0, y - 8.0],
+        ctx.gray(0.97).rect_tl(
+            [x - 8.0, rect_top_y],
             target_width + 16.0,
             target_height + 16.0,
         );
     });
     doc.stroke(|ctx| {
-        ctx.gray(0.85).line_width(0.5).rectangle(
-            [x - 8.0, y - 8.0],
+        ctx.gray(0.85).line_width(0.5).rect_tl(
+            [x - 8.0, rect_top_y],
             target_width + 16.0,
             target_height + 16.0,
         );
@@ -998,14 +1009,16 @@ fn add_page_svg_barcode(doc: &mut Document) -> PdfResult<()> {
 
 fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
     let (page_width, _) = PageSize::A4.dimensions(PageLayout::Portrait);
-    let margin = 48.0;
 
     doc.start_new_page();
 
-    // Header band (drawn with absolute positioning)
+    // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], page_width, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
     });
+
+    // Use 36pt margin to match Prawn default
+    let margin = 36.0;
 
     doc.font("Helvetica").size(24.0);
     doc.text_at("LayoutDocument Demo", [margin, 800.0]);
@@ -1017,63 +1030,66 @@ fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
     );
 
     // Create LayoutDocument wrapper
+    // Match Prawn: bounds.top - 100 where bounds.top = 842 - 36 = 806
+    // So cursor starts at 806 - 100 = 706, meaning top_margin = 842 - 706 = 136
     let doc_owned = std::mem::take(doc);
     let mut layout =
-        LayoutDocument::with_margin(doc_owned, Margin::new(82.0, margin, margin, margin));
+        LayoutDocument::with_margin(doc_owned, Margin::new(136.0, margin, margin, margin));
 
     // Section 1: Bounding Box Demo
-    layout.font("Helvetica").size(14.0);
-    layout.text("Nested Bounding Boxes:");
-    layout.move_down(15.0);
+    layout.font("Helvetica").size(12.0);
+    layout.text("1. Nested Bounding Boxes:");
+    layout.move_down(10.0);
 
     // Outer box (fixed height)
-    layout.bounding_box([0.0, 0.0], 250.0, Some(120.0), |doc| {
+    layout.bounding_box([0.0, 0.0], 220.0, Some(90.0), |doc| {
         doc.stroke_bounds();
-        doc.font("Helvetica").size(11.0);
-        doc.text("Outer box (250x120)");
+        doc.font("Helvetica").size(10.0);
+        doc.text("Outer box (220x90)");
+        doc.move_down(5.0);
 
         // Inner box (nested, stretchy)
-        doc.bounding_box([20.0, 0.0], 180.0, None, |doc| {
+        doc.bounding_box([15.0, 0.0], 160.0, None, |doc| {
             doc.stroke_bounds();
-            doc.font("Helvetica").size(10.0);
+            doc.font("Helvetica").size(9.0);
             doc.text("Inner nested box");
             doc.text("Auto-height (stretchy)");
         });
     });
 
     // Side-by-side boxes using float
-    layout.move_down(20.0);
-    layout.font("Helvetica").size(14.0);
-    layout.text("Side-by-Side Layout (using float):");
     layout.move_down(15.0);
+    layout.font("Helvetica").size(12.0);
+    layout.text("2. Side-by-Side Layout:");
+    layout.move_down(10.0);
 
     let box_top = layout.cursor();
 
     // Left box
-    layout.bounding_box([0.0, 0.0], 160.0, Some(80.0), |doc| {
+    layout.bounding_box([0.0, 0.0], 140.0, Some(60.0), |doc| {
         doc.stroke_bounds();
-        doc.font("Helvetica").size(10.0);
+        doc.font("Helvetica").size(9.0);
         doc.text("Left Box");
-        doc.text("Width: 160pt");
+        doc.text("Width: 140pt");
     });
 
     // Right box (use float to position at same y level)
     layout.set_cursor(box_top);
-    layout.bounding_box([180.0, 0.0], 160.0, Some(80.0), |doc| {
+    layout.bounding_box([160.0, 0.0], 140.0, Some(60.0), |doc| {
         doc.stroke_bounds();
-        doc.font("Helvetica").size(10.0);
+        doc.font("Helvetica").size(9.0);
         doc.text("Right Box");
-        doc.text("Offset: 180pt");
+        doc.text("Offset: 160pt");
     });
 
-    layout.move_down(20.0);
+    layout.move_down(15.0);
 
     // Section 2: Cursor tracking
-    layout.font("Helvetica").size(14.0);
-    layout.text("Cursor Tracking:");
-    layout.move_down(10.0);
+    layout.font("Helvetica").size(12.0);
+    layout.text("3. Cursor Tracking:");
+    layout.move_down(8.0);
 
-    layout.font("Helvetica").size(11.0);
+    layout.font("Helvetica").size(10.0);
     let cursor1 = layout.cursor();
     layout.text(&format!("Cursor at: {:.1}pt", cursor1));
     layout.text("Each text() call auto-advances cursor");
@@ -1084,45 +1100,52 @@ fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
         cursor1 - cursor2
     ));
 
-    layout.move_down(20.0);
+    layout.move_down(15.0);
 
     // Section 3: Indent
-    layout.font("Helvetica").size(14.0);
-    layout.text("Indent:");
-    layout.move_down(10.0);
+    layout.font("Helvetica").size(12.0);
+    layout.text("4. Indent:");
+    layout.move_down(8.0);
 
-    layout.font("Helvetica").size(11.0);
+    layout.font("Helvetica").size(10.0);
     layout.text("Normal margin.");
-    layout.indent(40.0, 40.0, |l| {
-        l.text("Indented 40pt left/right.");
-        l.indent(30.0, 30.0, |l| {
-            l.text("Double indent (70pt total).");
+    layout.indent(30.0, 0.0, |l| {
+        l.text("Indented 30pt from left.");
+        l.indent(30.0, 0.0, |l| {
+            l.text("Double indent (60pt total).");
         });
-        l.text("Back to 40pt indent.");
+        l.text("Back to 30pt indent.");
     });
     layout.text("Back to normal.");
 
-    layout.move_down(20.0);
+    layout.move_down(15.0);
 
     // Section 4: Float
-    layout.font("Helvetica").size(14.0);
-    layout.text("Float (temp position):");
-    layout.move_down(10.0);
+    layout.font("Helvetica").size(12.0);
+    layout.text("5. Float (temp position):");
+    layout.move_down(8.0);
 
-    layout.font("Helvetica").size(11.0);
+    layout.font("Helvetica").size(10.0);
     layout.text("Before float");
     layout.float(|l| {
-        l.move_down(60.0);
-        l.font("Helvetica").size(10.0);
-        l.text(">> Floated 60pt down");
+        l.move_down(40.0);
+        l.font("Helvetica").size(9.0);
+        l.text(">> Floated 40pt down");
     });
     layout.text("After float (continues from 'Before')");
-    layout.move_down(70.0); // Make room
+    layout.move_down(50.0);
 
-    // Section 5: Full bounds visualization
-    layout.font("Helvetica").size(10.0);
-    layout.text("Current bounds shown by stroke_bounds():");
-    layout.stroke_bounds();
+    // Section 5: Bounds visualization (compact)
+    layout.font("Helvetica").size(12.0);
+    layout.text("6. Bounds Visualization:");
+    layout.move_down(8.0);
+
+    layout.bounding_box([0.0, 0.0], 200.0, Some(50.0), |doc| {
+        doc.stroke_bounds();
+        doc.font("Helvetica").size(9.0);
+        doc.text("stroke_bounds() draws");
+        doc.text("the current bounding box");
+    });
 
     *doc = layout.into_inner();
     Ok(())
@@ -1133,9 +1156,9 @@ fn add_page_layout(doc: &mut Document) -> PdfResult<()> {
 fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
     doc.start_new_page();
 
-    // Header (using absolute positioning)
+    // Header (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 760.0], 595.0, 82.0);
+        ctx.gray(0.95).rect_tl([0.0, 842.0], 595.0, 82.0);
     });
     doc.font("Helvetica").size(24.0);
     doc.text_at("Text Layout Features", [48.0, 804.0]);
@@ -1228,7 +1251,7 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("4. Text Box (Fixed Height)", [left_margin, y]);
     y -= 14.0;
 
-    // Draw two boxes with borders
+    // Draw two boxes with borders (using top-left origin)
     let box_width = 235.0;
     let box_height = 55.0;
     let box1_x = left_margin;
@@ -1239,11 +1262,12 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
     doc.stroke(|ctx| {
         ctx.gray(0.6)
             .line_width(0.5)
-            .rectangle([box1_x, box_bottom], box_width, box_height)
-            .rectangle([box2_x, box_bottom], box_width, box_height);
+            .rect_tl([box1_x, box_top], box_width, box_height)
+            .rect_tl([box2_x, box_top], box_width, box_height);
     });
 
     // Text inside boxes
+    // Prawn uses cursor-based layout with ~5.4pt from box top to baseline
     doc.font("Helvetica").size(7.5);
     let box1_lines = [
         "Text boxes constrain content to a fixed height.",
@@ -1256,16 +1280,16 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
         "maintaining consistent structure.",
     ];
 
-    let mut by = box_top - 10.0;
+    let mut by = box_top - 5.4;
     for line in &box1_lines {
         doc.text_at(line, [box1_x + 4.0, by]);
-        by -= 9.0;
+        by -= 8.67; // Match Prawn's line spacing
     }
 
-    by = box_top - 10.0;
+    by = box_top - 5.4;
     for line in &box2_lines {
         doc.text_at(line, [box2_x + 4.0, by]);
-        by -= 9.0;
+        by -= 8.67;
     }
 
     y = box_bottom - 25.0;
@@ -1284,10 +1308,9 @@ fn add_page_layout_advanced(doc: &mut Document) -> PdfResult<()> {
 fn create_sample_source_pdf() -> PdfResult<Vec<u8>> {
     let mut source = Document::new();
 
-    // Page 1: Title page
+    // Page 1: Title page (using top-left coordinates)
     source.fill(|ctx| {
-        ctx.color(0.2, 0.4, 0.8)
-            .rectangle([0.0, 700.0], 595.0, 142.0);
+        ctx.color(0.2, 0.4, 0.8).rect_tl([0.0, 842.0], 595.0, 142.0);
     });
     source.font("Helvetica").size(28.0);
     source.text_at("Sample Source PDF", [150.0, 750.0]);
@@ -1307,8 +1330,9 @@ fn create_sample_source_pdf() -> PdfResult<Vec<u8>> {
 
     source.fill(|ctx| {
         ctx.color(0.9, 0.3, 0.3).circle([150.0, 500.0], 80.0);
+        // Green square (using top-left coordinates)
         ctx.color(0.3, 0.9, 0.3)
-            .rectangle([280.0, 420.0], 160.0, 160.0);
+            .rect_tl([280.0, 580.0], 160.0, 160.0);
         ctx.color(0.3, 0.3, 0.9)
             .ellipse([150.0, 300.0], 100.0, 50.0);
     });

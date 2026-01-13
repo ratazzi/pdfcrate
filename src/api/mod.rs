@@ -1694,13 +1694,39 @@ impl<'a> StrokeContext<'a> {
     }
 
     /// Draws and strokes a rectangle
+    ///
+    /// The origin is the bottom-left corner (PDF native coordinates).
     pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
         self.content.rect(origin[0], origin[1], width, height);
         self.content.stroke();
         self
     }
 
+    /// Draws and strokes a rectangle with top-left origin (Prawn-style)
+    ///
+    /// This is an alias for `rectangle` that accepts the top-left corner
+    /// as the origin point, matching Prawn's coordinate convention.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// // Draw a rectangle with top-left at (100, 500)
+    /// doc.stroke(|ctx| {
+    ///     ctx.rect_tl([100.0, 500.0], 200.0, 100.0);
+    /// });
+    /// ```
+    pub fn rect_tl(&mut self, top_left: [f64; 2], width: f64, height: f64) -> &mut Self {
+        // Convert top-left to bottom-left (PDF native)
+        let bottom_left = [top_left[0], top_left[1] - height];
+        self.rectangle(bottom_left, width, height)
+    }
+
     /// Draws and strokes a rounded rectangle
+    ///
+    /// The origin is the bottom-left corner (PDF native coordinates).
     pub fn rounded_rectangle(
         &mut self,
         origin: [f64; 2],
@@ -1712,6 +1738,22 @@ impl<'a> StrokeContext<'a> {
             .rounded_rect(origin[0], origin[1], width, height, radius);
         self.content.stroke();
         self
+    }
+
+    /// Draws and strokes a rounded rectangle with top-left origin (Prawn-style)
+    ///
+    /// This is an alias for `rounded_rectangle` that accepts the top-left corner
+    /// as the origin point, matching Prawn's coordinate convention.
+    pub fn rounded_rect_tl(
+        &mut self,
+        top_left: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        // Convert top-left to bottom-left (PDF native)
+        let bottom_left = [top_left[0], top_left[1] - height];
+        self.rounded_rectangle(bottom_left, width, height, radius)
     }
 
     /// Draws and strokes a circle
@@ -1816,13 +1858,39 @@ impl<'a> FillContext<'a> {
     }
 
     /// Draws and fills a rectangle
+    ///
+    /// The origin is the bottom-left corner (PDF native coordinates).
     pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
         self.content.rect(origin[0], origin[1], width, height);
         self.content.fill();
         self
     }
 
+    /// Draws and fills a rectangle with top-left origin (Prawn-style)
+    ///
+    /// This is an alias for `rectangle` that accepts the top-left corner
+    /// as the origin point, matching Prawn's coordinate convention.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdf_rs::api::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// // Draw a filled rectangle with top-left at (100, 500)
+    /// doc.fill(|ctx| {
+    ///     ctx.rect_tl([100.0, 500.0], 200.0, 100.0);
+    /// });
+    /// ```
+    pub fn rect_tl(&mut self, top_left: [f64; 2], width: f64, height: f64) -> &mut Self {
+        // Convert top-left to bottom-left (PDF native)
+        let bottom_left = [top_left[0], top_left[1] - height];
+        self.rectangle(bottom_left, width, height)
+    }
+
     /// Draws and fills a rounded rectangle
+    ///
+    /// The origin is the bottom-left corner (PDF native coordinates).
     pub fn rounded_rectangle(
         &mut self,
         origin: [f64; 2],
@@ -1834,6 +1902,22 @@ impl<'a> FillContext<'a> {
             .rounded_rect(origin[0], origin[1], width, height, radius);
         self.content.fill();
         self
+    }
+
+    /// Draws and fills a rounded rectangle with top-left origin (Prawn-style)
+    ///
+    /// This is an alias for `rounded_rectangle` that accepts the top-left corner
+    /// as the origin point, matching Prawn's coordinate convention.
+    pub fn rounded_rect_tl(
+        &mut self,
+        top_left: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        // Convert top-left to bottom-left (PDF native)
+        let bottom_left = [top_left[0], top_left[1] - height];
+        self.rounded_rectangle(bottom_left, width, height, radius)
     }
 
     /// Draws and fills a circle
