@@ -1,9 +1,9 @@
-//! pdf_rs - A Rust library for creating and manipulating PDF documents
+//! pdfcrate - A Rust library for creating and manipulating PDF documents
 //!
 //! # Example
 //!
 //! ```rust,no_run
-//! use pdf_rs::prelude::*;
+//! use pdfcrate::prelude::*;
 //!
 //! fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 //!     Document::generate("hello.pdf", |doc| {

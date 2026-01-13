@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use pdf_rs::prelude::*;
+//! use pdfcrate::prelude::*;
 //!
 //! let mut doc = Document::new();
 //! doc.add_text_field("name", [100.0, 700.0, 300.0, 720.0])?;

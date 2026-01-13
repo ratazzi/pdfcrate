@@ -1,4 +1,4 @@
-//! Showcase PDF demonstrating pdf_rs features:
+//! Showcase PDF demonstrating pdfcrate features:
 //! - Drawing primitives (shapes, strokes, fills)
 //! - Embedded PNG image
 //! - Embedded JPEG image
@@ -16,9 +16,9 @@
 //!
 //! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
-use pdf_rs::image::embed_jpeg;
-use pdf_rs::prelude::{Document, LayoutDocument, LoadedDocument, Margin, PageLayout, PageSize};
-use pdf_rs::Result as PdfResult;
+use pdfcrate::image::embed_jpeg;
+use pdfcrate::prelude::{Document, LayoutDocument, LoadedDocument, Margin, PageLayout, PageSize};
+use pdfcrate::Result as PdfResult;
 use std::error::Error;
 use std::fs;
 use std::io::Cursor;
@@ -49,7 +49,7 @@ fn main() -> StdResult<(), Box<dyn Error>> {
     let (jpeg_width, jpeg_height) = (jpeg_info.width, jpeg_info.height);
 
     Document::generate("showcase.pdf", |doc| {
-        doc.title("pdf_rs Showcase").author("pdf_rs");
+        doc.title("pdfcrate Showcase").author("pdfcrate");
 
         add_page_drawing(doc)?;
         add_page_png(doc, &png_bytes, png_width, png_height)?;
@@ -88,7 +88,7 @@ fn add_page_drawing(doc: &mut Document) -> PdfResult<()> {
     });
 
     doc.font("Helvetica").size(24.0);
-    doc.text_at("pdf_rs Showcase", [48.0, 804.0]);
+    doc.text_at("pdfcrate Showcase", [48.0, 804.0]);
     doc.font("Helvetica").size(11.0);
     doc.text_at("Drawing primitives, polygons & transparency", [48.0, 784.0]);
 
@@ -644,7 +644,7 @@ fn add_page_cjk(doc: &mut Document) -> PdfResult<()> {
     y -= 30.0;
 
     doc.font(&cjk_regular).size(14.0);
-    doc.text_at("PDF 库 pdf.rs 支持 TrueType 字体嵌入", [margin, y]);
+    doc.text_at("PDF 库 pdfcrate 支持 TrueType 字体嵌入", [margin, y]);
     y -= 22.0;
     doc.text_at(
         "支持字体子集化 (Font Subsetting) 以减小文件大小",

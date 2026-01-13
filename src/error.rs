@@ -1,8 +1,8 @@
-//! Error types for pdf_rs
+//! Error types for pdfcrate
 
 use thiserror::Error;
 
-/// Result type alias for pdf_rs operations
+/// Result type alias for pdfcrate operations
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Error types for PDF operations

@@ -10,7 +10,7 @@
 //!
 //! Run with: cargo run --example layout_demo --features "fonts"
 
-use pdf_rs::prelude::*;
+use pdfcrate::prelude::*;
 use std::error::Error;
 use std::result::Result as StdResult;
 
@@ -286,7 +286,7 @@ fn main() -> StdResult<(), Box<dyn Error>> {
 
     layout.move_down(10.0);
     layout.font("Helvetica").size(10.0);
-    layout.text("Generated with pdf_rs LayoutDocument API");
+    layout.text("Generated with pdfcrate LayoutDocument API");
 
     // Apply headers, footers, and page numbers
     layout.apply_repeaters();

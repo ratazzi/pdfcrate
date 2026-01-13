@@ -39,7 +39,7 @@ pub use page::{PageLayout, PageSize};
 /// # Example
 ///
 /// ```rust,no_run
-/// use pdf_rs::api::Document;
+/// use pdfcrate::api::Document;
 ///
 /// let mut doc = Document::new();
 /// doc.text_at("Hello, World!", [72.0, 700.0]);
@@ -246,7 +246,7 @@ impl Document {
             current_font_size: 12.0,
             current_font_embedded: false,
             info: DocumentInfo {
-                producer: Some("pdf_rs".to_string()),
+                producer: Some("pdfcrate".to_string()),
                 ..Default::default()
             },
             images: Vec::new(),
@@ -267,7 +267,7 @@ impl Document {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::Document;
+    /// use pdfcrate::api::Document;
     ///
     /// Document::generate("hello.pdf", |doc| {
     ///     doc.text_at("Hello, World!", [72.0, 700.0]);
@@ -977,7 +977,7 @@ impl Document {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::prelude::*;
+    /// use pdfcrate::prelude::*;
     ///
     /// let mut doc = Document::new();
     /// let svg = r#"
@@ -986,7 +986,7 @@ impl Document {
     ///     </svg>
     /// "#;
     /// doc.draw_svg(svg, [100.0, 700.0], 200.0, 200.0)?;
-    /// # Ok::<(), pdf_rs::Error>(())
+    /// # Ok::<(), pdfcrate::Error>(())
     /// ```
     ///
     /// Requires the `svg` feature.
@@ -1051,7 +1051,7 @@ impl Document {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::Document;
+    /// use pdfcrate::api::Document;
     ///
     /// let mut doc = Document::new();
     /// doc.transparent(0.5, |doc| {
@@ -1710,7 +1710,7 @@ impl<'a> StrokeContext<'a> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::Document;
+    /// use pdfcrate::api::Document;
     ///
     /// let mut doc = Document::new();
     /// // Draw a rectangle with top-left at (100, 500)
@@ -1806,7 +1806,7 @@ impl<'a> StrokeContext<'a> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::Document;
+    /// use pdfcrate::api::Document;
     ///
     /// let mut doc = Document::new();
     /// doc.stroke(|ctx| {
@@ -1874,7 +1874,7 @@ impl<'a> FillContext<'a> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::Document;
+    /// use pdfcrate::api::Document;
     ///
     /// let mut doc = Document::new();
     /// // Draw a filled rectangle with top-left at (100, 500)
@@ -1963,7 +1963,7 @@ impl<'a> FillContext<'a> {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::Document;
+    /// use pdfcrate::api::Document;
     ///
     /// let mut doc = Document::new();
     /// doc.fill(|ctx| {

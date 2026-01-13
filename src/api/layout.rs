@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use pdf_rs::api::{Document, LayoutDocument, Margin};
+//! use pdfcrate::api::{Document, LayoutDocument, Margin};
 //!
 //! let doc = Document::new();
 //! let mut layout = LayoutDocument::new(doc);
@@ -468,7 +468,7 @@ impl LayoutState {
 /// # Example
 ///
 /// ```rust,no_run
-/// use pdf_rs::api::{Document, LayoutDocument};
+/// use pdfcrate::api::{Document, LayoutDocument};
 ///
 /// // Create from existing document
 /// let doc = Document::new();
@@ -682,7 +682,7 @@ impl LayoutDocument {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::{Document, LayoutDocument};
+    /// use pdfcrate::api::{Document, LayoutDocument};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
     /// layout.text_box("Long text that will wrap...", [0.0, 0.0], 200.0, 100.0);
@@ -781,7 +781,7 @@ impl LayoutDocument {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::{Document, LayoutDocument, RepeaterPages};
+    /// use pdfcrate::api::{Document, LayoutDocument, RepeaterPages};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
     ///
@@ -810,7 +810,7 @@ impl LayoutDocument {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::{Document, LayoutDocument, RepeaterPages};
+    /// use pdfcrate::api::{Document, LayoutDocument, RepeaterPages};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
     /// layout.header(RepeaterPages::All, "Chapter 1: Introduction");
@@ -829,7 +829,7 @@ impl LayoutDocument {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::{Document, LayoutDocument, RepeaterPages};
+    /// use pdfcrate::api::{Document, LayoutDocument, RepeaterPages};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
     /// layout.footer(RepeaterPages::All, "© 2024 My Company");
@@ -848,7 +848,7 @@ impl LayoutDocument {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::{Document, LayoutDocument, PageNumberConfig, PageNumberPosition};
+    /// use pdfcrate::api::{Document, LayoutDocument, PageNumberConfig, PageNumberPosition};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
     ///
@@ -874,7 +874,7 @@ impl LayoutDocument {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::{Document, LayoutDocument, PageNumberConfig};
+    /// use pdfcrate::api::{Document, LayoutDocument, PageNumberConfig};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
     /// layout.number_pages(PageNumberConfig::new("<page> / <total>"));
@@ -1047,7 +1047,7 @@ impl LayoutDocument {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use pdf_rs::api::{Document, LayoutDocument};
+    /// use pdfcrate::api::{Document, LayoutDocument};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
     ///

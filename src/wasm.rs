@@ -1,4 +1,4 @@
-//! WASM bindings for pdf_rs
+//! WASM bindings for pdfcrate
 //!
 //! This module provides JavaScript-friendly bindings for use in WASM environments.
 
