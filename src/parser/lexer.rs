@@ -382,15 +382,20 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
-        if self.pos + length > self.data.len() {
+        let end = self.pos.checked_add(length).ok_or_else(|| Error::Parse {
+            message: "Stream length overflow".to_string(),
+            position: self.pos,
+        })?;
+
+        if end > self.data.len() {
             return Err(Error::Parse {
                 message: "Stream extends past end of file".to_string(),
                 position: self.pos,
             });
         }
 
-        let data = self.data[self.pos..self.pos + length].to_vec();
-        self.pos += length;
+        let data = self.data[self.pos..end].to_vec();
+        self.pos = end;
 
         Ok(data)
     }

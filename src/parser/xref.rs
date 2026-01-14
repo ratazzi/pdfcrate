@@ -5,6 +5,9 @@
 use crate::error::{Error, Result};
 use crate::objects::{PdfDict, PdfObject, PdfRef};
 
+const MAX_XREF_ENTRIES: usize = 5_000_000;
+const MAX_XREF_FIELD_WIDTH: usize = 8;
+
 /// An entry in the XRef table
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XRefEntry {
@@ -199,7 +202,7 @@ impl<'a> XRefParser<'a> {
     /// Parses xref chain following Prev links
     fn parse_xref_chain(&self, offset: u64, xref: &mut XRefTable) -> Result<()> {
         // Check if this is a traditional xref table or an xref stream
-        let pos = offset as usize;
+        let pos = u64_to_usize(offset, "XRef offset", self.data.len())?;
         if pos + 4 > self.data.len() {
             return Err(Error::Parse {
                 message: "XRef offset beyond end of file".to_string(),
@@ -219,7 +222,18 @@ impl<'a> XRefParser<'a> {
             let (table, trailer) = self.parse_traditional_xref(pos)?;
 
             // Get Prev pointer before merging
-            let prev = trailer.get_integer("Prev").map(|p| p as u64);
+            let prev = match trailer.get_integer("Prev") {
+                Some(prev) => {
+                    if prev < 0 {
+                        return Err(Error::Parse {
+                            message: "Invalid Prev offset".to_string(),
+                            position: pos,
+                        });
+                    }
+                    Some(prev as u64)
+                }
+                None => None,
+            };
 
             // Merge this table
             xref.merge(&table);
@@ -236,7 +250,18 @@ impl<'a> XRefParser<'a> {
             let (table, stream_dict) = self.parse_xref_stream(pos)?;
 
             // Get Prev pointer
-            let prev = stream_dict.get_integer("Prev").map(|p| p as u64);
+            let prev = match stream_dict.get_integer("Prev") {
+                Some(prev) => {
+                    if prev < 0 {
+                        return Err(Error::Parse {
+                            message: "Invalid Prev offset".to_string(),
+                            position: pos,
+                        });
+                    }
+                    Some(prev as u64)
+                }
+                None => None,
+            };
 
             // Merge this table
             xref.merge(&table);
@@ -286,6 +311,7 @@ impl<'a> XRefParser<'a> {
             }
 
             // Read first object number and count
+            let subsection_pos = pos;
             let (first_obj, new_pos) = self.read_integer(pos)?;
             pos = new_pos;
 
@@ -295,6 +321,20 @@ impl<'a> XRefParser<'a> {
 
             let (count, new_pos) = self.read_integer(pos)?;
             pos = new_pos;
+
+            let first_obj = i64_to_usize(first_obj, "XRef subsection start", subsection_pos)?;
+            let count = i64_to_usize(count, "XRef subsection count", subsection_pos)?;
+            let end_obj = first_obj.checked_add(count).ok_or_else(|| Error::Parse {
+                message: "XRef subsection size overflow".to_string(),
+                position: subsection_pos,
+            })?;
+
+            if end_obj > MAX_XREF_ENTRIES {
+                return Err(Error::Parse {
+                    message: "XRef subsection too large".to_string(),
+                    position: subsection_pos,
+                });
+            }
 
             // Parse entries
             for i in 0..count {
@@ -345,14 +385,17 @@ impl<'a> XRefParser<'a> {
                 let entry_type = self.data[pos];
                 pos += 1;
 
-                let obj_num = (first_obj + i) as u32;
+                let obj_num = u32::try_from(first_obj + i).map_err(|_| Error::Parse {
+                    message: "XRef object number out of range".to_string(),
+                    position: pos,
+                })?;
                 let entry = match entry_type {
                     b'n' => XRefEntry::InUse {
                         offset: entry_offset,
                         generation,
                     },
                     b'f' => XRefEntry::Free {
-                        next_free: entry_offset as u32,
+                        next_free: u64_to_u32(entry_offset, "XRef free entry offset", pos)?,
                         generation,
                     },
                     _ => {
@@ -425,7 +468,15 @@ impl<'a> XRefParser<'a> {
         let size = dict.get_integer("Size").ok_or_else(|| Error::Parse {
             message: "XRef stream missing Size".to_string(),
             position: offset,
-        })? as usize;
+        })?;
+        let size = i64_to_usize(size, "XRef stream Size", offset)?;
+
+        if size > MAX_XREF_ENTRIES {
+            return Err(Error::Parse {
+                message: "XRef stream Size too large".to_string(),
+                position: offset,
+            });
+        }
 
         // W array specifies byte widths for each field
         let w = dict.get_array("W").ok_or_else(|| Error::Parse {
@@ -440,10 +491,24 @@ impl<'a> XRefParser<'a> {
             });
         }
 
-        let w1 = w.get_integer(0).unwrap_or(0) as usize;
-        let w2 = w.get_integer(1).unwrap_or(0) as usize;
-        let w3 = w.get_integer(2).unwrap_or(0) as usize;
-        let entry_size = w1 + w2 + w3;
+        let w1 = i64_to_usize(w.get_integer(0).unwrap_or(0), "XRef stream W[0]", offset)?;
+        let w2 = i64_to_usize(w.get_integer(1).unwrap_or(0), "XRef stream W[1]", offset)?;
+        let w3 = i64_to_usize(w.get_integer(2).unwrap_or(0), "XRef stream W[2]", offset)?;
+
+        if w1 > MAX_XREF_FIELD_WIDTH || w2 > MAX_XREF_FIELD_WIDTH || w3 > MAX_XREF_FIELD_WIDTH {
+            return Err(Error::Parse {
+                message: "XRef stream W entries out of range".to_string(),
+                position: offset,
+            });
+        }
+
+        let entry_size = w1
+            .checked_add(w2)
+            .and_then(|value| value.checked_add(w3))
+            .ok_or_else(|| Error::Parse {
+                message: "XRef stream entry size overflow".to_string(),
+                position: offset,
+            })?;
 
         // Decode the stream data
         let data = stream.decode()?;
@@ -451,10 +516,31 @@ impl<'a> XRefParser<'a> {
         // Get Index array (optional, defaults to [0 Size])
         let index = dict.get_array("Index");
         let subsections: Vec<(usize, usize)> = if let Some(idx) = index {
+            if idx.len() % 2 != 0 {
+                return Err(Error::Parse {
+                    message: "XRef stream Index array must have even length".to_string(),
+                    position: offset,
+                });
+            }
             let mut subsections = Vec::new();
             for i in (0..idx.len()).step_by(2) {
-                let first = idx.get_integer(i).unwrap_or(0) as usize;
-                let count = idx.get_integer(i + 1).unwrap_or(0) as usize;
+                let first =
+                    i64_to_usize(idx.get_integer(i).unwrap_or(0), "XRef stream Index", offset)?;
+                let count = i64_to_usize(
+                    idx.get_integer(i + 1).unwrap_or(0),
+                    "XRef stream Index",
+                    offset,
+                )?;
+                let end = first.checked_add(count).ok_or_else(|| Error::Parse {
+                    message: "XRef stream Index overflow".to_string(),
+                    position: offset,
+                })?;
+                if end > MAX_XREF_ENTRIES {
+                    return Err(Error::Parse {
+                        message: "XRef stream Index out of range".to_string(),
+                        position: offset,
+                    });
+                }
                 subsections.push((first, count));
             }
             subsections
@@ -464,11 +550,17 @@ impl<'a> XRefParser<'a> {
 
         // Parse entries
         let mut table = XRefTable::new();
-        let mut data_pos = 0;
+        let mut data_pos: usize = 0;
 
         for (first_obj, count) in subsections {
             for i in 0..count {
-                if data_pos + entry_size > data.len() {
+                let end = data_pos
+                    .checked_add(entry_size)
+                    .ok_or_else(|| Error::Parse {
+                        message: "XRef stream entry size overflow".to_string(),
+                        position: offset,
+                    })?;
+                if end > data.len() {
                     return Err(Error::Parse {
                         message: "XRef stream data truncated".to_string(),
                         position: offset,
@@ -492,21 +584,24 @@ impl<'a> XRefParser<'a> {
                     0
                 };
 
-                data_pos += entry_size;
+                data_pos = end;
 
-                let obj_num = (first_obj + i) as u32;
+                let obj_num = u32::try_from(first_obj + i).map_err(|_| Error::Parse {
+                    message: "XRef stream object number out of range".to_string(),
+                    position: offset,
+                })?;
                 let entry = match field1 {
                     0 => XRefEntry::Free {
-                        next_free: field2 as u32,
-                        generation: field3 as u16,
+                        next_free: u64_to_u32(field2, "XRef stream next free", offset)?,
+                        generation: u64_to_u16(field3, "XRef stream generation", offset)?,
                     },
                     1 => XRefEntry::InUse {
                         offset: field2,
-                        generation: field3 as u16,
+                        generation: u64_to_u16(field3, "XRef stream generation", offset)?,
                     },
                     2 => XRefEntry::Compressed {
-                        stream_obj: field2 as u32,
-                        index: field3 as u32,
+                        stream_obj: u64_to_u32(field2, "XRef stream object stream", offset)?,
+                        index: u64_to_u32(field3, "XRef stream object index", offset)?,
                     },
                     _ => {
                         return Err(Error::Parse {
@@ -562,6 +657,40 @@ impl<'a> XRefParser<'a> {
             }),
         }
     }
+}
+
+fn i64_to_usize(value: i64, context: &str, position: usize) -> Result<usize> {
+    if value < 0 {
+        return Err(Error::Parse {
+            message: format!("{} must be non-negative", context),
+            position,
+        });
+    }
+    usize::try_from(value).map_err(|_| Error::Parse {
+        message: format!("{} out of range", context),
+        position,
+    })
+}
+
+fn u64_to_usize(value: u64, context: &str, position: usize) -> Result<usize> {
+    usize::try_from(value).map_err(|_| Error::Parse {
+        message: format!("{} out of range", context),
+        position,
+    })
+}
+
+fn u64_to_u32(value: u64, context: &str, position: usize) -> Result<u32> {
+    u32::try_from(value).map_err(|_| Error::Parse {
+        message: format!("{} out of range", context),
+        position,
+    })
+}
+
+fn u64_to_u16(value: u64, context: &str, position: usize) -> Result<u16> {
+    u16::try_from(value).map_err(|_| Error::Parse {
+        message: format!("{} out of range", context),
+        position,
+    })
 }
 
 /// Reads a big-endian unsigned integer of variable length
@@ -625,5 +754,12 @@ mod tests {
         let pdf = b"%PDF-1.4\nsome content\nstartxref\n12345\n%%EOF";
         let parser = XRefParser::new(pdf);
         assert_eq!(parser.find_startxref().unwrap(), 12345);
+    }
+
+    #[test]
+    fn test_traditional_xref_negative_count() {
+        let pdf = b"xref\n0 -1\ntrailer\n<<>>";
+        let parser = XRefParser::new(pdf);
+        assert!(parser.parse_traditional_xref(0).is_err());
     }
 }

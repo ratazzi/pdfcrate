@@ -55,24 +55,28 @@ impl<'a, 'b> Parser<'a, 'b> {
             Token::False => Ok(PdfObject::Bool(false)),
             Token::Integer(i) => {
                 // Check if this is a reference (num gen R)
-                // Save state before lookahead
-                let saved_current = self.current.take();
-                let saved_pos = self.lexer.position();
+                // Object number must be non-negative and fit in u32
+                if let Ok(obj_num) = u32::try_from(i) {
+                    let saved_current = self.current.take();
+                    let saved_pos = self.lexer.position();
 
-                // Try to read generation number
-                let next1 = self.lexer.next_token()?;
-                if let Token::Integer(gen) = next1 {
-                    let next2 = self.lexer.next_token()?;
-                    if matches!(next2, Token::R) {
-                        // It's a reference
-                        return Ok(PdfObject::Reference(PdfRef::with_generation(
-                            i as u32, gen as u16,
-                        )));
+                    let reference = 'try_ref: {
+                        let Token::Integer(gen) = self.lexer.next_token()? else {
+                            break 'try_ref None;
+                        };
+                        let Ok(gen) = u16::try_from(gen) else {
+                            break 'try_ref None;
+                        };
+                        if !matches!(self.lexer.next_token()?, Token::R) {
+                            break 'try_ref None;
+                        }
+                        Some(PdfObject::Reference(PdfRef::with_generation(obj_num, gen)))
+                    };
+
+                    if let Some(r) = reference {
+                        return Ok(r);
                     }
-                    // Not a reference - restore state
-                    self.lexer.set_position(saved_pos);
-                    self.current = saved_current;
-                } else {
+
                     // Not a reference - restore state
                     self.lexer.set_position(saved_pos);
                     self.current = saved_current;
@@ -136,7 +140,12 @@ impl<'a, 'b> Parser<'a, 'b> {
                 position: self.lexer.position(),
             })?;
 
-            let data = self.lexer.read_stream_data(length as usize)?;
+            let length = usize::try_from(length).map_err(|_| Error::Parse {
+                message: "Stream Length out of range".to_string(),
+                position: self.lexer.position(),
+            })?;
+
+            let data = self.lexer.read_stream_data(length)?;
 
             // Expect endstream
             let token = self.advance()?;
@@ -286,5 +295,17 @@ mod tests {
             }
             _ => panic!("Expected dict"),
         }
+    }
+
+    #[test]
+    fn test_parse_stream_negative_length() {
+        let input = b"<< /Length -1 >>\nstream\nendstream";
+        assert!(parse(input).is_err());
+    }
+
+    #[test]
+    fn test_parse_stream_length_too_long() {
+        let input = b"<< /Length 10 >>\nstream\nabc\nendstream";
+        assert!(parse(input).is_err());
     }
 }

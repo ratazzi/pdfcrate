@@ -8,6 +8,8 @@ use crate::error::{Error, Result};
 use crate::objects::{PdfDict, PdfObject, PdfRef, PdfStream};
 use crate::parser::{Lexer, Parser, XRefEntry, XRefParser, XRefTable};
 
+const MAX_OBJECT_STREAM_OBJECTS: usize = 1_000_000;
+
 /// A loaded PDF document
 ///
 /// This struct represents a PDF document that has been loaded from bytes.
@@ -117,7 +119,11 @@ impl LoadedDocument {
                         reference.generation()
                     )));
                 }
-                self.parse_object_at(*offset as usize)?
+                let offset = usize::try_from(*offset).map_err(|_| Error::Parse {
+                    message: "Object offset out of range".to_string(),
+                    position: self.data.len(),
+                })?;
+                self.parse_object_at(offset)?
             }
             XRefEntry::Compressed { stream_obj, index } => {
                 self.parse_compressed_object(*stream_obj, *index)?
@@ -208,16 +214,30 @@ impl LoadedDocument {
             .dict()
             .get_integer("N")
             .ok_or_else(|| Error::InvalidStructure("Object stream missing N".to_string()))?
-            as usize;
+            .try_into()
+            .map_err(|_| Error::InvalidStructure("Object stream N out of range".to_string()))?;
+
+        if n > MAX_OBJECT_STREAM_OBJECTS {
+            return Err(Error::InvalidStructure(
+                "Object stream too large".to_string(),
+            ));
+        }
 
         let first = stream
             .dict()
             .get_integer("First")
             .ok_or_else(|| Error::InvalidStructure("Object stream missing First".to_string()))?
-            as usize;
+            .try_into()
+            .map_err(|_| Error::InvalidStructure("Object stream First out of range".to_string()))?;
 
         // Decode stream data
         let data = stream.decode()?;
+
+        if first > data.len() {
+            return Err(Error::InvalidStructure(
+                "Object stream First beyond data length".to_string(),
+            ));
+        }
 
         // Parse the header (object numbers and offsets)
         let mut header_lexer = Lexer::new(&data[..first]);
@@ -227,25 +247,41 @@ impl LoadedDocument {
         for _ in 0..n {
             let obj_num = header_parser.parse_object()?.as_integer().ok_or_else(|| {
                 Error::InvalidStructure("Invalid object stream header".to_string())
-            })? as u32;
+            })?;
+            let obj_num = u32::try_from(obj_num).map_err(|_| {
+                Error::InvalidStructure("Object stream object number out of range".to_string())
+            })?;
 
             let obj_offset = header_parser.parse_object()?.as_integer().ok_or_else(|| {
                 Error::InvalidStructure("Invalid object stream header".to_string())
-            })? as usize;
+            })?;
+            let obj_offset = usize::try_from(obj_offset).map_err(|_| {
+                Error::InvalidStructure("Object stream offset out of range".to_string())
+            })?;
 
             obj_offsets.push((obj_num, obj_offset));
         }
 
         // Find the requested object
-        if index as usize >= obj_offsets.len() {
+        let index = usize::try_from(index)
+            .map_err(|_| Error::MissingObject("Object index out of range".to_string()))?;
+        if index >= obj_offsets.len() {
             return Err(Error::MissingObject(format!(
                 "Object index {} out of range in object stream {}",
                 index, stream_obj
             )));
         }
 
-        let (_, obj_offset) = obj_offsets[index as usize];
-        let abs_offset = first + obj_offset;
+        let (_, obj_offset) = obj_offsets[index];
+        let abs_offset = first
+            .checked_add(obj_offset)
+            .ok_or_else(|| Error::InvalidStructure("Object stream offset overflow".to_string()))?;
+
+        if abs_offset > data.len() {
+            return Err(Error::InvalidStructure(
+                "Object stream offset beyond data length".to_string(),
+            ));
+        }
 
         // Parse the object
         let mut lexer = Lexer::new(&data[abs_offset..]);
@@ -297,10 +333,10 @@ impl LoadedDocument {
     pub fn page_count(&mut self) -> Result<usize> {
         let pages_ref = self.pages_ref()?;
         let pages = self.resolve_dict(pages_ref)?;
-        pages
+        let count = pages
             .get_integer("Count")
-            .map(|c| c as usize)
-            .ok_or_else(|| Error::InvalidStructure("Pages missing Count".to_string()))
+            .ok_or_else(|| Error::InvalidStructure("Pages missing Count".to_string()))?;
+        usize_from_i64(count, "Pages Count")
     }
 
     /// Gets a specific page by index (0-based)
@@ -342,11 +378,17 @@ impl LoadedDocument {
                             *current_index += 1;
                         }
                         Some("Pages") => {
-                            let count = kid.get_integer("Count").unwrap_or(0) as usize;
-                            if target_index < *current_index + count {
+                            let count = match kid.get_integer("Count") {
+                                Some(value) => usize_from_i64(value, "Pages Count")?,
+                                None => 0,
+                            };
+                            let next_index = current_index.checked_add(count).ok_or_else(|| {
+                                Error::InvalidStructure("Page count overflow".to_string())
+                            })?;
+                            if target_index < next_index {
                                 return self.find_page(kid_ref, target_index, current_index);
                             }
-                            *current_index += count;
+                            *current_index = next_index;
                         }
                         _ => {
                             return Err(Error::InvalidStructure(
@@ -418,9 +460,20 @@ impl LoadedDocument {
     }
 }
 
+fn usize_from_i64(value: i64, context: &str) -> Result<usize> {
+    if value < 0 {
+        return Err(Error::InvalidStructure(format!(
+            "{} must be non-negative",
+            context
+        )));
+    }
+    usize::try_from(value).map_err(|_| Error::InvalidStructure(format!("{} out of range", context)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::objects::PdfName;
 
     #[test]
     fn test_parse_header() {
@@ -495,5 +548,25 @@ mod tests {
             let page = loaded.page(i).unwrap();
             assert_eq!(page.get_type(), Some("Page"));
         }
+    }
+
+    #[test]
+    fn test_object_stream_first_out_of_bounds() {
+        let mut dict = PdfDict::new();
+        dict.set("Type", PdfObject::Name(PdfName::new("ObjStm")));
+        dict.set("N", PdfObject::Integer(1));
+        dict.set("First", PdfObject::Integer(10));
+        let stream = PdfStream::new(dict, b"0 0".to_vec());
+
+        let mut doc = LoadedDocument {
+            data: Vec::new(),
+            xref: XRefTable::new(),
+            cache: HashMap::new(),
+            version: "1.7".to_string(),
+        };
+        doc.cache.insert(PdfRef::new(1), PdfObject::Stream(stream));
+
+        let result = doc.parse_compressed_object(1, 0);
+        assert!(result.is_err());
     }
 }
