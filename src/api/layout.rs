@@ -354,6 +354,274 @@ impl TextFragment {
     }
 }
 
+/// Options for defining a grid layout system
+///
+/// A grid divides the page into rows and columns with optional gutters
+/// (spacing between cells). This allows for precise, responsive layouts.
+///
+/// # Example
+///
+/// ```rust
+/// use pdfcrate::api::GridOptions;
+///
+/// // Create a 12-column, 20-row grid with 10pt gutters
+/// let options = GridOptions::new(20, 12).gutter(10.0);
+///
+/// // Or with separate row and column gutters
+/// let options = GridOptions::new(20, 12)
+///     .row_gutter(15.0)
+///     .column_gutter(10.0);
+/// ```
+#[derive(Debug, Clone)]
+pub struct GridOptions {
+    /// Number of rows in the grid
+    pub rows: usize,
+    /// Number of columns in the grid
+    pub columns: usize,
+    /// Row gutter (vertical spacing between rows)
+    pub row_gutter: f64,
+    /// Column gutter (horizontal spacing between columns)
+    pub column_gutter: f64,
+}
+
+impl GridOptions {
+    /// Creates a new grid with the specified number of rows and columns
+    ///
+    /// Gutters default to 0.0.
+    pub fn new(rows: usize, columns: usize) -> Self {
+        GridOptions {
+            rows,
+            columns,
+            row_gutter: 0.0,
+            column_gutter: 0.0,
+        }
+    }
+
+    /// Sets both row and column gutters to the same value
+    pub fn gutter(mut self, gutter: f64) -> Self {
+        self.row_gutter = gutter;
+        self.column_gutter = gutter;
+        self
+    }
+
+    /// Sets the row gutter (vertical spacing between rows)
+    pub fn row_gutter(mut self, gutter: f64) -> Self {
+        self.row_gutter = gutter;
+        self
+    }
+
+    /// Sets the column gutter (horizontal spacing between columns)
+    pub fn column_gutter(mut self, gutter: f64) -> Self {
+        self.column_gutter = gutter;
+        self
+    }
+}
+
+/// A grid system for page layout
+///
+/// The grid calculates cell sizes based on the current bounds and the
+/// specified number of rows, columns, and gutters.
+#[derive(Debug, Clone)]
+pub struct Grid {
+    /// Number of rows
+    pub rows: usize,
+    /// Number of columns
+    pub columns: usize,
+    /// Row gutter size
+    pub row_gutter: f64,
+    /// Column gutter size
+    pub column_gutter: f64,
+    /// Calculated width of each column
+    pub column_width: f64,
+    /// Calculated height of each row
+    pub row_height: f64,
+    /// Total width of the grid area
+    pub total_width: f64,
+    /// Total height of the grid area
+    pub total_height: f64,
+}
+
+impl Grid {
+    /// Creates a new grid with the given options and bounds dimensions
+    pub fn new(options: &GridOptions, width: f64, height: f64) -> Self {
+        let column_width = Self::subdivide(width, options.columns, options.column_gutter);
+        let row_height = Self::subdivide(height, options.rows, options.row_gutter);
+
+        Grid {
+            rows: options.rows,
+            columns: options.columns,
+            row_gutter: options.row_gutter,
+            column_gutter: options.column_gutter,
+            column_width,
+            row_height,
+            total_width: width,
+            total_height: height,
+        }
+    }
+
+    /// Calculates the size of each subdivision given total size, count, and gutter
+    fn subdivide(total: f64, count: usize, gutter: f64) -> f64 {
+        (total - (gutter * (count - 1) as f64)) / count as f64
+    }
+
+    /// Returns a GridBox for the specified row and column (0-indexed)
+    pub fn cell(&self, row: usize, column: usize) -> GridBox {
+        GridBox::new(self, row, column)
+    }
+
+    /// Returns a MultiBox spanning from one cell to another
+    ///
+    /// The span includes both the start and end cells and everything in between.
+    pub fn span(&self, start: (usize, usize), end: (usize, usize)) -> MultiBox {
+        let box1 = self.cell(start.0, start.1);
+        let box2 = self.cell(end.0, end.1);
+        MultiBox::new(box1, box2)
+    }
+}
+
+/// A single cell in the grid
+///
+/// Provides coordinates and dimensions for positioning content.
+#[derive(Debug, Clone)]
+pub struct GridBox {
+    /// Row index (0-indexed)
+    pub row: usize,
+    /// Column index (0-indexed)
+    pub column: usize,
+    /// Width of this cell
+    pub width: f64,
+    /// Height of this cell
+    pub height: f64,
+    /// Left x-coordinate (relative to grid origin)
+    pub left: f64,
+    /// Top y-coordinate (relative to grid origin, in PDF coordinates)
+    pub top: f64,
+}
+
+impl GridBox {
+    /// Creates a new GridBox from grid parameters
+    fn new(grid: &Grid, row: usize, column: usize) -> Self {
+        let width = grid.column_width;
+        let height = grid.row_height;
+        let left = (width + grid.column_gutter) * column as f64;
+        let top = grid.total_height - ((height + grid.row_gutter) * row as f64);
+
+        GridBox {
+            row,
+            column,
+            width,
+            height,
+            left,
+            top,
+        }
+    }
+
+    /// Returns the right x-coordinate
+    pub fn right(&self) -> f64 {
+        self.left + self.width
+    }
+
+    /// Returns the bottom y-coordinate
+    pub fn bottom(&self) -> f64 {
+        self.top - self.height
+    }
+
+    /// Returns the top-left corner coordinates [x, y]
+    pub fn top_left(&self) -> [f64; 2] {
+        [self.left, self.top]
+    }
+
+    /// Returns the top-right corner coordinates [x, y]
+    pub fn top_right(&self) -> [f64; 2] {
+        [self.right(), self.top]
+    }
+
+    /// Returns the bottom-left corner coordinates [x, y]
+    pub fn bottom_left(&self) -> [f64; 2] {
+        [self.left, self.bottom()]
+    }
+
+    /// Returns the bottom-right corner coordinates [x, y]
+    pub fn bottom_right(&self) -> [f64; 2] {
+        [self.right(), self.bottom()]
+    }
+
+    /// Returns the name of this cell as "row,column"
+    pub fn name(&self) -> String {
+        format!("{},{}", self.row, self.column)
+    }
+}
+
+/// A span of multiple grid cells
+///
+/// Represents a rectangular region spanning from one cell to another.
+#[derive(Debug, Clone)]
+pub struct MultiBox {
+    /// Width of the span
+    pub width: f64,
+    /// Height of the span
+    pub height: f64,
+    /// Left x-coordinate
+    pub left: f64,
+    /// Top y-coordinate
+    pub top: f64,
+    /// Name showing the span range
+    name: String,
+}
+
+impl MultiBox {
+    /// Creates a new MultiBox spanning between two grid boxes
+    fn new(box1: GridBox, box2: GridBox) -> Self {
+        let left = box1.left.min(box2.left);
+        let right = box1.right().max(box2.right());
+        let top = box1.top.max(box2.top);
+        let bottom = box1.bottom().min(box2.bottom());
+
+        MultiBox {
+            width: right - left,
+            height: top - bottom,
+            left,
+            top,
+            name: format!("{}:{}", box1.name(), box2.name()),
+        }
+    }
+
+    /// Returns the right x-coordinate
+    pub fn right(&self) -> f64 {
+        self.left + self.width
+    }
+
+    /// Returns the bottom y-coordinate
+    pub fn bottom(&self) -> f64 {
+        self.top - self.height
+    }
+
+    /// Returns the top-left corner coordinates [x, y]
+    pub fn top_left(&self) -> [f64; 2] {
+        [self.left, self.top]
+    }
+
+    /// Returns the top-right corner coordinates [x, y]
+    pub fn top_right(&self) -> [f64; 2] {
+        [self.right(), self.top]
+    }
+
+    /// Returns the bottom-left corner coordinates [x, y]
+    pub fn bottom_left(&self) -> [f64; 2] {
+        [self.left, self.bottom()]
+    }
+
+    /// Returns the bottom-right corner coordinates [x, y]
+    pub fn bottom_right(&self) -> [f64; 2] {
+        [self.right(), self.bottom()]
+    }
+
+    /// Returns the name of this span
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 /// Specifies which pages a repeater should apply to
 #[derive(Debug, Clone)]
 pub enum RepeaterPages {
@@ -803,6 +1071,8 @@ pub struct LayoutDocument {
     repeaters: Vec<RepeaterContent>,
     /// Page number configuration
     page_number_config: Option<PageNumberConfig>,
+    /// Current grid system (if defined)
+    grid: Option<Grid>,
 }
 
 impl LayoutDocument {
@@ -825,6 +1095,7 @@ impl LayoutDocument {
             inner: doc,
             repeaters: Vec::new(),
             page_number_config: None,
+            grid: None,
         }
     }
 
@@ -886,6 +1157,20 @@ impl LayoutDocument {
 
         self.inner.stroke(|ctx| {
             ctx.rectangle([x, y], w, h);
+        });
+        self
+    }
+
+    /// Draws the current bounding box outline with a specific color
+    pub fn stroke_bounds_color(&mut self, color: Color) -> &mut Self {
+        let bounds = self.state.bounds();
+        let x = bounds.absolute_left();
+        let y = bounds.absolute_bottom();
+        let w = bounds.width();
+        let h = bounds.height();
+
+        self.inner.stroke(|ctx| {
+            ctx.color(color.r, color.g, color.b).rectangle([x, y], w, h);
         });
         self
     }
@@ -1833,6 +2118,309 @@ impl LayoutDocument {
         // Otherwise, restore to maintain flow from before the box
         if self.state.cursor_y > old_cursor {
             self.state.cursor_y = old_cursor;
+        }
+
+        self
+    }
+
+    // === Grid methods ===
+
+    /// Defines a grid system for the current page
+    ///
+    /// The grid divides the current bounds into rows and columns with optional
+    /// gutters. Use `grid()` and `grid_span()` to access cells.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument, GridOptions};
+    ///
+    /// let doc = Document::new();
+    /// let mut layout = LayoutDocument::new(doc);
+    ///
+    /// // Create a 12-column, 10-row grid with 10pt gutters
+    /// layout.define_grid(GridOptions::new(10, 12).gutter(10.0));
+    ///
+    /// // Access a single cell
+    /// let cell = layout.grid(2, 3).unwrap();
+    /// layout.bounding_box(cell.top_left(), cell.width, Some(cell.height), |doc| {
+    ///     doc.text("Content");
+    /// });
+    /// ```
+    pub fn define_grid(&mut self, options: GridOptions) -> &mut Self {
+        let bounds = self.state.bounds();
+        let width = bounds.width;
+        let height = bounds.height();
+
+        self.grid = Some(Grid::new(&options, width, height));
+        self
+    }
+
+    /// Returns a reference to the current grid (if defined)
+    pub fn current_grid(&self) -> Option<&Grid> {
+        self.grid.as_ref()
+    }
+
+    /// Returns a GridBox for the specified row and column
+    ///
+    /// Row and column are 0-indexed. Returns None if no grid is defined
+    /// or if the indices are out of bounds.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument, GridOptions};
+    ///
+    /// let doc = Document::new();
+    /// let mut layout = LayoutDocument::new(doc);
+    /// layout.define_grid(GridOptions::new(10, 12).gutter(10.0));
+    ///
+    /// if let Some(cell) = layout.grid(2, 5) {
+    ///     layout.bounding_box(cell.top_left(), cell.width, Some(cell.height), |doc| {
+    ///         doc.text("Row 2, Column 5");
+    ///     });
+    /// }
+    /// ```
+    pub fn grid(&self, row: usize, column: usize) -> Option<GridBox> {
+        self.grid.as_ref().and_then(|g| {
+            if row < g.rows && column < g.columns {
+                Some(g.cell(row, column))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns a MultiBox spanning from one cell to another
+    ///
+    /// The span includes both the start and end cells and everything in between.
+    /// Returns None if no grid is defined or if indices are out of bounds.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument, GridOptions};
+    ///
+    /// let doc = Document::new();
+    /// let mut layout = LayoutDocument::new(doc);
+    /// layout.define_grid(GridOptions::new(10, 12).gutter(10.0));
+    ///
+    /// // Span from (2,3) to (5,8)
+    /// if let Some(span) = layout.grid_span((2, 3), (5, 8)) {
+    ///     layout.bounding_box(span.top_left(), span.width, Some(span.height), |doc| {
+    ///         doc.text("Spanning multiple cells");
+    ///     });
+    /// }
+    /// ```
+    pub fn grid_span(&self, start: (usize, usize), end: (usize, usize)) -> Option<MultiBox> {
+        self.grid.as_ref().and_then(|g| {
+            if start.0 < g.rows && start.1 < g.columns && end.0 < g.rows && end.1 < g.columns {
+                Some(g.span(start, end))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Creates a bounding box at the specified grid cell position
+    ///
+    /// This method places content at the absolute grid cell position,
+    /// regardless of current cursor position. The cursor is NOT moved
+    /// after this operation.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument, GridOptions};
+    ///
+    /// let doc = Document::new();
+    /// let mut layout = LayoutDocument::new(doc);
+    /// layout.define_grid(GridOptions::new(6, 4).gutter(10.0));
+    ///
+    /// layout.grid_bounding_box(0, 0, |doc| {
+    ///     doc.text("Cell (0,0)");
+    /// });
+    /// ```
+    pub fn grid_bounding_box<F>(&mut self, row: usize, column: usize, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        let (abs_x, abs_y, width, height) = {
+            let grid = match &self.grid {
+                Some(g) => g,
+                None => return self,
+            };
+
+            if row >= grid.rows || column >= grid.columns {
+                return self;
+            }
+
+            let bounds = self.state.bounds();
+            let origin_x = bounds.absolute_left();
+            let origin_y = bounds.absolute_top();
+
+            let cell = grid.cell(row, column);
+            let abs_x = origin_x + cell.left;
+            let abs_y = origin_y - (grid.total_height - cell.top);
+
+            (abs_x, abs_y, cell.width, cell.height)
+        };
+
+        // Create bounding box at absolute position
+        let bbox = BoundingBox::new(abs_x, abs_y, width, Some(height));
+        self.state.bounds_stack.push(bbox);
+
+        // Save and set cursor to bbox top
+        let old_cursor = self.state.cursor_y;
+        self.state.cursor_y = abs_y;
+
+        // Execute closure
+        f(self);
+
+        // Pop the bounding box
+        self.state.bounds_stack.pop();
+
+        // Restore cursor (grid boxes don't affect flow)
+        self.state.cursor_y = old_cursor;
+
+        self
+    }
+
+    /// Creates a bounding box spanning multiple grid cells
+    ///
+    /// This method places content spanning from start cell to end cell,
+    /// regardless of current cursor position. The cursor is NOT moved
+    /// after this operation.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument, GridOptions};
+    ///
+    /// let doc = Document::new();
+    /// let mut layout = LayoutDocument::new(doc);
+    /// layout.define_grid(GridOptions::new(6, 4).gutter(10.0));
+    ///
+    /// // Span from (1,1) to (2,3)
+    /// layout.grid_span_bounding_box((1, 1), (2, 3), |doc| {
+    ///     doc.text("Spanning content");
+    /// });
+    /// ```
+    pub fn grid_span_bounding_box<F>(
+        &mut self,
+        start: (usize, usize),
+        end: (usize, usize),
+        f: F,
+    ) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        let (abs_x, abs_y, width, height) = {
+            let grid = match &self.grid {
+                Some(g) => g,
+                None => return self,
+            };
+
+            if start.0 >= grid.rows
+                || start.1 >= grid.columns
+                || end.0 >= grid.rows
+                || end.1 >= grid.columns
+            {
+                return self;
+            }
+
+            let bounds = self.state.bounds();
+            let origin_x = bounds.absolute_left();
+            let origin_y = bounds.absolute_top();
+
+            let span = grid.span(start, end);
+            let abs_x = origin_x + span.left;
+            let abs_y = origin_y - (grid.total_height - span.top);
+
+            (abs_x, abs_y, span.width, span.height)
+        };
+
+        // Create bounding box at absolute position
+        let bbox = BoundingBox::new(abs_x, abs_y, width, Some(height));
+        self.state.bounds_stack.push(bbox);
+
+        // Save and set cursor to bbox top
+        let old_cursor = self.state.cursor_y;
+        self.state.cursor_y = abs_y;
+
+        // Execute closure
+        f(self);
+
+        // Pop the bounding box
+        self.state.bounds_stack.pop();
+
+        // Restore cursor (grid boxes don't affect flow)
+        self.state.cursor_y = old_cursor;
+
+        self
+    }
+
+    /// Shows all grid cells with a stroke (diagnostic method)
+    ///
+    /// Draws the outline of each cell with the specified color.
+    /// Useful for debugging layout.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument, GridOptions, Color};
+    ///
+    /// let doc = Document::new();
+    /// let mut layout = LayoutDocument::new(doc);
+    /// layout.define_grid(GridOptions::new(10, 12).gutter(10.0));
+    /// layout.show_grid(Color::parse("#CCCCCC"));
+    /// ```
+    pub fn show_grid(&mut self, color: Color) -> &mut Self {
+        let grid = match &self.grid {
+            Some(g) => g.clone(),
+            None => return self,
+        };
+
+        let bounds = self.state.bounds();
+        let origin_x = bounds.absolute_left();
+        let origin_y = bounds.absolute_top();
+
+        for row in 0..grid.rows {
+            for col in 0..grid.columns {
+                let cell = grid.cell(row, col);
+                let x = origin_x + cell.left;
+                let y = origin_y - (grid.total_height - cell.top);
+
+                // Draw cell outline
+                self.inner.pages[self.inner.current_page]
+                    .content
+                    .save_state();
+                self.inner.pages[self.inner.current_page]
+                    .content
+                    .set_stroke_color_rgb(color.r, color.g, color.b);
+                self.inner.pages[self.inner.current_page]
+                    .content
+                    .rect(x, y - cell.height, cell.width, cell.height)
+                    .stroke();
+
+                // Draw cell name
+                let font_size = 8.0;
+                self.inner.ensure_font("Helvetica");
+                self.inner.pages[self.inner.current_page]
+                    .content
+                    .set_fill_color_rgb(color.r, color.g, color.b);
+                self.inner.pages[self.inner.current_page]
+                    .content
+                    .begin_text()
+                    .set_font("Helvetica", font_size)
+                    .move_text_pos(x + 2.0, y - font_size - 2.0)
+                    .show_text(&cell.name())
+                    .end_text();
+
+                self.inner.pages[self.inner.current_page]
+                    .content
+                    .restore_state();
+            }
         }
 
         self

@@ -27,8 +27,9 @@ use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
 
 pub use image::{EmbeddedImage, ImageOptions, Position};
 pub use layout::{
-    BoundingBox, Color, FontStyle, LayoutDocument, Margin, Overflow, PageNumberConfig,
-    PageNumberPosition, RepeaterPages, TextAlign, TextBoxResult, TextFragment,
+    BoundingBox, Color, FontStyle, Grid, GridBox, GridOptions, LayoutDocument, Margin, MultiBox,
+    Overflow, PageNumberConfig, PageNumberPosition, RepeaterPages, TextAlign, TextBoxResult,
+    TextFragment,
 };
 pub use page::{PageLayout, PageSize};
 
