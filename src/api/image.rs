@@ -2,6 +2,74 @@
 //!
 //! This module provides types for image embedding and positioning.
 
+use std::borrow::Cow;
+
+use crate::error::Result;
+
+/// A source of image data that can be embedded in a PDF.
+///
+/// This trait allows the `image` method to accept multiple types:
+/// - `&[u8]` - raw bytes (zero-copy)
+/// - `Vec<u8>` - owned bytes
+///
+/// With the `std` feature (enabled by default), also supports:
+/// - `&str` - file path
+/// - `&Path` - file path
+/// - `PathBuf` - owned file path
+///
+/// # Example
+/// ```ignore
+/// // From bytes (zero-copy)
+/// doc.image(&bytes[..], [0.0, 0.0], 100.0, 100.0)?;
+///
+/// // From file path (requires "std" feature)
+/// doc.image("photo.jpg", [0.0, 0.0], 100.0, 100.0)?;
+/// ```
+pub trait ImageSource<'a> {
+    /// Loads the image data, returning borrowed or owned bytes.
+    fn load(self) -> Result<Cow<'a, [u8]>>;
+}
+
+// Implementation for byte slices (zero-copy borrowed)
+impl<'a> ImageSource<'a> for &'a [u8] {
+    fn load(self) -> Result<Cow<'a, [u8]>> {
+        Ok(Cow::Borrowed(self))
+    }
+}
+
+// Implementation for owned bytes (works for any lifetime since it returns Owned)
+impl<'a> ImageSource<'a> for Vec<u8> {
+    fn load(self) -> Result<Cow<'a, [u8]>> {
+        Ok(Cow::Owned(self))
+    }
+}
+
+// File path implementations - only available with std feature (not in WASM)
+#[cfg(feature = "std")]
+mod path_impls {
+    use super::*;
+    use crate::error::Error;
+    use std::path::Path;
+
+    impl ImageSource<'static> for &str {
+        fn load(self) -> Result<Cow<'static, [u8]>> {
+            std::fs::read(self).map(Cow::Owned).map_err(Error::Io)
+        }
+    }
+
+    impl ImageSource<'static> for &Path {
+        fn load(self) -> Result<Cow<'static, [u8]>> {
+            std::fs::read(self).map(Cow::Owned).map_err(Error::Io)
+        }
+    }
+
+    impl ImageSource<'static> for std::path::PathBuf {
+        fn load(self) -> Result<Cow<'static, [u8]>> {
+            std::fs::read(&self).map(Cow::Owned).map_err(Error::Io)
+        }
+    }
+}
+
 /// Options for embedding and drawing images
 #[derive(Debug, Clone, Default)]
 pub struct ImageOptions {
@@ -245,5 +313,37 @@ mod tests {
         let (w, h) = img.scaled_dimensions(0.5);
         assert_eq!(w, 50.0);
         assert_eq!(h, 25.0);
+    }
+
+    #[test]
+    fn test_image_source_from_bytes_zero_copy() {
+        use std::borrow::Cow;
+        let bytes: &[u8] = &[1, 2, 3, 4];
+        let result = bytes.load();
+        assert!(result.is_ok());
+        let cow = result.unwrap();
+        // Verify it's borrowed (zero-copy), not owned
+        assert!(matches!(cow, Cow::Borrowed(_)));
+        assert_eq!(cow.as_ref(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_image_source_from_vec() {
+        use std::borrow::Cow;
+        let bytes: Vec<u8> = vec![1, 2, 3, 4];
+        let result = bytes.load();
+        assert!(result.is_ok());
+        let cow = result.unwrap();
+        // Vec should be owned
+        assert!(matches!(cow, Cow::Owned(_)));
+        assert_eq!(cow.as_ref(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn test_image_source_from_invalid_path() {
+        let path = "/nonexistent/path/to/image.png";
+        let result = path.load();
+        assert!(result.is_err());
     }
 }

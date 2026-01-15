@@ -25,7 +25,7 @@ use crate::font::StandardFont;
 use crate::forms::{AcroForm, FormField};
 use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
 
-pub use image::{EmbeddedImage, ImageOptions, Position};
+pub use image::{EmbeddedImage, ImageOptions, ImageSource, Position};
 pub use layout::{
     BoundingBox, Color, FontStyle, Grid, GridBox, GridOptions, LayoutDocument, Margin, MultiBox,
     Overflow, PageNumberConfig, PageNumberPosition, RepeaterPages, TextAlign, TextBoxResult,
@@ -833,6 +833,69 @@ impl Document {
     // =========================================================================
     // Image API
     // =========================================================================
+
+    /// Embeds an image and draws it at the specified position (auto-detects format)
+    ///
+    /// Automatically detects JPEG or PNG format from the image data.
+    /// Accepts multiple source types: byte slices (zero-copy), owned bytes,
+    /// or file paths (with `std` feature).
+    ///
+    /// **Note:** PNG support requires the `png` feature. Without it, PNG images
+    /// will return an error at runtime.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // From file path (requires "std" feature)
+    /// doc.image("photo.jpg", [100.0, 500.0], 200.0, 150.0)?;
+    ///
+    /// // From bytes (zero-copy)
+    /// let data = std::fs::read("photo.jpg")?;
+    /// doc.image(&data[..], [100.0, 500.0], 200.0, 150.0)?;
+    /// ```
+    pub fn image<'a>(
+        &mut self,
+        source: impl ImageSource<'a>,
+        pos: [f64; 2],
+        width: f64,
+        height: f64,
+    ) -> Result<String> {
+        let data = source.load()?;
+        let image_data = crate::image::embed_image(&data)?;
+        self.draw_image_data(image_data, pos, width, height)
+    }
+
+    /// Embeds an image and draws it with the specified options (auto-detects format)
+    ///
+    /// Automatically detects JPEG or PNG format from the image data.
+    /// Accepts multiple source types: byte slices (zero-copy), owned bytes,
+    /// or file paths (with `std` feature).
+    ///
+    /// **Note:** PNG support requires the `png` feature.
+    pub fn image_with<'a>(
+        &mut self,
+        source: impl ImageSource<'a>,
+        options: ImageOptions,
+    ) -> Result<EmbeddedImage> {
+        let data = source.load()?;
+        let image_data = crate::image::embed_image(&data)?;
+        self.embed_and_draw_image_data(image_data, options)
+    }
+
+    /// Embeds an image without drawing it (auto-detects format)
+    ///
+    /// Automatically detects JPEG or PNG format from the image data.
+    /// Accepts multiple source types: byte slices (zero-copy), owned bytes,
+    /// or file paths (with `std` feature).
+    ///
+    /// **Note:** PNG support requires the `png` feature.
+    ///
+    /// Use this when you want to embed an image once and draw it multiple times
+    /// or on multiple pages using `draw_embedded_image`.
+    pub fn embed_image<'a>(&mut self, source: impl ImageSource<'a>) -> Result<EmbeddedImage> {
+        let data = source.load()?;
+        let image_data = crate::image::embed_image(&data)?;
+        self.embed_image_data(image_data)
+    }
 
     /// Embeds a JPEG image and draws it at the specified position
     ///

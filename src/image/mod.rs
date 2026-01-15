@@ -12,6 +12,43 @@ pub enum ImageFormat {
     Png,
 }
 
+/// PNG magic bytes (signature)
+const PNG_SIGNATURE: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+/// JPEG magic bytes (SOI marker + start of next marker)
+const JPEG_SIGNATURE: [u8; 3] = [0xFF, 0xD8, 0xFF];
+
+/// Detects the image format from raw bytes by checking magic bytes
+///
+/// Returns `Some(ImageFormat)` if recognized, `None` otherwise.
+pub fn detect_format(data: &[u8]) -> Option<ImageFormat> {
+    if data.len() >= 3 && data[0..3] == JPEG_SIGNATURE {
+        Some(ImageFormat::Jpeg)
+    } else if data.len() >= 8 && data[0..8] == PNG_SIGNATURE {
+        Some(ImageFormat::Png)
+    } else {
+        None
+    }
+}
+
+/// Embeds an image by auto-detecting the format
+///
+/// Supports JPEG and PNG formats. PNG requires the `png` feature.
+pub fn embed_image(data: &[u8]) -> Result<ImageData> {
+    match detect_format(data) {
+        Some(ImageFormat::Jpeg) => embed_jpeg(data),
+        #[cfg(feature = "png")]
+        Some(ImageFormat::Png) => embed_png(data),
+        #[cfg(not(feature = "png"))]
+        Some(ImageFormat::Png) => Err(Error::Image(
+            "PNG support requires the 'png' feature".to_string(),
+        )),
+        None => Err(Error::Image(
+            "Unrecognized image format (expected JPEG or PNG)".to_string(),
+        )),
+    }
+}
+
 /// Image data for embedding
 pub struct ImageData {
     /// Image width in pixels
@@ -248,5 +285,29 @@ mod tests {
         assert_eq!(ColorSpace::DeviceRGB.components(), 3);
     }
 
-    // JPEG parsing tests would require sample JPEG data
+    #[test]
+    fn test_detect_format_jpeg() {
+        // JPEG signature: FF D8 FF
+        let jpeg_data = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        assert_eq!(detect_format(&jpeg_data), Some(ImageFormat::Jpeg));
+    }
+
+    #[test]
+    fn test_detect_format_png() {
+        // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+        let png_data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00];
+        assert_eq!(detect_format(&png_data), Some(ImageFormat::Png));
+    }
+
+    #[test]
+    fn test_detect_format_unknown() {
+        let unknown_data = [0x00, 0x01, 0x02, 0x03];
+        assert_eq!(detect_format(&unknown_data), None);
+    }
+
+    #[test]
+    fn test_detect_format_too_short() {
+        let short_data = [0xFF, 0xD8];
+        assert_eq!(detect_format(&short_data), None);
+    }
 }
