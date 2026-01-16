@@ -398,6 +398,22 @@ impl ContentBuilder {
         self.line("T*")
     }
 
+    /// Set character spacing (Tc)
+    ///
+    /// Sets the spacing between characters. The value is in text space units.
+    /// Default is 0. Positive values increase spacing, negative values decrease.
+    pub fn set_character_spacing(&mut self, spacing: f64) -> &mut Self {
+        self.line(&format!("{} Tc", format_number(spacing)))
+    }
+
+    /// Set word spacing (Tw)
+    ///
+    /// Sets the spacing added to the space character (U+0020).
+    /// The value is in text space units. Default is 0.
+    pub fn set_word_spacing(&mut self, spacing: f64) -> &mut Self {
+        self.line(&format!("{} Tw", format_number(spacing)))
+    }
+
     // Transformation operators
 
     /// Concatenate matrix (cm)

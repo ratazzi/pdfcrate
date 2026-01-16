@@ -522,9 +522,58 @@ impl Document {
             let _ = is_embedded;
         }
 
-        self.pages[self.current_page]
-            .content
-            .begin_text()
+        let content = &mut self.pages[self.current_page].content;
+        content.begin_text();
+        // Reset spacing to 0 to avoid inheriting from previous text_at_with_spacing calls
+        content.set_character_spacing(0.0);
+        content.set_word_spacing(0.0);
+        content
+            .set_font(&font_name, font_size)
+            .move_text_pos(pos[0], pos[1])
+            .show_text(text)
+            .end_text();
+
+        self
+    }
+
+    /// Draws text at a specific position with character and word spacing
+    ///
+    /// This is used by LayoutDocument to apply Tc/Tw operators correctly
+    /// inside the BT..ET text object.
+    pub(crate) fn text_at_with_spacing(
+        &mut self,
+        text: &str,
+        pos: [f64; 2],
+        char_spacing: f64,
+        word_spacing: f64,
+    ) -> &mut Self {
+        self.ensure_font(&self.current_font.clone());
+
+        let font_name = self.current_font.clone();
+        let font_size = self.current_font_size;
+        let is_embedded = self.current_font_embedded;
+
+        #[cfg(feature = "fonts")]
+        {
+            if is_embedded {
+                self.draw_embedded_text_with_spacing(text, pos, char_spacing, word_spacing);
+                return self;
+            }
+        }
+        #[cfg(not(feature = "fonts"))]
+        {
+            let _ = is_embedded;
+        }
+
+        let content = &mut self.pages[self.current_page].content;
+        content.begin_text();
+
+        // Always set spacing inside BT..ET to ensure correct values
+        // (text state persists across text objects, so we must reset to 0 if needed)
+        content.set_character_spacing(char_spacing);
+        content.set_word_spacing(word_spacing);
+
+        content
             .set_font(&font_name, font_size)
             .move_text_pos(pos[0], pos[1])
             .show_text(text)
@@ -557,9 +606,12 @@ impl Document {
                     hex.push_str(&format!("{:04X}", glyph.gid));
                 }
 
-                self.pages[self.current_page]
-                    .content
-                    .begin_text()
+                let content = &mut self.pages[self.current_page].content;
+                content.begin_text();
+                // Reset spacing to 0 to avoid inheriting from previous calls
+                content.set_character_spacing(0.0);
+                content.set_word_spacing(0.0);
+                content
                     .set_font(&font_name, font_size)
                     .move_text_pos(pos[0], pos[1])
                     .show_text_hex(&hex)
@@ -569,9 +621,12 @@ impl Document {
             }
         }
 
-        self.pages[self.current_page]
-            .content
-            .begin_text()
+        let content = &mut self.pages[self.current_page].content;
+        content.begin_text();
+        // Reset spacing to 0 to avoid inheriting from previous calls
+        content.set_character_spacing(0.0);
+        content.set_word_spacing(0.0);
+        content
             .set_font(&font_name, font_size)
             .move_text_pos(pos[0], pos[1])
             .show_text(text)
@@ -708,9 +763,12 @@ impl Document {
         let font = match self.embedded_fonts.get(&font_name) {
             Some(font) => font.clone(),
             None => {
-                self.pages[self.current_page]
-                    .content
-                    .begin_text()
+                let content = &mut self.pages[self.current_page].content;
+                content.begin_text();
+                // Reset spacing to 0 to avoid inheriting from previous calls
+                content.set_character_spacing(0.0);
+                content.set_word_spacing(0.0);
+                content
                     .set_font(&font_name, font_size)
                     .move_text_pos(pos[0], pos[1])
                     .show_text(text)
@@ -737,10 +795,86 @@ impl Document {
         };
 
         let content = &mut self.pages[self.current_page].content;
-        content.begin_text().set_font(&font_name, font_size);
+        content.begin_text();
+        // Reset spacing to 0 to avoid inheriting from previous calls
+        content.set_character_spacing(0.0);
+        content.set_word_spacing(0.0);
+        content.set_font(&font_name, font_size);
 
         if has_offsets {
             Self::show_positioned_glyphs(content, &glyphs, pos, font_size);
+        } else {
+            content.move_text_pos(pos[0], pos[1]);
+            content.show_text_hex_adjusted(&glyph_ids, &adjustments);
+        }
+
+        content.end_text();
+    }
+
+    #[cfg(feature = "fonts")]
+    fn draw_embedded_text_with_spacing(
+        &mut self,
+        text: &str,
+        pos: [f64; 2],
+        char_spacing: f64,
+        word_spacing: f64,
+    ) {
+        let font_name = self.current_font.clone();
+        let font_size = self.current_font_size;
+        let font = match self.embedded_fonts.get(&font_name) {
+            Some(font) => font.clone(),
+            None => {
+                let content = &mut self.pages[self.current_page].content;
+                content.begin_text();
+                // Always set spacing to ensure correct values
+                content.set_character_spacing(char_spacing);
+                content.set_word_spacing(word_spacing);
+                content
+                    .set_font(&font_name, font_size)
+                    .move_text_pos(pos[0], pos[1])
+                    .show_text(text)
+                    .end_text();
+                return;
+            }
+        };
+
+        let glyphs = font.shape_text(text);
+        if glyphs.is_empty() {
+            return;
+        }
+
+        self.track_font_glyphs(&font_name, &glyphs);
+
+        let has_offsets = glyphs
+            .iter()
+            .any(|g| g.x_offset != 0 || g.y_offset != 0 || g.y_advance != 0);
+
+        let (glyph_ids, adjustments) = if has_offsets {
+            (Vec::new(), Vec::new())
+        } else {
+            Self::build_glyph_adjustments(font.as_ref(), &glyphs)
+        };
+
+        let content = &mut self.pages[self.current_page].content;
+        content.begin_text();
+
+        // Always set spacing to ensure correct values
+        content.set_character_spacing(char_spacing);
+        content.set_word_spacing(word_spacing);
+
+        content.set_font(&font_name, font_size);
+
+        if has_offsets {
+            // Use spacing-aware version for positioned glyphs since Tc/Tw
+            // don't apply when using set_text_matrix for each glyph
+            Self::show_positioned_glyphs_with_spacing(
+                content,
+                &glyphs,
+                pos,
+                font_size,
+                char_spacing,
+                word_spacing,
+            );
         } else {
             content.move_text_pos(pos[0], pos[1]);
             content.show_text_hex_adjusted(&glyph_ids, &adjustments);
@@ -802,11 +936,28 @@ impl Document {
         pos: [f64; 2],
         font_size: f64,
     ) {
+        Self::show_positioned_glyphs_with_spacing(content, glyphs, pos, font_size, 0.0, 0.0);
+    }
+
+    #[cfg(feature = "fonts")]
+    fn show_positioned_glyphs_with_spacing(
+        content: &mut ContentBuilder,
+        glyphs: &[ShapedGlyph],
+        pos: [f64; 2],
+        font_size: f64,
+        char_spacing: f64,
+        word_spacing: f64,
+    ) {
         let scale = font_size / 1000.0;
+        // Convert spacing from text space to font units (round to avoid truncation drift)
+        let char_spacing_units = (char_spacing / scale).round() as i32;
+        let word_spacing_units = (word_spacing / scale).round() as i32;
+
         let mut pen_x: i32 = 0;
         let mut pen_y: i32 = 0;
+        let glyph_count = glyphs.len();
 
-        for glyph in glyphs {
+        for (idx, glyph) in glyphs.iter().enumerate() {
             let x = pos[0] + (pen_x + glyph.x_offset) as f64 * scale;
             let y = pos[1] + (pen_y + glyph.y_offset) as f64 * scale;
             content
@@ -815,11 +966,26 @@ impl Document {
 
             pen_x += glyph.x_advance;
             pen_y += glyph.y_advance;
+
+            // Apply spacing after each glyph (except the last one)
+            // Note: For ligatures, PDF's Tc applies per glyph, not per original character.
+            // This matches PDF spec behavior where Tc is added after each "character" (glyph shown).
+            if idx + 1 < glyph_count {
+                // Add character spacing after this glyph
+                pen_x += char_spacing_units;
+
+                // Add word spacing for space characters
+                // For multi-char glyphs (rare), check if any char is a space
+                if glyph.text.contains(' ') {
+                    let space_count = glyph.text.chars().filter(|&c| c == ' ').count();
+                    pen_x += word_spacing_units * space_count as i32;
+                }
+            }
         }
     }
 
     /// Ensures a font is registered
-    fn ensure_font(&mut self, name: &str) {
+    pub(crate) fn ensure_font(&mut self, name: &str) {
         if !self.fonts.iter().any(|(n, _)| n == name) {
             // Register the font (only for standard fonts - embedded fonts are already registered)
             if let Some(std_font) = StandardFont::from_name(name) {

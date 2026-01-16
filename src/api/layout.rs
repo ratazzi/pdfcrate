@@ -1005,6 +1005,10 @@ struct LayoutState {
     text_align: TextAlign,
     /// Current leading (line spacing multiplier)
     leading: f64,
+    /// Current character spacing (in points)
+    character_spacing: f64,
+    /// Current word spacing (in points)
+    word_spacing: f64,
 }
 
 impl LayoutState {
@@ -1025,6 +1029,8 @@ impl LayoutState {
             margin,
             text_align: TextAlign::Left,
             leading: 1.0, // Default 1.0 matches Prawn's default (no extra leading)
+            character_spacing: 0.0,
+            word_spacing: 0.0,
         }
     }
 
@@ -1192,6 +1198,36 @@ impl LayoutDocument {
         self
     }
 
+    /// Sets the character spacing (space between characters)
+    ///
+    /// The value is in points. Default is 0.
+    /// Positive values increase spacing, negative values decrease.
+    ///
+    /// # Example
+    /// ```ignore
+    /// doc.character_spacing(2.0)
+    ///    .text("S P A C E D");
+    /// ```
+    pub fn character_spacing(&mut self, spacing: f64) -> &mut Self {
+        self.state.character_spacing = spacing;
+        self
+    }
+
+    /// Sets the word spacing (extra space added to space characters)
+    ///
+    /// The value is in points. Default is 0.
+    /// This only affects the space character (U+0020).
+    ///
+    /// # Example
+    /// ```ignore
+    /// doc.word_spacing(5.0)
+    ///    .text("Words with extra spacing");
+    /// ```
+    pub fn word_spacing(&mut self, spacing: f64) -> &mut Self {
+        self.state.word_spacing = spacing;
+        self
+    }
+
     /// Returns the current line height based on font metrics and leading
     ///
     /// Uses actual AFM metrics (ascender - descender) for standard fonts,
@@ -1262,22 +1298,19 @@ impl LayoutDocument {
         let ascender_offset = font_size * 0.78; // Approximate ascender ratio
         let y = self.state.cursor_y - ascender_offset;
 
+        // Calculate text width including character and word spacing
+        let text_width = self.measure_text_width_with_spacing(text);
+
         // Calculate x position based on alignment
         let x = match self.state.text_align {
             TextAlign::Left => left,
-            TextAlign::Center => {
-                let text_width = self.measure_text_width(text);
-                left + (width - text_width) / 2.0
-            }
-            TextAlign::Right => {
-                let text_width = self.measure_text_width(text);
-                right - text_width
-            }
+            TextAlign::Center => left + (width - text_width) / 2.0,
+            TextAlign::Right => right - text_width,
             TextAlign::Justify => left, // Justify not supported for single-line text
         };
 
-        // Draw text at calculated position (y is the baseline)
-        self.inner.text_at(text, [x, y]);
+        // Draw text with spacing applied
+        self.draw_text_with_spacing(text, [x, y]);
 
         // Move cursor down by line height
         let line_height = self.line_height();
@@ -1321,8 +1354,14 @@ impl LayoutDocument {
         let base_font = self.inner.current_font.clone();
         let base_size = self.inner.current_font_size;
 
-        // Calculate total width for alignment
-        let total_width: f64 = fragments
+        // Calculate total width for alignment (including spacing)
+        let char_spacing = self.state.character_spacing;
+        let word_spacing = self.state.word_spacing;
+
+        // Count non-empty fragments for inter-fragment spacing
+        let non_empty_count = fragments.iter().filter(|f| !f.text.is_empty()).count();
+
+        let fragment_widths: f64 = fragments
             .iter()
             .filter(|f| !f.text.is_empty())
             .map(|f| {
@@ -1332,9 +1371,30 @@ impl LayoutDocument {
                     Self::get_styled_font_name(&base_font, f.style)
                 };
                 let font_size = f.size.unwrap_or(base_size);
-                Self::measure_fragment_width(&font_name, &f.text, font_size)
+                let base_width = Self::measure_fragment_width(&font_name, &f.text, font_size);
+
+                // Add spacing within fragment
+                let char_count = f.text.chars().count();
+                let char_spacing_width = if char_count > 0 {
+                    char_spacing * (char_count as f64 - 1.0)
+                } else {
+                    0.0
+                };
+                let space_count = f.text.chars().filter(|&c| c == ' ').count();
+                let word_spacing_width = word_spacing * space_count as f64;
+
+                base_width + char_spacing_width + word_spacing_width
             })
             .sum();
+
+        // Add inter-fragment character spacing (one between each pair of adjacent fragments)
+        let inter_fragment_spacing = if non_empty_count > 1 {
+            char_spacing * (non_empty_count as f64 - 1.0)
+        } else {
+            0.0
+        };
+
+        let total_width = fragment_widths + inter_fragment_spacing;
 
         // Calculate starting x position based on alignment
         let start_x = match self.state.text_align {
@@ -1350,6 +1410,8 @@ impl LayoutDocument {
         let y = self.state.cursor_y - ascender_offset;
 
         let mut x = start_x;
+
+        let mut is_first_fragment = true;
 
         for fragment in fragments {
             if fragment.text.is_empty() {
@@ -1384,9 +1446,24 @@ impl LayoutDocument {
                 }
             }
 
-            // Draw the text
+            // Draw the text with spacing inside BT..ET (PDF spec requirement)
+            let char_spacing = self.state.character_spacing;
+            let word_spacing = self.state.word_spacing;
+
+            // Add inter-fragment spacing BEFORE drawing (not first fragment)
+            // This represents the character spacing between the last char of
+            // previous fragment and the first char of current fragment
+            if !is_first_fragment {
+                x += char_spacing;
+            }
+
+            page.content.begin_text();
+
+            // Always set spacing to ensure correct values
+            page.content.set_character_spacing(char_spacing);
+            page.content.set_word_spacing(word_spacing);
+
             page.content
-                .begin_text()
                 .set_font(&font_name, frag_font_size)
                 .move_text_pos(x, y)
                 .show_text(&fragment.text)
@@ -1397,7 +1474,18 @@ impl LayoutDocument {
                 page.content.restore_state();
             }
 
-            x += text_width;
+            // Calculate extra width from character and word spacing within this fragment
+            let char_count = fragment.text.chars().count();
+            let char_spacing_extra = if char_count > 0 {
+                char_spacing * (char_count as f64 - 1.0)
+            } else {
+                0.0
+            };
+            let space_count = fragment.text.chars().filter(|&c| c == ' ').count();
+            let word_spacing_extra = word_spacing * space_count as f64;
+            x += text_width + char_spacing_extra + word_spacing_extra;
+
+            is_first_fragment = false;
         }
 
         // Move cursor down by line height
@@ -1454,17 +1542,77 @@ impl LayoutDocument {
     ///
     /// Text is automatically wrapped to fit within the current bounds width.
     /// Each line respects the current alignment setting.
+    ///
+    /// For `TextAlign::Justify`, lines are stretched to fill the width by
+    /// adjusting word spacing. The last line of each paragraph uses left
+    /// alignment instead of being justified.
     pub fn text_wrap(&mut self, text: &str) -> &mut Self {
         let bounds = self.state.bounds();
         let width = bounds.width();
 
-        let lines = self.wrap_text_to_width(text, width);
+        // Check if we need special justify handling
+        if self.state.text_align == TextAlign::Justify {
+            // Use justify-specific wrapping (excludes word_spacing from calculations)
+            let lines = self.wrap_text_for_justify(text, width);
 
-        for line in lines {
-            self.text(&line);
+            for (line, is_paragraph_end) in lines {
+                if is_paragraph_end || line.is_empty() {
+                    // Last line of paragraph or empty line - use left alignment
+                    self.text_line_left(&line);
+                } else {
+                    // Non-last line - justify by stretching word spacing
+                    self.text_line_justified(&line, width);
+                }
+            }
+        } else {
+            // Non-justify alignment - use regular text() method
+            let lines = self.wrap_text_to_width(text, width);
+            for line in lines {
+                self.text(&line);
+            }
         }
 
         self
+    }
+
+    /// Internal: draws a single line with left alignment (for justify paragraph ends)
+    ///
+    /// In justify mode, this is used for paragraph-ending lines which should NOT
+    /// have user-set word_spacing applied (only character_spacing is used).
+    fn text_line_left(&mut self, text: &str) {
+        let bounds = self.state.bounds();
+        let left = bounds.absolute_left();
+
+        let font_size = self.inner.current_font_size;
+        let ascender_offset = font_size * 0.78;
+        let y = self.state.cursor_y - ascender_offset;
+
+        // For justify mode paragraph ends, use character_spacing but zero word_spacing
+        // This matches the wrapping calculation which excludes word_spacing
+        let char_spacing = self.state.character_spacing;
+        self.inner
+            .text_at_with_spacing(text, [left, y], char_spacing, 0.0);
+
+        let line_height = self.line_height();
+        self.state.cursor_y -= line_height;
+
+        let cursor_y = self.state.cursor_y;
+        self.state.bounds_mut().update_stretched_height(cursor_y);
+    }
+
+    /// Internal: draws a single line with justified alignment
+    fn text_line_justified(&mut self, text: &str, width: f64) {
+        let font_size = self.inner.current_font_size;
+        let ascender_offset = font_size * 0.78;
+        let y = self.state.cursor_y - ascender_offset;
+
+        self.draw_text_justified(text, y, width);
+
+        let line_height = self.line_height();
+        self.state.cursor_y -= line_height;
+
+        let cursor_y = self.state.cursor_y;
+        self.state.bounds_mut().update_stretched_height(cursor_y);
     }
 
     /// Draws text in a bounding box with automatic wrapping
@@ -1720,23 +1868,128 @@ impl LayoutDocument {
         }
     }
 
+    /// Measures text width including character and word spacing
+    fn measure_text_width_with_spacing(&self, text: &str) -> f64 {
+        let base_width = self.measure_text_width(text);
+
+        // Add character spacing (applied between characters)
+        let char_count = text.chars().count();
+        let char_spacing_width = if char_count > 0 {
+            self.state.character_spacing * (char_count as f64 - 1.0)
+        } else {
+            0.0
+        };
+
+        // Add word spacing (applied to space characters only)
+        let space_count = text.chars().filter(|&c| c == ' ').count();
+        let word_spacing_width = self.state.word_spacing * space_count as f64;
+
+        base_width + char_spacing_width + word_spacing_width
+    }
+
+    /// Measures text width for justify mode (only character spacing, no word spacing)
+    ///
+    /// In justify mode, word spacing is calculated dynamically to fill the line,
+    /// so we should not include user-set word_spacing in wrap calculations.
+    fn measure_text_width_for_justify(&self, text: &str) -> f64 {
+        let base_width = self.measure_text_width(text);
+
+        // Add character spacing (applied between characters)
+        let char_count = text.chars().count();
+        let char_spacing_width = if char_count > 0 {
+            self.state.character_spacing * (char_count as f64 - 1.0)
+        } else {
+            0.0
+        };
+
+        base_width + char_spacing_width
+    }
+
+    /// Draws text with character and word spacing applied
+    fn draw_text_with_spacing(&mut self, text: &str, pos: [f64; 2]) {
+        let char_spacing = self.state.character_spacing;
+        let word_spacing = self.state.word_spacing;
+
+        // Use the new method that places Tc/Tw inside BT..ET
+        self.inner
+            .text_at_with_spacing(text, pos, char_spacing, word_spacing);
+    }
+
+    /// Draws text with justified alignment (word spacing calculated to fill width)
+    ///
+    /// This calculates the word spacing needed to make the text fill the available width,
+    /// then draws the text with that spacing applied.
+    fn draw_text_justified(&mut self, text: &str, y: f64, available_width: f64) {
+        let bounds = self.state.bounds();
+        let left = bounds.absolute_left();
+
+        // Count spaces in text
+        let space_count = text.chars().filter(|&c| c == ' ').count();
+
+        if space_count == 0 {
+            // No spaces - fall back to left alignment
+            self.draw_text_with_spacing(text, [left, y]);
+            return;
+        }
+
+        // Calculate base width without any word spacing
+        // but including character spacing
+        let base_width = self.measure_text_width(text);
+        let char_count = text.chars().count();
+        let char_spacing = self.state.character_spacing;
+        let char_spacing_width = if char_count > 0 {
+            char_spacing * (char_count as f64 - 1.0)
+        } else {
+            0.0
+        };
+        let width_with_char_spacing = base_width + char_spacing_width;
+
+        // Calculate word spacing to fill the remaining space
+        let extra_space = available_width - width_with_char_spacing;
+        let justify_word_spacing = extra_space / space_count as f64;
+
+        // Don't apply negative spacing (would compress text beyond natural width)
+        // Use word_spacing=0 to match the justify wrap calculation
+        if justify_word_spacing < 0.0 {
+            self.inner
+                .text_at_with_spacing(text, [left, y], char_spacing, 0.0);
+            return;
+        }
+
+        // Draw text with calculated word spacing
+        self.inner
+            .text_at_with_spacing(text, [left, y], char_spacing, justify_word_spacing);
+    }
+
     /// Wraps text to fit within the specified width
     fn wrap_text_to_width(&self, text: &str, max_width: f64) -> Vec<String> {
+        self.wrap_text_to_width_with_flags(text, max_width)
+            .into_iter()
+            .map(|(line, _)| line)
+            .collect()
+    }
+
+    /// Wraps text to fit within the specified width, returning paragraph-end flags
+    ///
+    /// Returns a vector of (line_text, is_paragraph_end) tuples.
+    /// is_paragraph_end is true for the last line of each paragraph (should not be justified).
+    fn wrap_text_to_width_with_flags(&self, text: &str, max_width: f64) -> Vec<(String, bool)> {
         let mut lines = Vec::new();
 
         for paragraph in text.split('\n') {
             if paragraph.is_empty() {
-                lines.push(String::new());
+                lines.push((String::new(), true)); // Empty line is a paragraph end
                 continue;
             }
 
             let words: Vec<&str> = paragraph.split_whitespace().collect();
             if words.is_empty() {
-                lines.push(String::new());
+                lines.push((String::new(), true));
                 continue;
             }
 
             let mut current_line = String::new();
+            let mut paragraph_lines: Vec<String> = Vec::new();
 
             for word in words {
                 let test_line = if current_line.is_empty() {
@@ -1745,29 +1998,101 @@ impl LayoutDocument {
                     format!("{} {}", current_line, word)
                 };
 
-                let width = self.measure_text_width(&test_line);
+                let width = self.measure_text_width_with_spacing(&test_line);
 
                 if width <= max_width {
                     current_line = test_line;
                 } else {
                     // Line is too long
                     if !current_line.is_empty() {
-                        lines.push(current_line.clone());
+                        paragraph_lines.push(current_line.clone());
                         current_line = word.to_string();
                     } else {
                         // Single word is too long, just add it anyway
-                        lines.push(word.to_string());
+                        paragraph_lines.push(word.to_string());
                     }
                 }
             }
 
             if !current_line.is_empty() {
-                lines.push(current_line);
+                paragraph_lines.push(current_line);
+            }
+
+            // Add all lines from this paragraph, marking the last one
+            let para_len = paragraph_lines.len();
+            for (i, line) in paragraph_lines.into_iter().enumerate() {
+                let is_last = i == para_len - 1;
+                lines.push((line, is_last));
             }
         }
 
         if lines.is_empty() {
-            lines.push(String::new());
+            lines.push((String::new(), true));
+        }
+
+        lines
+    }
+
+    /// Wraps text for justify mode (without word_spacing in calculations)
+    ///
+    /// In justify mode, word spacing is calculated dynamically to fill each line,
+    /// so we should not include user-set word_spacing in wrap calculations.
+    fn wrap_text_for_justify(&self, text: &str, max_width: f64) -> Vec<(String, bool)> {
+        let mut lines = Vec::new();
+
+        for paragraph in text.split('\n') {
+            if paragraph.is_empty() {
+                lines.push((String::new(), true));
+                continue;
+            }
+
+            let words: Vec<&str> = paragraph.split_whitespace().collect();
+            if words.is_empty() {
+                lines.push((String::new(), true));
+                continue;
+            }
+
+            let mut current_line = String::new();
+            let mut paragraph_lines: Vec<String> = Vec::new();
+
+            for word in words {
+                let test_line = if current_line.is_empty() {
+                    word.to_string()
+                } else {
+                    format!("{} {}", current_line, word)
+                };
+
+                // Use justify-specific measurement (no word_spacing)
+                let width = self.measure_text_width_for_justify(&test_line);
+
+                if width <= max_width {
+                    current_line = test_line;
+                } else {
+                    // Line is too long
+                    if !current_line.is_empty() {
+                        paragraph_lines.push(current_line.clone());
+                        current_line = word.to_string();
+                    } else {
+                        // Single word is too long, just add it anyway
+                        paragraph_lines.push(word.to_string());
+                    }
+                }
+            }
+
+            if !current_line.is_empty() {
+                paragraph_lines.push(current_line);
+            }
+
+            // Add all lines from this paragraph, marking the last one
+            let para_len = paragraph_lines.len();
+            for (i, line) in paragraph_lines.into_iter().enumerate() {
+                let is_last = i == para_len - 1;
+                lines.push((line, is_last));
+            }
+        }
+
+        if lines.is_empty() {
+            lines.push((String::new(), true));
         }
 
         lines
