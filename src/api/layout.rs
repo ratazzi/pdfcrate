@@ -2821,6 +2821,178 @@ impl LayoutDocument {
         self
     }
 
+    // === Link methods ===
+
+    /// Adds a link annotation to the current page
+    ///
+    /// Creates a clickable region that performs the specified action when clicked.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdfcrate::prelude::*;
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    /// layout.text("Click here for more info");
+    ///
+    /// // Add a URL link (coordinates in page space)
+    /// layout.link_annotation(LinkAnnotation::url([72.0, 700.0, 200.0, 720.0], "https://example.com"));
+    /// ```
+    pub fn link_annotation(&mut self, annotation: super::link::LinkAnnotation) -> &mut Self {
+        self.inner.link_annotation(annotation);
+        self
+    }
+
+    /// Adds a URL link annotation
+    ///
+    /// Convenience method for adding a clickable URL link.
+    ///
+    /// # Arguments
+    ///
+    /// * `rect` - The clickable rectangle [x1, y1, x2, y2] in page coordinates
+    /// * `url` - The URL to open when clicked
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// layout.link_url([72.0, 700.0, 200.0, 720.0], "https://example.com");
+    /// ```
+    pub fn link_url(&mut self, rect: [f64; 4], url: impl Into<String>) -> &mut Self {
+        self.inner.link_url(rect, url);
+        self
+    }
+
+    /// Creates a text with an embedded link
+    ///
+    /// Draws text at the current cursor position and adds a clickable link over it.
+    /// Returns the bounding box of the text for reference.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// layout.text_link("Visit our website", "https://example.com");
+    /// ```
+    pub fn text_link(&mut self, text: &str, url: impl Into<String>) -> &mut Self {
+        // Get text dimensions before drawing
+        let text_width = self.measure_text_width_with_spacing(text);
+        let line_height = self.line_height();
+
+        // Get current position and calculate x based on alignment
+        let bounds = self.state.bounds();
+        let left = bounds.absolute_left();
+        let right = bounds.absolute_right();
+        let width = bounds.width();
+        let y = self.state.cursor_y;
+
+        // Calculate x position based on alignment (same logic as text())
+        let x = match self.state.text_align {
+            TextAlign::Left => left,
+            TextAlign::Center => left + (width - text_width) / 2.0,
+            TextAlign::Right => right - text_width,
+            TextAlign::Justify => left, // Justify not supported for single-line text
+        };
+
+        // Draw the text
+        self.text(text);
+
+        // Add link annotation over the text area
+        // rect is [x1, y1, x2, y2] where y1 < y2
+        let rect = [
+            x,
+            y - line_height, // bottom of text
+            x + text_width,
+            y, // top of text (baseline + ascender approximation)
+        ];
+        self.inner.link_url(rect, url);
+
+        self
+    }
+
+    /// Creates a text with a link to a named destination
+    ///
+    /// Draws text at the current cursor position and adds a clickable link
+    /// that navigates to the named destination within the document.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // First create a destination
+    /// layout.add_dest_here("chapter1");
+    ///
+    /// // Later, create a link to that destination
+    /// layout.text_link_dest("Go to Chapter 1", "chapter1");
+    /// ```
+    pub fn text_link_dest(&mut self, text: &str, dest_name: impl Into<String>) -> &mut Self {
+        // Get text dimensions before drawing
+        let text_width = self.measure_text_width_with_spacing(text);
+        let line_height = self.line_height();
+
+        // Get current position and calculate x based on alignment
+        let bounds = self.state.bounds();
+        let left = bounds.absolute_left();
+        let right = bounds.absolute_right();
+        let width = bounds.width();
+        let y = self.state.cursor_y;
+
+        // Calculate x position based on alignment
+        let x = match self.state.text_align {
+            TextAlign::Left => left,
+            TextAlign::Center => left + (width - text_width) / 2.0,
+            TextAlign::Right => right - text_width,
+            TextAlign::Justify => left,
+        };
+
+        // Draw the text
+        self.text(text);
+
+        // Add link annotation to named destination
+        let rect = [x, y - line_height, x + text_width, y];
+        let annotation = super::link::LinkAnnotation::named(rect, dest_name);
+        self.inner.link_annotation(annotation);
+
+        self
+    }
+
+    /// Adds a named destination at a specific page and position
+    ///
+    /// Named destinations allow creating bookmarks and cross-references
+    /// within the document.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Add a destination at page 0 with FitH fit type
+    /// layout.add_dest("intro", 0, DestinationFit::FitH(Some(700.0)));
+    /// ```
+    pub fn add_dest(
+        &mut self,
+        name: impl Into<String>,
+        page_index: usize,
+        fit: super::link::DestinationFit,
+    ) -> &mut Self {
+        self.inner.add_dest(name, page_index, fit);
+        self
+    }
+
+    /// Adds a named destination at the current cursor position
+    ///
+    /// Creates a destination that will navigate to the current page
+    /// at the current cursor y position.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// layout.text("Chapter 1: Introduction");
+    /// layout.add_dest_here("chapter1");
+    /// ```
+    pub fn add_dest_here(&mut self, name: impl Into<String>) -> &mut Self {
+        let page_index = self.inner.page_count().saturating_sub(1);
+        let y = self.state.cursor_y;
+        self.inner
+            .add_dest(name, page_index, super::link::DestinationFit::FitH(Some(y)));
+        self
+    }
+
     // === Table methods ===
 
     /// Creates and draws a table at the current cursor position
@@ -3354,5 +3526,147 @@ mod tests {
         // Cursor should be at the same position as the initial cursor
         // (top of margin box for the new page)
         assert!((layout.cursor() - initial_cursor).abs() < 0.01);
+    }
+
+    // === Link and Named Destinations Tests ===
+
+    #[test]
+    fn test_text_link() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.text_link("Click here", "https://example.com");
+
+        let bytes = layout.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        assert!(
+            pdf_str.contains("/Subtype /Link"),
+            "Should have Link annotation"
+        );
+        assert!(
+            pdf_str.contains("https://example.com"),
+            "Should contain URL"
+        );
+    }
+
+    #[test]
+    fn test_text_link_dest() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // First add destination, then link to it
+        layout.text("Chapter 1");
+        layout.add_dest_here("chapter1");
+
+        layout.move_down(100.0);
+        layout.text_link_dest("Go to Chapter 1", "chapter1");
+
+        let bytes = layout.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        assert!(
+            pdf_str.contains("/Dest (chapter1)"),
+            "Link should reference named destination"
+        );
+        assert!(pdf_str.contains("/Names"), "Should have Names dictionary");
+    }
+
+    #[test]
+    fn test_add_dest_here_layout() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.text("Introduction");
+        layout.add_dest_here("intro");
+
+        assert_eq!(layout.inner.destinations.len(), 1);
+        assert!(layout.inner.destinations.contains_key("intro"));
+
+        // Verify the destination has the current page index
+        let (page_index, _) = layout.inner.destinations.get("intro").unwrap();
+        assert_eq!(*page_index, 0);
+    }
+
+    #[test]
+    fn test_add_dest_multi_page() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.text("Page 1 content");
+        layout.add_dest_here("page1_top");
+
+        layout.start_new_page();
+        layout.text("Page 2 content");
+        layout.add_dest_here("page2_top");
+
+        assert_eq!(layout.inner.destinations.len(), 2);
+
+        let (page1_idx, _) = layout.inner.destinations.get("page1_top").unwrap();
+        let (page2_idx, _) = layout.inner.destinations.get("page2_top").unwrap();
+
+        assert_eq!(*page1_idx, 0);
+        assert_eq!(*page2_idx, 1);
+    }
+
+    #[test]
+    fn test_link_url_layout() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.text("Some text");
+        layout.link_url([72.0, 700.0, 200.0, 720.0], "https://rust-lang.org");
+
+        let bytes = layout.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        assert!(
+            pdf_str.contains("https://rust-lang.org"),
+            "Should contain URL"
+        );
+    }
+
+    #[test]
+    fn test_link_annotation_layout() {
+        use crate::api::link::LinkAnnotation;
+
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        let link = LinkAnnotation::page([72.0, 700.0, 200.0, 720.0], 0);
+        layout.link_annotation(link);
+
+        let bytes = layout.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        assert!(
+            pdf_str.contains("/Subtype /Link"),
+            "Should have Link annotation"
+        );
+    }
+
+    #[test]
+    fn test_add_dest_with_fit() {
+        use crate::api::link::DestinationFit;
+
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        layout.add_dest("fit_dest", 0, DestinationFit::Fit);
+        layout.add_dest(
+            "xyz_dest",
+            0,
+            DestinationFit::XYZ {
+                left: Some(72.0),
+                top: Some(700.0),
+                zoom: Some(1.0),
+            },
+        );
+
+        let bytes = layout.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        assert!(pdf_str.contains("/Fit]"), "Should have Fit destination");
+        assert!(pdf_str.contains("/XYZ"), "Should have XYZ destination");
     }
 }

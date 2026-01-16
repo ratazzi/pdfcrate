@@ -49,6 +49,9 @@ pub mod prelude {
         BoundingBox, Color, LayoutDocument, Margin, Overflow, PageNumberConfig, PageNumberPosition,
         RepeaterPages, TextAlign, TextBoxResult,
     };
+    pub use crate::api::link::{
+        DestinationFit, HighlightMode, LinkAction, LinkAnnotation, LinkDestination,
+    };
     pub use crate::api::measurements::{
         cm, inch, mm, pt2cm, pt2inch, pt2mm, Cm, Inch, Measurement, Mm, Pt,
     };

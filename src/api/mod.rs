@@ -4,6 +4,7 @@
 
 pub mod image;
 pub mod layout;
+pub mod link;
 pub mod measurements;
 pub mod page;
 pub mod table;
@@ -25,7 +26,7 @@ use crate::error::Result;
 use crate::font::ShapedGlyph;
 use crate::font::StandardFont;
 use crate::forms::{AcroForm, FormField};
-use crate::objects::{PdfArray, PdfDict, PdfObject, PdfRef, PdfStream};
+use crate::objects::{PdfArray, PdfDict, PdfName, PdfObject, PdfRef, PdfStream, PdfString};
 
 pub use image::{EmbeddedImage, ImageOptions, ImageSource, Position};
 pub use layout::{
@@ -33,6 +34,7 @@ pub use layout::{
     Overflow, PageNumberConfig, PageNumberPosition, RepeaterPages, TextAlign, TextBoxResult,
     TextFragment,
 };
+pub use link::{DestinationFit, HighlightMode, LinkAction, LinkAnnotation, LinkDestination};
 pub use page::{PageLayout, PageSize};
 pub use table::{
     BorderLine, Cell, CellContent, CellStyle, ColumnWidths, IntoCell, Table, TableOptions,
@@ -90,6 +92,8 @@ pub struct Document {
     form: AcroForm,
     /// ExtGState resources for transparency (name -> ref)
     ext_gstates: Vec<(String, PdfRef)>,
+    /// Named destinations (name -> (page_index, fit))
+    destinations: std::collections::HashMap<String, (usize, link::DestinationFit)>,
 }
 
 /// Internal page data
@@ -97,6 +101,8 @@ struct PageData {
     content: ContentBuilder,
     size: PageSize,
     layout: PageLayout,
+    /// Link annotations on this page
+    annotations: Vec<link::LinkAnnotation>,
 }
 
 /// Document metadata
@@ -350,6 +356,7 @@ impl Document {
             image_counter: 0,
             form: AcroForm::new(),
             ext_gstates: Vec::new(),
+            destinations: std::collections::HashMap::new(),
         };
 
         // Start with one page
@@ -465,6 +472,7 @@ impl Document {
             content: ContentBuilder::new(),
             size: self.page_size,
             layout: self.page_layout,
+            annotations: Vec::new(),
         };
         self.pages.insert(index, page);
 
@@ -482,6 +490,7 @@ impl Document {
             content: ContentBuilder::new(),
             size: self.page_size,
             layout: self.page_layout,
+            annotations: Vec::new(),
         };
         self.pages.push(page);
         self.current_page = self.pages.len() - 1;
@@ -540,6 +549,89 @@ impl Document {
             .end_text();
 
         self
+    }
+
+    /// Adds a link annotation to the current page
+    ///
+    /// Creates a clickable region that performs the specified action when clicked.
+    ///
+    /// # Arguments
+    ///
+    /// * `annotation` - The link annotation to add
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdfcrate::prelude::*;
+    ///
+    /// let mut doc = Document::new();
+    /// doc.text_at("Click here", [100.0, 700.0]);
+    ///
+    /// // Add a URL link
+    /// doc.link_annotation(LinkAnnotation::url([100.0, 690.0, 200.0, 710.0], "https://example.com"));
+    /// ```
+    pub fn link_annotation(&mut self, annotation: link::LinkAnnotation) -> &mut Self {
+        self.pages[self.current_page].annotations.push(annotation);
+        self
+    }
+
+    /// Adds a URL link annotation to the current page
+    ///
+    /// Convenience method for adding a simple URL link.
+    ///
+    /// # Arguments
+    ///
+    /// * `rect` - The clickable rectangle [x1, y1, x2, y2]
+    /// * `url` - The URL to open when clicked
+    pub fn link_url(&mut self, rect: [f64; 4], url: impl Into<String>) -> &mut Self {
+        self.link_annotation(link::LinkAnnotation::url(rect, url))
+    }
+
+    /// Adds a named destination to the document
+    ///
+    /// Named destinations allow linking to specific locations within the document
+    /// using a human-readable name. They can be referenced from within the document
+    /// or from external URLs (e.g., `document.pdf#chapter1`).
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The destination name (e.g., "chapter1", "introduction")
+    /// * `page_index` - The target page index (0-based)
+    /// * `fit` - How to display the page when navigating to this destination
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdfcrate::prelude::*;
+    ///
+    /// let mut doc = Document::new();
+    ///
+    /// // Add a named destination at current page
+    /// doc.add_dest("intro", 0, DestinationFit::Fit);
+    ///
+    /// // Later, create a link to this destination
+    /// doc.link_annotation(LinkAnnotation::named([100.0, 700.0, 200.0, 720.0], "intro"));
+    /// ```
+    pub fn add_dest(
+        &mut self,
+        name: impl Into<String>,
+        page_index: usize,
+        fit: link::DestinationFit,
+    ) -> &mut Self {
+        self.destinations.insert(name.into(), (page_index, fit));
+        self
+    }
+
+    /// Adds a named destination at the current page
+    ///
+    /// Convenience method that uses the current page index.
+    pub fn add_dest_here(
+        &mut self,
+        name: impl Into<String>,
+        fit: link::DestinationFit,
+    ) -> &mut Self {
+        let page_index = self.current_page;
+        self.add_dest(name, page_index, fit)
     }
 
     /// Draws text at a specific position with character and word spacing
@@ -1829,6 +1921,7 @@ impl Document {
                 content: ContentBuilder::new(),
                 size: PageSize::Custom(embedded.width, embedded.height),
                 layout: PageLayout::Portrait,
+                annotations: Vec::new(),
             });
             self.current_page = self.pages.len() - 1;
 
@@ -1903,23 +1996,65 @@ impl Document {
         }
         let resources_ref = self.context.register(PdfObject::Dict(resources));
 
-        // Create page objects
+        // Create page objects (first pass: without annotations)
         let pages_ref = self.context.alloc_ref();
         let mut page_refs = Vec::new();
+        let mut page_annotations: Vec<Vec<link::LinkAnnotation>> = Vec::new();
 
-        for page in &mut self.pages {
+        for page in self.pages.iter_mut() {
             // Create content stream
             let content_data = std::mem::take(&mut page.content).build();
             let content_stream = PdfStream::from_data_compressed(content_data);
             let content_ref = self.context.register(PdfObject::Stream(content_stream));
 
-            // Create page dictionary
+            // Create page dictionary (without annotations for now)
             let dims = page.size.dimensions(page.layout);
             let media_box = [0.0, 0.0, dims.0, dims.1];
             let page_dict =
                 create_page(pages_ref, media_box, Some(resources_ref), Some(content_ref));
+
+            // Collect annotations for later processing
+            let annotations = std::mem::take(&mut page.annotations);
+            page_annotations.push(annotations);
+
             let page_ref = self.context.register(PdfObject::Dict(page_dict));
             page_refs.push(page_ref);
+        }
+
+        // Second pass: add link annotations (now that all page_refs are available)
+        let mut page_link_annots: std::collections::HashMap<usize, Vec<PdfRef>> =
+            std::collections::HashMap::new();
+
+        for (page_idx, annotations) in page_annotations.into_iter().enumerate() {
+            if annotations.is_empty() {
+                continue;
+            }
+
+            let page_ref = page_refs[page_idx];
+            let mut annot_refs = Vec::new();
+
+            for annotation in annotations {
+                // Pass page_refs to resolve internal page links
+                let annot_dict = annotation.to_dict(Some(page_ref), Some(&page_refs));
+                let annot_ref = self.context.register(PdfObject::Dict(annot_dict));
+                annot_refs.push(annot_ref);
+            }
+
+            // Add Annots array to page
+            let annots: Vec<PdfObject> = annot_refs
+                .iter()
+                .map(|r| PdfObject::Reference(*r))
+                .collect();
+
+            // Update the page with annotations
+            if let Some(PdfObject::Dict(ref page_dict)) = self.context.lookup(page_ref) {
+                let mut updated_page = page_dict.clone();
+                updated_page.set("Annots", PdfObject::Array(PdfArray::from(annots)));
+                self.context.assign(page_ref, PdfObject::Dict(updated_page));
+            }
+
+            // Track for potential merging with form fields
+            page_link_annots.insert(page_idx, annot_refs);
         }
 
         // Create pages dictionary
@@ -1977,17 +2112,28 @@ impl Document {
             );
             let acro_form_ref = self.context.register(PdfObject::Dict(acro_form_dict));
 
-            // Add annotations to each page that has fields
-            for (page_idx, annot_refs) in page_annots {
+            // Add form annotations to each page that has fields
+            // Merge with existing link annotations if present
+            for (page_idx, form_annot_refs) in page_annots {
                 if let Some(&page_ref) = page_refs.get(page_idx) {
-                    // Create Annots array for this page
-                    let annots: Vec<PdfObject> = annot_refs
-                        .iter()
-                        .map(|r| PdfObject::Reference(*r))
-                        .collect();
-                    let annots_array = PdfArray::from(annots);
+                    // Combine with any existing link annotations
+                    let mut all_annots: Vec<PdfObject> = Vec::new();
 
-                    // Update the page with annotations
+                    // Add existing link annotations first
+                    if let Some(link_refs) = page_link_annots.get(&page_idx) {
+                        for r in link_refs {
+                            all_annots.push(PdfObject::Reference(*r));
+                        }
+                    }
+
+                    // Add form annotations
+                    for r in &form_annot_refs {
+                        all_annots.push(PdfObject::Reference(*r));
+                    }
+
+                    let annots_array = PdfArray::from(all_annots);
+
+                    // Update the page with merged annotations
                     if let Some(PdfObject::Dict(ref page_dict)) = self.context.lookup(page_ref) {
                         let mut updated_page = page_dict.clone();
                         updated_page.set("Annots", PdfObject::Array(annots_array));
@@ -2004,6 +2150,88 @@ impl Document {
         // Add AcroForm to catalog if present
         if let Some(acro_form_ref) = acro_form_ref {
             catalog.set("AcroForm", PdfObject::Reference(acro_form_ref));
+        }
+
+        // Add Named Destinations if present
+        if !self.destinations.is_empty() {
+            // Build sorted name-destination pairs for the Names array
+            let mut dest_pairs: Vec<(&String, &(usize, link::DestinationFit))> =
+                self.destinations.iter().collect();
+            dest_pairs.sort_by(|a, b| a.0.cmp(b.0));
+
+            let mut names_array = PdfArray::new();
+            for (name, (page_index, fit)) in dest_pairs {
+                // Add name string
+                names_array.push(PdfObject::String(PdfString::from(name.as_str())));
+
+                // Build destination array [page_ref /FitType ...]
+                let mut dest_array = PdfArray::new();
+                if let Some(&page_ref) = page_refs.get(*page_index) {
+                    dest_array.push(PdfObject::Reference(page_ref));
+                } else {
+                    // Fallback to integer (shouldn't happen)
+                    dest_array.push(PdfObject::Integer(*page_index as i64));
+                }
+
+                match fit {
+                    link::DestinationFit::Fit => {
+                        dest_array.push(PdfObject::Name(PdfName::new("Fit")));
+                    }
+                    link::DestinationFit::FitH(top) => {
+                        dest_array.push(PdfObject::Name(PdfName::new("FitH")));
+                        dest_array.push(match top {
+                            Some(t) => PdfObject::Real(*t),
+                            None => PdfObject::Null,
+                        });
+                    }
+                    link::DestinationFit::FitV(left) => {
+                        dest_array.push(PdfObject::Name(PdfName::new("FitV")));
+                        dest_array.push(match left {
+                            Some(l) => PdfObject::Real(*l),
+                            None => PdfObject::Null,
+                        });
+                    }
+                    link::DestinationFit::FitR {
+                        left,
+                        bottom,
+                        right,
+                        top,
+                    } => {
+                        dest_array.push(PdfObject::Name(PdfName::new("FitR")));
+                        dest_array.push(PdfObject::Real(*left));
+                        dest_array.push(PdfObject::Real(*bottom));
+                        dest_array.push(PdfObject::Real(*right));
+                        dest_array.push(PdfObject::Real(*top));
+                    }
+                    link::DestinationFit::XYZ { left, top, zoom } => {
+                        dest_array.push(PdfObject::Name(PdfName::new("XYZ")));
+                        dest_array.push(match left {
+                            Some(l) => PdfObject::Real(*l),
+                            None => PdfObject::Null,
+                        });
+                        dest_array.push(match top {
+                            Some(t) => PdfObject::Real(*t),
+                            None => PdfObject::Null,
+                        });
+                        dest_array.push(match zoom {
+                            Some(z) => PdfObject::Real(*z),
+                            None => PdfObject::Null,
+                        });
+                    }
+                }
+
+                names_array.push(PdfObject::Array(dest_array));
+            }
+
+            // Create Dests name tree
+            let mut dests_dict = PdfDict::new();
+            dests_dict.set("Names", PdfObject::Array(names_array));
+
+            // Create Names dictionary
+            let mut names_dict = PdfDict::new();
+            names_dict.set("Dests", PdfObject::Dict(dests_dict));
+
+            catalog.set("Names", PdfObject::Dict(names_dict));
         }
 
         let catalog_ref = self.context.register(PdfObject::Dict(catalog));
@@ -3093,5 +3321,259 @@ mod tests {
         // If this doesn't panic, the API is working
         let bytes = doc.render().unwrap();
         assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    // === Link Annotation Tests ===
+
+    #[test]
+    fn test_link_annotation_url() {
+        use crate::api::link::LinkAnnotation;
+
+        let mut doc = Document::new();
+        doc.text_at("Click here", [72.0, 700.0]);
+
+        // Add URL link annotation
+        let link = LinkAnnotation::url([72.0, 690.0, 150.0, 710.0], "https://example.com");
+        doc.link_annotation(link);
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Verify link annotation structure
+        assert!(
+            pdf_str.contains("/Subtype /Link"),
+            "Should have Link subtype"
+        );
+        assert!(pdf_str.contains("/URI"), "Should have URI action");
+        assert!(
+            pdf_str.contains("https://example.com"),
+            "Should contain the URL"
+        );
+    }
+
+    #[test]
+    fn test_link_annotation_internal_page() {
+        use crate::api::link::LinkAnnotation;
+
+        let mut doc = Document::new();
+        doc.text_at("Page 1", [72.0, 700.0]);
+
+        // Add link to page 2
+        let link = LinkAnnotation::page([72.0, 690.0, 150.0, 710.0], 1);
+        doc.link_annotation(link);
+
+        doc.start_new_page();
+        doc.text_at("Page 2", [72.0, 700.0]);
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Verify link annotation with page destination
+        assert!(
+            pdf_str.contains("/Subtype /Link"),
+            "Should have Link subtype"
+        );
+        assert!(pdf_str.contains("/Dest"), "Should have Dest field");
+        assert!(pdf_str.contains("/Fit"), "Should have Fit destination type");
+    }
+
+    #[test]
+    fn test_link_url_convenience() {
+        let mut doc = Document::new();
+        doc.text_at("Click here", [72.0, 700.0]);
+        doc.link_url([72.0, 690.0, 150.0, 710.0], "https://rust-lang.org");
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        assert!(
+            pdf_str.contains("https://rust-lang.org"),
+            "Should contain the URL"
+        );
+    }
+
+    #[test]
+    fn test_multiple_links_on_page() {
+        use crate::api::link::LinkAnnotation;
+
+        let mut doc = Document::new();
+        doc.text_at("Link 1", [72.0, 700.0]);
+        doc.link_url([72.0, 690.0, 120.0, 710.0], "https://example1.com");
+
+        doc.text_at("Link 2", [72.0, 650.0]);
+        doc.link_url([72.0, 640.0, 120.0, 660.0], "https://example2.com");
+
+        doc.text_at("Link 3", [72.0, 600.0]);
+        let link = LinkAnnotation::page([72.0, 590.0, 120.0, 610.0], 0);
+        doc.link_annotation(link);
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Verify multiple annotations exist
+        assert!(pdf_str.contains("example1.com"), "Should contain first URL");
+        assert!(
+            pdf_str.contains("example2.com"),
+            "Should contain second URL"
+        );
+        assert!(pdf_str.contains("/Annots"), "Should have Annots array");
+    }
+
+    // === Named Destinations Tests ===
+
+    #[test]
+    fn test_add_dest() {
+        use crate::api::link::DestinationFit;
+
+        let mut doc = Document::new();
+        doc.text_at("Chapter 1", [72.0, 700.0]);
+        doc.add_dest("chapter1", 0, DestinationFit::Fit);
+
+        assert_eq!(doc.destinations.len(), 1);
+        assert!(doc.destinations.contains_key("chapter1"));
+    }
+
+    #[test]
+    fn test_add_dest_here() {
+        use crate::api::link::DestinationFit;
+
+        let mut doc = Document::new();
+        doc.text_at("Introduction", [72.0, 700.0]);
+        doc.add_dest_here("intro", DestinationFit::FitH(Some(700.0)));
+
+        assert_eq!(doc.destinations.len(), 1);
+        assert!(doc.destinations.contains_key("intro"));
+    }
+
+    #[test]
+    fn test_named_destinations_in_pdf() {
+        use crate::api::link::DestinationFit;
+
+        let mut doc = Document::new();
+        doc.text_at("Page 1", [72.0, 700.0]);
+        doc.add_dest("start", 0, DestinationFit::Fit);
+
+        doc.start_new_page();
+        doc.text_at("Page 2", [72.0, 700.0]);
+        doc.add_dest("chapter1", 1, DestinationFit::FitH(Some(700.0)));
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Verify Names dictionary in Catalog
+        assert!(pdf_str.contains("/Names"), "Should have Names dictionary");
+        assert!(pdf_str.contains("/Dests"), "Should have Dests name tree");
+        assert!(
+            pdf_str.contains("(start)"),
+            "Should contain 'start' destination name"
+        );
+        assert!(
+            pdf_str.contains("(chapter1)"),
+            "Should contain 'chapter1' destination name"
+        );
+    }
+
+    #[test]
+    fn test_named_destinations_sorted() {
+        use crate::api::link::DestinationFit;
+
+        let mut doc = Document::new();
+        // Add destinations in reverse alphabetical order
+        doc.add_dest("zebra", 0, DestinationFit::Fit);
+        doc.add_dest("apple", 0, DestinationFit::Fit);
+        doc.add_dest("mango", 0, DestinationFit::Fit);
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Names should be sorted alphabetically in the PDF
+        let apple_pos = pdf_str.find("(apple)").expect("apple should exist");
+        let mango_pos = pdf_str.find("(mango)").expect("mango should exist");
+        let zebra_pos = pdf_str.find("(zebra)").expect("zebra should exist");
+
+        assert!(apple_pos < mango_pos, "apple should come before mango");
+        assert!(mango_pos < zebra_pos, "mango should come before zebra");
+    }
+
+    #[test]
+    fn test_named_destination_link() {
+        use crate::api::link::{DestinationFit, LinkAnnotation};
+
+        let mut doc = Document::new();
+
+        // Create link to named destination
+        let link = LinkAnnotation::named([72.0, 690.0, 150.0, 710.0], "target");
+        doc.link_annotation(link);
+
+        // Add the named destination
+        doc.add_dest("target", 0, DestinationFit::Fit);
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Link should reference the named destination
+        assert!(
+            pdf_str.contains("/Dest (target)"),
+            "Link should reference named destination"
+        );
+        // Names dictionary should contain the destination
+        assert!(pdf_str.contains("/Names"), "Should have Names dictionary");
+    }
+
+    #[test]
+    fn test_destination_fit_types() {
+        use crate::api::link::DestinationFit;
+
+        let mut doc = Document::new();
+
+        // Test different fit types
+        doc.add_dest("fit", 0, DestinationFit::Fit);
+        doc.add_dest("fith", 0, DestinationFit::FitH(Some(500.0)));
+        doc.add_dest("fitv", 0, DestinationFit::FitV(Some(100.0)));
+        doc.add_dest(
+            "fitr",
+            0,
+            DestinationFit::FitR {
+                left: 0.0,
+                bottom: 0.0,
+                right: 612.0,
+                top: 792.0,
+            },
+        );
+        doc.add_dest(
+            "xyz",
+            0,
+            DestinationFit::XYZ {
+                left: Some(72.0),
+                top: Some(700.0),
+                zoom: Some(1.5),
+            },
+        );
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Verify different fit types are in the PDF
+        assert!(pdf_str.contains("/Fit]"), "Should have Fit destination");
+        assert!(pdf_str.contains("/FitH"), "Should have FitH destination");
+        assert!(pdf_str.contains("/FitV"), "Should have FitV destination");
+        assert!(pdf_str.contains("/FitR"), "Should have FitR destination");
+        assert!(pdf_str.contains("/XYZ"), "Should have XYZ destination");
+    }
+
+    #[test]
+    fn test_no_destinations_no_names_dict() {
+        let mut doc = Document::new();
+        doc.text_at("No destinations", [72.0, 700.0]);
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Without destinations, Names dictionary should not exist
+        // (unless other features add it)
+        assert!(
+            !pdf_str.contains("/Names <<"),
+            "Should not have Names dictionary when no destinations"
+        );
     }
 }
