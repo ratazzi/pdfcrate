@@ -4,6 +4,7 @@
 
 pub mod image;
 pub mod layout;
+pub mod measurements;
 pub mod page;
 
 #[cfg(feature = "std")]

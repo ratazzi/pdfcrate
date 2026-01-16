@@ -1,5 +1,7 @@
 //! Page sizes and layouts
 
+use super::measurements::{cm, inch, mm};
+
 /// Standard page sizes
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PageSize {
@@ -40,16 +42,17 @@ impl PageSize {
 
     /// Creates a custom page size from millimeters
     pub fn from_mm(width: f64, height: f64) -> Self {
-        // 1 inch = 25.4mm, 1 inch = 72 points
-        let w_pts = width * 72.0 / 25.4;
-        let h_pts = height * 72.0 / 25.4;
-        PageSize::Custom(w_pts, h_pts)
+        PageSize::Custom(mm(width), mm(height))
+    }
+
+    /// Creates a custom page size from centimeters
+    pub fn from_cm(width: f64, height: f64) -> Self {
+        PageSize::Custom(cm(width), cm(height))
     }
 
     /// Creates a custom page size from inches
     pub fn from_inches(width: f64, height: f64) -> Self {
-        // 1 inch = 72 points
-        PageSize::Custom(width * 72.0, height * 72.0)
+        PageSize::Custom(inch(width), inch(height))
     }
 }
 

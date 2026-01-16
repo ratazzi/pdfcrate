@@ -20,6 +20,7 @@
 
 use std::ops::{Deref, DerefMut};
 
+use super::measurements::Measurement;
 use super::Document;
 
 /// Text alignment options
@@ -781,32 +782,46 @@ pub struct Margin {
 
 impl Margin {
     /// Creates margins with the same value on all sides
-    pub fn all(value: f64) -> Self {
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn all(value: impl Measurement) -> Self {
+        let v = value.to_pt();
         Self {
-            top: value,
-            right: value,
-            bottom: value,
-            left: value,
+            top: v,
+            right: v,
+            bottom: v,
+            left: v,
         }
     }
 
     /// Creates margins with vertical (top/bottom) and horizontal (left/right) values
-    pub fn symmetric(vertical: f64, horizontal: f64) -> Self {
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn symmetric(vertical: impl Measurement, horizontal: impl Measurement) -> Self {
+        let v = vertical.to_pt();
+        let h = horizontal.to_pt();
         Self {
-            top: vertical,
-            right: horizontal,
-            bottom: vertical,
-            left: horizontal,
+            top: v,
+            right: h,
+            bottom: v,
+            left: h,
         }
     }
 
     /// Creates margins with individual values (top, right, bottom, left)
-    pub fn new(top: f64, right: f64, bottom: f64, left: f64) -> Self {
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn new(
+        top: impl Measurement,
+        right: impl Measurement,
+        bottom: impl Measurement,
+        left: impl Measurement,
+    ) -> Self {
         Self {
-            top,
-            right,
-            bottom,
-            left,
+            top: top.to_pt(),
+            right: right.to_pt(),
+            bottom: bottom.to_pt(),
+            left: left.to_pt(),
         }
     }
 
@@ -1128,21 +1143,27 @@ impl LayoutDocument {
     }
 
     /// Moves the cursor down by the specified amount
-    pub fn move_down(&mut self, amount: f64) -> &mut Self {
-        self.state.cursor_y -= amount;
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn move_down(&mut self, amount: impl Measurement) -> &mut Self {
+        self.state.cursor_y -= amount.to_pt();
         self
     }
 
     /// Moves the cursor up by the specified amount
-    pub fn move_up(&mut self, amount: f64) -> &mut Self {
-        self.state.cursor_y += amount;
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn move_up(&mut self, amount: impl Measurement) -> &mut Self {
+        self.state.cursor_y += amount.to_pt();
         self
     }
 
     /// Moves the cursor to the specified y position (relative to bounds top)
-    pub fn move_cursor_to(&mut self, y: f64) -> &mut Self {
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn move_cursor_to(&mut self, y: impl Measurement) -> &mut Self {
         let top = self.state.bounds().absolute_top();
-        self.state.cursor_y = top - y;
+        self.state.cursor_y = top - y.to_pt();
         self
     }
 
@@ -1208,23 +1229,24 @@ impl LayoutDocument {
     /// doc.character_spacing(2.0)
     ///    .text("S P A C E D");
     /// ```
-    pub fn character_spacing(&mut self, spacing: f64) -> &mut Self {
-        self.state.character_spacing = spacing;
+    pub fn character_spacing(&mut self, spacing: impl Measurement) -> &mut Self {
+        self.state.character_spacing = spacing.to_pt();
         self
     }
 
     /// Sets the word spacing (extra space added to space characters)
     ///
-    /// The value is in points. Default is 0.
-    /// This only affects the space character (U+0020).
+    /// Default is 0. This only affects the space character (U+0020).
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
     ///
     /// # Example
     /// ```ignore
     /// doc.word_spacing(5.0)
     ///    .text("Words with extra spacing");
     /// ```
-    pub fn word_spacing(&mut self, spacing: f64) -> &mut Self {
-        self.state.word_spacing = spacing;
+    pub fn word_spacing(&mut self, spacing: impl Measurement) -> &mut Self {
+        self.state.word_spacing = spacing.to_pt();
         self
     }
 
@@ -2310,10 +2332,14 @@ impl LayoutDocument {
     }
 
     /// Temporarily indents content from left and/or right
-    pub fn indent<F>(&mut self, left: f64, right: f64, f: F) -> &mut Self
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn indent<F>(&mut self, left: impl Measurement, right: impl Measurement, f: F) -> &mut Self
     where
         F: FnOnce(&mut Self),
     {
+        let left = left.to_pt();
+        let right = right.to_pt();
         self.state.bounds_mut().add_left_padding(left);
         self.state.bounds_mut().add_right_padding(right);
         f(self);
@@ -2323,10 +2349,13 @@ impl LayoutDocument {
     }
 
     /// Adds vertical padding before and after the block
-    pub fn pad<F>(&mut self, amount: f64, f: F) -> &mut Self
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn pad<F>(&mut self, amount: impl Measurement, f: F) -> &mut Self
     where
         F: FnOnce(&mut Self),
     {
+        let amount = amount.to_pt();
         self.move_down(amount);
         f(self);
         self.move_down(amount);
@@ -2334,7 +2363,9 @@ impl LayoutDocument {
     }
 
     /// Adds vertical padding before the block
-    pub fn pad_top<F>(&mut self, amount: f64, f: F) -> &mut Self
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn pad_top<F>(&mut self, amount: impl Measurement, f: F) -> &mut Self
     where
         F: FnOnce(&mut Self),
     {
@@ -2344,7 +2375,9 @@ impl LayoutDocument {
     }
 
     /// Adds vertical padding after the block
-    pub fn pad_bottom<F>(&mut self, amount: f64, f: F) -> &mut Self
+    ///
+    /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
+    pub fn pad_bottom<F>(&mut self, amount: impl Measurement, f: F) -> &mut Self
     where
         F: FnOnce(&mut Self),
     {

@@ -49,6 +49,9 @@ pub mod prelude {
         BoundingBox, LayoutDocument, Margin, Overflow, PageNumberConfig, PageNumberPosition,
         RepeaterPages, TextAlign, TextBoxResult,
     };
+    pub use crate::api::measurements::{
+        cm, inch, mm, pt2cm, pt2inch, pt2mm, Cm, Inch, Measurement, Mm, Pt,
+    };
     pub use crate::api::page::{PageLayout, PageSize};
     pub use crate::api::Document;
     pub use crate::content::{LineCap, LineJoin};
