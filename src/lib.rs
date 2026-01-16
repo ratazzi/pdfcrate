@@ -46,13 +46,18 @@ pub use error::{Error, Result};
 pub mod prelude {
     pub use crate::api::image::{EmbeddedImage, ImageOptions, ImageSource, Position};
     pub use crate::api::layout::{
-        BoundingBox, LayoutDocument, Margin, Overflow, PageNumberConfig, PageNumberPosition,
+        BoundingBox, Color, LayoutDocument, Margin, Overflow, PageNumberConfig, PageNumberPosition,
         RepeaterPages, TextAlign, TextBoxResult,
     };
     pub use crate::api::measurements::{
         cm, inch, mm, pt2cm, pt2inch, pt2mm, Cm, Inch, Measurement, Mm, Pt,
     };
     pub use crate::api::page::{PageLayout, PageSize};
+    pub use crate::api::table::{
+        BorderLine, Cell, CellContent, CellSelection, CellStyle, ColumnWidths, ImageContent,
+        ImageFit, IntoCell, RangeBoundsExt, SubtableData, Table, TableOptions, TablePosition,
+        TextOverflow, VerticalAlign,
+    };
     pub use crate::api::Document;
     pub use crate::content::{LineCap, LineJoin};
     pub use crate::document::{EmbeddedPage, LoadedDocument};

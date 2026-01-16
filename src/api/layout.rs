@@ -1283,7 +1283,7 @@ impl LayoutDocument {
     /// Returns the ascender height of the current font
     ///
     /// This is the height from baseline to top of tallest character.
-    fn ascender_height(&self) -> f64 {
+    pub fn ascender_height(&self) -> f64 {
         use crate::font::StandardFont;
 
         let font_size = self.inner.current_font_size;
@@ -1295,6 +1295,23 @@ impl LayoutDocument {
 
         // Fallback: approximate as 72% of em (typical for Latin fonts)
         font_size * 0.72
+    }
+
+    /// Returns the current font name
+    pub fn current_font(&self) -> &str {
+        &self.inner.current_font
+    }
+
+    /// Returns the current font size in points
+    pub fn current_font_size(&self) -> f64 {
+        self.inner.current_font_size
+    }
+
+    /// Measures the width of text with the current font settings
+    ///
+    /// This includes character spacing but not word spacing.
+    pub fn measure_text(&self, text: &str) -> f64 {
+        self.measure_text_width_with_spacing(text)
     }
 
     /// Draws text at the current cursor position
@@ -2800,6 +2817,114 @@ impl LayoutDocument {
         // Reset cursor to top of margin box for the new page
         let (_, page_height) = self.inner.page_size.dimensions(self.inner.page_layout);
         self.state.cursor_y = page_height - self.state.margin.top;
+
+        self
+    }
+
+    // === Table methods ===
+
+    /// Creates and draws a table at the current cursor position
+    ///
+    /// The table is drawn immediately and the cursor is moved below the table.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdfcrate::prelude::*;
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    ///
+    /// layout.table(
+    ///     &[
+    ///         &["Name", "Age", "City"],
+    ///         &["Alice", "30", "New York"],
+    ///         &["Bob", "25", "Los Angeles"],
+    ///     ],
+    ///     TableOptions::default(),
+    /// );
+    /// ```
+    pub fn table<R, C>(&mut self, data: &[R], options: super::table::TableOptions) -> &mut Self
+    where
+        R: AsRef<[C]>,
+        C: super::table::IntoCell + Clone,
+    {
+        let bounds = self.state.bounds();
+        let available_width = bounds.width();
+        let origin_x = bounds.absolute_left();
+        let origin_y = self.state.cursor_y;
+        let use_page_breaks = options.page_breaks;
+
+        // Create and layout the table
+        let mut table = super::table::Table::new(data, options, available_width);
+        table.calculate_layout(self);
+
+        // Draw the table (with or without page breaks)
+        if use_page_breaks {
+            table.draw_with_page_breaks(self, [origin_x, origin_y]);
+        } else {
+            table.draw(self, [origin_x, origin_y]);
+            // Move cursor below the table
+            self.state.cursor_y -= table.height();
+        }
+
+        self
+    }
+
+    /// Creates and draws a table with a configuration closure
+    ///
+    /// This allows customizing the table after creation but before drawing.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdfcrate::prelude::*;
+    ///
+    /// layout.table_with(
+    ///     &[
+    ///         &["Header 1", "Header 2"],
+    ///         &["Cell 1", "Cell 2"],
+    ///     ],
+    ///     TableOptions::default(),
+    ///     |table| {
+    ///         table.row_background(0, Color::gray(0.9));
+    ///     },
+    /// );
+    /// ```
+    pub fn table_with<R, C, F>(
+        &mut self,
+        data: &[R],
+        options: super::table::TableOptions,
+        configure: F,
+    ) -> &mut Self
+    where
+        R: AsRef<[C]>,
+        C: super::table::IntoCell + Clone,
+        F: FnOnce(&mut super::table::Table),
+    {
+        let bounds = self.state.bounds();
+        let available_width = bounds.width();
+        let origin_x = bounds.absolute_left();
+        let origin_y = self.state.cursor_y;
+        let use_page_breaks = options.page_breaks;
+
+        // Create the table
+        let mut table = super::table::Table::new(data, options, available_width);
+
+        // Allow customization BEFORE layout calculation
+        // This allows configure to modify padding/font/column widths etc.
+        configure(&mut table);
+
+        // Calculate layout after configuration
+        table.calculate_layout(self);
+
+        // Draw the table (with or without page breaks)
+        if use_page_breaks {
+            table.draw_with_page_breaks(self, [origin_x, origin_y]);
+        } else {
+            table.draw(self, [origin_x, origin_y]);
+            // Move cursor below the table
+            self.state.cursor_y -= table.height();
+        }
 
         self
     }

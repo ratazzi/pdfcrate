@@ -6,6 +6,7 @@ pub mod image;
 pub mod layout;
 pub mod measurements;
 pub mod page;
+pub mod table;
 
 #[cfg(feature = "std")]
 use std::time::SystemTime;
@@ -33,6 +34,10 @@ pub use layout::{
     TextFragment,
 };
 pub use page::{PageLayout, PageSize};
+pub use table::{
+    BorderLine, Cell, CellContent, CellStyle, ColumnWidths, IntoCell, Table, TableOptions,
+    TablePosition, VerticalAlign,
+};
 
 /// A PDF Document
 ///
