@@ -88,6 +88,11 @@ impl LoadedDocument {
         ]);
         xobject_dict.set("Matrix", PdfObject::Array(matrix));
 
+        // Add Resources to XObject (critical for gradients, fonts, etc.)
+        if let Some(ref res) = resources {
+            xobject_dict.set("Resources", PdfObject::Dict(res.clone()));
+        }
+
         // Create the stream
         let xobject = PdfStream::new(xobject_dict, content_data);
 

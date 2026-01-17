@@ -81,9 +81,14 @@ pub struct ShapedGlyph {
 impl EmbeddedFont {
     /// Parses a TrueType font from bytes
     pub fn from_bytes(data: Vec<u8>) -> Result<Self> {
+        Self::from_bytes_with_index(data, 0)
+    }
+
+    /// Parses a TrueType font from bytes with a specific face index (for font collections)
+    pub fn from_bytes_with_index(data: Vec<u8>, face_index: u32) -> Result<Self> {
         use ttf_parser::Face;
 
-        let face = Face::parse(&data, 0)
+        let face = Face::parse(&data, face_index)
             .map_err(|e| Error::Font(format!("Failed to parse font: {:?}", e)))?;
 
         // Get font names - use PostScript name as primary identifier (unique per variant)

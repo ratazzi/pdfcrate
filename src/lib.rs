@@ -71,4 +71,7 @@ pub mod prelude {
 
     #[cfg(feature = "fonts")]
     pub use crate::font::EmbeddedFont;
+
+    #[cfg(feature = "svg")]
+    pub use crate::svg::SvgOptions;
 }

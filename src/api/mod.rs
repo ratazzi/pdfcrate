@@ -94,6 +94,8 @@ pub struct Document {
     form: AcroForm,
     /// ExtGState resources for transparency (name -> ref)
     ext_gstates: Vec<(String, PdfRef)>,
+    /// Shading resources for gradients (name -> ref)
+    shadings: Vec<(String, PdfRef)>,
     /// Named destinations (name -> (page_index, fit))
     destinations: std::collections::HashMap<String, (usize, link::DestinationFit)>,
     /// Document outline (bookmarks)
@@ -362,6 +364,7 @@ impl Document {
             image_counter: 0,
             form: AcroForm::new(),
             ext_gstates: Vec::new(),
+            shadings: Vec::new(),
             destinations: std::collections::HashMap::new(),
             outline: outline::Outline::new(),
             compress_streams: true,
@@ -1453,13 +1456,15 @@ impl Document {
     /// - Transforms (translate, rotate, scale, matrix)
     /// - Nested groups (`<g>`)
     /// - Fill rules (even-odd, non-zero)
+    /// - Linear and radial gradients
+    /// - Transparency (opacity)
+    /// - Clipping paths
+    /// - Text (rendered as real PDF text with embedded fonts, requires `fonts` feature)
     ///
     /// # Unsupported Features
     ///
-    /// - Gradients (linearGradient, radialGradient)
     /// - Patterns
     /// - Images (`<image>`)
-    /// - Text (`<text>`)
     /// - Filters and effects
     ///
     /// # Example
@@ -1481,7 +1486,137 @@ impl Document {
     #[cfg(feature = "svg")]
     pub fn draw_svg(&mut self, svg: &str, pos: [f64; 2], width: f64, height: f64) -> Result<()> {
         let content = &mut self.pages[self.current_page].content;
-        crate::svg::render_svg_paths(content, svg, pos, width, height)
+        let resources =
+            crate::svg::render_svg(content, &mut self.context, svg, pos, width, height)?;
+
+        // Add collected resources
+        for (name, gs_ref) in resources.ext_gstates {
+            if !self.ext_gstates.iter().any(|(n, _)| n == &name) {
+                self.ext_gstates.push((name, gs_ref));
+            }
+        }
+        for (name, sh_ref) in resources.shadings {
+            if !self.shadings.iter().any(|(n, _)| n == &name) {
+                self.shadings.push((name, sh_ref));
+            }
+        }
+
+        // Register SVG fonts
+        #[cfg(feature = "fonts")]
+        for font_data in resources.fonts {
+            self.register_svg_font(font_data)?;
+        }
+
+        Ok(())
+    }
+
+    /// Renders SVG at the specified position and size with custom options.
+    ///
+    /// This allows specifying custom fonts for SVG text rendering.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::Document;
+    /// use pdfcrate::svg::SvgOptions;
+    ///
+    /// let mut doc = Document::new();
+    ///
+    /// // Load custom font
+    /// let font_data = std::fs::read("custom_font.ttf").unwrap();
+    /// let options = SvgOptions::new()
+    ///     .font(font_data)
+    ///     .no_system_fonts();  // Only use custom fonts
+    ///
+    /// let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="50">
+    ///   <text x="10" y="35" font-size="24">Custom Font Text</text>
+    /// </svg>"#;
+    ///
+    /// doc.draw_svg_with_options(svg, [72.0, 500.0], 200.0, 50.0, &options).unwrap();
+    /// ```
+    ///
+    /// Requires the `svg` feature.
+    #[cfg(feature = "svg")]
+    pub fn draw_svg_with_options(
+        &mut self,
+        svg: &str,
+        pos: [f64; 2],
+        width: f64,
+        height: f64,
+        options: &crate::svg::SvgOptions,
+    ) -> Result<()> {
+        let content = &mut self.pages[self.current_page].content;
+        let resources = crate::svg::render_svg_with_options(
+            content,
+            &mut self.context,
+            svg,
+            pos,
+            width,
+            height,
+            options,
+        )?;
+
+        // Add collected resources
+        for (name, gs_ref) in resources.ext_gstates {
+            if !self.ext_gstates.iter().any(|(n, _)| n == &name) {
+                self.ext_gstates.push((name, gs_ref));
+            }
+        }
+        for (name, sh_ref) in resources.shadings {
+            if !self.shadings.iter().any(|(n, _)| n == &name) {
+                self.shadings.push((name, sh_ref));
+            }
+        }
+
+        // Register SVG fonts
+        #[cfg(feature = "fonts")]
+        for font_data in resources.fonts {
+            self.register_svg_font(font_data)?;
+        }
+
+        Ok(())
+    }
+
+    /// Registers a font from SVG rendering
+    #[cfg(all(feature = "svg", feature = "fonts"))]
+    fn register_svg_font(&mut self, font_data: crate::svg::SvgFontData) -> Result<()> {
+        use crate::font::EmbeddedFont;
+
+        // Check if font already registered
+        if self.embedded_fonts.contains_key(&font_data.pdf_name) {
+            // Font already exists - merge glyph sets
+            if let Some(font_arc) = self.embedded_fonts.get_mut(&font_data.pdf_name) {
+                // Get mutable access to apply new glyphs
+                if let Some(font) = std::sync::Arc::get_mut(font_arc) {
+                    font.apply_used_glyphs(&font_data.glyph_set);
+                }
+            }
+            // Also merge into font_used_glyphs
+            if let Some(existing_glyphs) = self.font_used_glyphs.get_mut(&font_data.pdf_name) {
+                for (gid, text) in font_data.glyph_set {
+                    existing_glyphs.insert(gid, text);
+                }
+            }
+            return Ok(());
+        }
+
+        // Create EmbeddedFont from font data with correct face_index (for font collections)
+        let data = (*font_data.data).clone();
+        let mut font = EmbeddedFont::from_bytes_with_index(data, font_data.face_index)?;
+
+        // Apply glyph usage from SVG
+        font.apply_used_glyphs(&font_data.glyph_set);
+
+        // Store font
+        let font_arc = std::sync::Arc::new(font);
+        self.embedded_fonts
+            .insert(font_data.pdf_name.clone(), font_arc);
+
+        // Store glyph usage for subsetting
+        self.font_used_glyphs
+            .insert(font_data.pdf_name, font_data.glyph_set);
+
+        Ok(())
     }
 
     /// Renders SVG paths at the specified position and size.
@@ -2057,6 +2192,12 @@ impl Document {
             extgstate_dict.set(name, PdfObject::Reference(*gs_ref));
         }
 
+        // Build Shading resources dictionary (gradients)
+        let mut shading_dict = PdfDict::new();
+        for (name, sh_ref) in &self.shadings {
+            shading_dict.set(name, PdfObject::Reference(*sh_ref));
+        }
+
         let mut resources = PdfDict::new();
         if !self.fonts.is_empty() {
             resources.set("Font", PdfObject::Dict(font_dict.clone()));
@@ -2066,6 +2207,9 @@ impl Document {
         }
         if !self.ext_gstates.is_empty() {
             resources.set("ExtGState", PdfObject::Dict(extgstate_dict));
+        }
+        if !self.shadings.is_empty() {
+            resources.set("Shading", PdfObject::Dict(shading_dict));
         }
         let resources_ref = self.context.register(PdfObject::Dict(resources));
 

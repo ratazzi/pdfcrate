@@ -15,6 +15,8 @@ pub struct PdfContext {
     objects: HashMap<PdfRef, PdfObject>,
     /// Next available object number
     next_object_number: u32,
+    /// Counter for SVG resource names (shared across all draw_svg calls)
+    svg_resource_counter: u32,
 }
 
 impl PdfContext {
@@ -23,7 +25,14 @@ impl PdfContext {
         PdfContext {
             objects: HashMap::new(),
             next_object_number: 1, // Object 0 is reserved
+            svg_resource_counter: 0,
         }
+    }
+
+    /// Allocates the next SVG resource name with a unique number
+    pub fn next_svg_resource_name(&mut self, prefix: &str) -> String {
+        self.svg_resource_counter += 1;
+        format!("{}{}", prefix, self.svg_resource_counter)
     }
 
     /// Allocates a new object reference
