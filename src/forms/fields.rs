@@ -90,35 +90,43 @@ pub fn create_widget_annotation(
     );
     dict.set("DA", PdfObject::String(da.into()));
 
-    // Border style
-    let mut bs = PdfDict::new();
-    bs.set("W", PdfObject::Integer(1)); // 1pt border
-    bs.set("S", PdfObject::Name(PdfName::new("S"))); // Solid
-    dict.set("BS", PdfObject::Dict(bs));
+    // Border style - only set if border color is specified
+    if field.border_color.is_some() {
+        let mut bs = PdfDict::new();
+        bs.set("W", PdfObject::Integer(1)); // 1pt border
+        bs.set("S", PdfObject::Name(PdfName::new("S"))); // Solid
+        dict.set("BS", PdfObject::Dict(bs));
+    }
 
-    // Appearance characteristics (MK)
-    let mut mk = PdfDict::new();
-    if let Some(ref bg) = field.background_color {
-        let bg_arr = PdfArray::from(vec![
-            PdfObject::Real(bg[0]),
-            PdfObject::Real(bg[1]),
-            PdfObject::Real(bg[2]),
-        ]);
-        mk.set("BG", PdfObject::Array(bg_arr));
+    // Appearance characteristics (MK) - only if needed
+    let has_bg = field.background_color.is_some();
+    let has_bc = field.border_color.is_some();
+    let is_checkbox = field.field_type == FieldType::CheckBox;
+
+    if has_bg || has_bc || is_checkbox {
+        let mut mk = PdfDict::new();
+        if let Some(ref bg) = field.background_color {
+            let bg_arr = PdfArray::from(vec![
+                PdfObject::Real(bg[0]),
+                PdfObject::Real(bg[1]),
+                PdfObject::Real(bg[2]),
+            ]);
+            mk.set("BG", PdfObject::Array(bg_arr));
+        }
+        if let Some(ref bc) = field.border_color {
+            let bc_arr = PdfArray::from(vec![
+                PdfObject::Real(bc[0]),
+                PdfObject::Real(bc[1]),
+                PdfObject::Real(bc[2]),
+            ]);
+            mk.set("BC", PdfObject::Array(bc_arr));
+        }
+        // Caption for checkboxes
+        if is_checkbox {
+            mk.set("CA", PdfObject::String("4".into())); // Checkmark character
+        }
+        dict.set("MK", PdfObject::Dict(mk));
     }
-    if let Some(ref bc) = field.border_color {
-        let bc_arr = PdfArray::from(vec![
-            PdfObject::Real(bc[0]),
-            PdfObject::Real(bc[1]),
-            PdfObject::Real(bc[2]),
-        ]);
-        mk.set("BC", PdfObject::Array(bc_arr));
-    }
-    // Caption for checkboxes
-    if field.field_type == FieldType::CheckBox {
-        mk.set("CA", PdfObject::String("4".into())); // Checkmark character
-    }
-    dict.set("MK", PdfObject::Dict(mk));
 
     // Appearance dictionary
     if let Some(ap_ref) = appearance_ref {

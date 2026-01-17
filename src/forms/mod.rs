@@ -311,6 +311,12 @@ impl FormField {
         self
     }
 
+    /// Removes background (transparent)
+    pub fn no_background(mut self) -> Self {
+        self.background_color = None;
+        self
+    }
+
     /// Sets text color
     pub fn with_text_color(mut self, r: f64, g: f64, b: f64) -> Self {
         self.text_color = [r, g, b];
