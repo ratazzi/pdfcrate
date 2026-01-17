@@ -98,6 +98,8 @@ pub struct Document {
     destinations: std::collections::HashMap<String, (usize, link::DestinationFit)>,
     /// Document outline (bookmarks)
     outline: outline::Outline,
+    /// Whether to compress content streams (default: true)
+    compress_streams: bool,
 }
 
 /// Internal page data
@@ -362,6 +364,7 @@ impl Document {
             ext_gstates: Vec::new(),
             destinations: std::collections::HashMap::new(),
             outline: outline::Outline::new(),
+            compress_streams: true,
         };
 
         // Start with one page
@@ -1746,6 +1749,21 @@ impl Document {
         self
     }
 
+    /// Sets whether to compress content streams.
+    ///
+    /// By default, streams are compressed using FlateDecode (zlib).
+    /// Set to `false` for faster generation but larger file sizes.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let mut doc = Document::new();
+    /// doc.compress_streams(false); // Disable compression
+    /// ```
+    pub fn compress_streams(&mut self, compress: bool) -> &mut Self {
+        self.compress_streams = compress;
+        self
+    }
+
     // =========================================================================
     // Form API
     // =========================================================================
@@ -2059,7 +2077,11 @@ impl Document {
         for page in self.pages.iter_mut() {
             // Create content stream
             let content_data = std::mem::take(&mut page.content).build();
-            let content_stream = PdfStream::from_data_compressed(content_data);
+            let content_stream = if self.compress_streams {
+                PdfStream::from_data_compressed(content_data)
+            } else {
+                PdfStream::from_data(content_data)
+            };
             let content_ref = self.context.register(PdfObject::Stream(content_stream));
 
             // Create page dictionary (without annotations for now)
