@@ -2865,7 +2865,7 @@ impl LayoutDocument {
     /// Creates a text with an embedded link
     ///
     /// Draws text at the current cursor position and adds a clickable link over it.
-    /// Returns the bounding box of the text for reference.
+    /// Returns `&mut Self` for method chaining.
     ///
     /// # Example
     ///
@@ -2991,6 +2991,51 @@ impl LayoutDocument {
         self.inner
             .add_dest(name, page_index, super::link::DestinationFit::FitH(Some(y)));
         self
+    }
+
+    // === Outline (Bookmarks) methods ===
+
+    /// Defines the document outline (bookmarks) using a closure-based DSL
+    ///
+    /// The outline appears in the PDF viewer's navigation panel and allows
+    /// users to quickly jump to different sections of the document.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// layout.outline(|o| {
+    ///     o.section("Chapter 1", 0, |o| {
+    ///         o.page("Introduction", 0);
+    ///         o.page("Getting Started", 1);
+    ///     });
+    ///     o.section("Chapter 2", 2, |o| {
+    ///         o.page("Advanced Topics", 2);
+    ///     });
+    /// });
+    /// ```
+    pub fn outline<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut super::outline::OutlineBuilder),
+    {
+        self.inner.outline(f);
+        self
+    }
+
+    /// Adds a single outline item at the root level
+    pub fn add_outline_item(&mut self, item: super::outline::OutlineItem) -> &mut Self {
+        self.inner.add_outline_item(item);
+        self
+    }
+
+    /// Sets the entire document outline
+    pub fn set_outline(&mut self, outline: super::outline::Outline) -> &mut Self {
+        self.inner.set_outline(outline);
+        self
+    }
+
+    /// Returns whether the document has an outline
+    pub fn has_outline(&self) -> bool {
+        self.inner.has_outline()
     }
 
     // === Table methods ===

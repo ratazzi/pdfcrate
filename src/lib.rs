@@ -55,6 +55,7 @@ pub mod prelude {
     pub use crate::api::measurements::{
         cm, inch, mm, pt2cm, pt2inch, pt2mm, Cm, Inch, Measurement, Mm, Pt,
     };
+    pub use crate::api::outline::{Outline, OutlineBuilder, OutlineDestination, OutlineItem};
     pub use crate::api::page::{PageLayout, PageSize};
     pub use crate::api::table::{
         BorderLine, Cell, CellContent, CellSelection, CellStyle, ColumnWidths, ImageContent,

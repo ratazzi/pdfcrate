@@ -13,6 +13,7 @@
 //! - Advanced layout: text alignment, leading, wrapping, text boxes
 //! - Transparency support for overlapping graphics
 //! - Polygon drawing (stroke and fill)
+//! - Document outline (bookmarks/table of contents)
 //!
 //! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
@@ -54,30 +55,120 @@ fn main() -> StdResult<(), Box<dyn Error>> {
     Document::generate("showcase.pdf", |doc| {
         doc.title("pdfcrate Showcase").author("pdfcrate");
 
+        // Track page indices for outline
+        let mut page_idx = 0;
+        let drawing_page = page_idx;
+
         add_page_drawing(doc)?;
+        page_idx += 1;
+        let png_page = page_idx;
+
         add_page_png(doc, &png_bytes, png_width, png_height)?;
+        page_idx += 1;
+        let jpeg_page = page_idx;
+
         add_page_jpeg(doc, &jpeg_bytes, jpeg_width, jpeg_height)?;
+        page_idx += 1;
+        let alpha_page = page_idx;
+
         add_page_alpha(doc, &alpha_bytes, alpha_width, alpha_height)?;
+        page_idx += 1;
 
         #[cfg(feature = "fonts")]
-        add_page_custom_font(doc)?;
+        let custom_font_page = page_idx;
+        #[cfg(feature = "fonts")]
+        {
+            add_page_custom_font(doc)?;
+            page_idx += 1;
+        }
 
         #[cfg(feature = "fonts")]
-        add_page_ligatures(doc)?;
+        let ligatures_page = page_idx;
+        #[cfg(feature = "fonts")]
+        {
+            add_page_ligatures(doc)?;
+            page_idx += 1;
+        }
 
         #[cfg(feature = "fonts")]
-        add_page_cjk(doc)?;
+        let cjk_page = page_idx;
+        #[cfg(feature = "fonts")]
+        {
+            add_page_cjk(doc)?;
+            page_idx += 1;
+        }
 
+        let forms_page = page_idx;
         add_page_forms(doc)?;
+        page_idx += 1;
+
+        let pdf_embed_page = page_idx;
         add_page_pdf_embed(doc)?;
+        page_idx += 1;
 
         #[cfg(feature = "svg")]
-        add_page_svg_barcode(doc)?;
+        let svg_page = page_idx;
+        #[cfg(feature = "svg")]
+        {
+            add_page_svg_barcode(doc)?;
+            page_idx += 1;
+        }
 
+        let layout_page = page_idx;
         add_page_layout(doc)?;
+        page_idx += 1;
+
+        let layout_advanced_page = page_idx;
         add_page_layout_advanced(doc)?;
+        page_idx += 1;
+
+        let text_box_page = page_idx;
         add_page_text_box_overflow(doc)?;
+        page_idx += 1;
+
+        let grid_page = page_idx;
         add_page_grid(doc)?;
+        let _ = page_idx; // Suppress unused warning
+
+        // Build document outline (bookmarks)
+        doc.outline(|o| {
+            // Drawing & Graphics section
+            o.section("Drawing & Graphics", drawing_page, |o| {
+                o.page("Primitives & Transparency", drawing_page);
+                o.page("Polygons", drawing_page);
+            });
+
+            // Images section
+            o.section("Images", png_page, |o| {
+                o.page("PNG Image", png_page);
+                o.page("JPEG Image", jpeg_page);
+                o.page("PNG with Alpha", alpha_page);
+            });
+
+            // Fonts section (only if fonts feature is enabled)
+            #[cfg(feature = "fonts")]
+            o.section("Fonts", custom_font_page, |o| {
+                o.page("Custom TrueType Font", custom_font_page);
+                o.page("Ligatures & Kerning", ligatures_page);
+                o.page("CJK Support", cjk_page);
+            });
+
+            // Interactive section
+            o.section("Interactive", forms_page, |o| {
+                o.page("AcroForms", forms_page);
+                o.page("PDF Embedding", pdf_embed_page);
+                #[cfg(feature = "svg")]
+                o.page("SVG Barcode", svg_page);
+            });
+
+            // Layout section
+            o.section("Layout System", layout_page, |o| {
+                o.page("LayoutDocument Basics", layout_page);
+                o.page("Text Layout Features", layout_advanced_page);
+                o.page("Text Box Overflow", text_box_page);
+                o.page("Grid System", grid_page);
+            });
+        });
 
         Ok(())
     })?;

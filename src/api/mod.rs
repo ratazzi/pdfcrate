@@ -6,6 +6,7 @@ pub mod image;
 pub mod layout;
 pub mod link;
 pub mod measurements;
+pub mod outline;
 pub mod page;
 pub mod table;
 
@@ -35,6 +36,7 @@ pub use layout::{
     TextFragment,
 };
 pub use link::{DestinationFit, HighlightMode, LinkAction, LinkAnnotation, LinkDestination};
+pub use outline::{Outline, OutlineBuilder, OutlineDestination, OutlineItem};
 pub use page::{PageLayout, PageSize};
 pub use table::{
     BorderLine, Cell, CellContent, CellStyle, ColumnWidths, IntoCell, Table, TableOptions,
@@ -94,6 +96,8 @@ pub struct Document {
     ext_gstates: Vec<(String, PdfRef)>,
     /// Named destinations (name -> (page_index, fit))
     destinations: std::collections::HashMap<String, (usize, link::DestinationFit)>,
+    /// Document outline (bookmarks)
+    outline: outline::Outline,
 }
 
 /// Internal page data
@@ -357,6 +361,7 @@ impl Document {
             form: AcroForm::new(),
             ext_gstates: Vec::new(),
             destinations: std::collections::HashMap::new(),
+            outline: outline::Outline::new(),
         };
 
         // Start with one page
@@ -632,6 +637,56 @@ impl Document {
     ) -> &mut Self {
         let page_index = self.current_page;
         self.add_dest(name, page_index, fit)
+    }
+
+    // === Document Outline (Bookmarks) ===
+
+    /// Defines the document outline (bookmarks) using a closure-based DSL
+    ///
+    /// The outline appears in the PDF viewer's navigation panel and allows
+    /// users to quickly jump to different sections of the document.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// doc.outline(|o| {
+    ///     o.section("Chapter 1", 0, |o| {
+    ///         o.page("Introduction", 0);
+    ///         o.page("Getting Started", 1);
+    ///     });
+    ///     o.section("Chapter 2", 2, |o| {
+    ///         o.page("Advanced Topics", 2);
+    ///         o.section_closed("Subsection 2.1", 3, |o| {
+    ///             o.page("Details", 3);
+    ///         });
+    ///     });
+    /// });
+    /// ```
+    pub fn outline<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut outline::OutlineBuilder),
+    {
+        let mut builder = outline::OutlineBuilder::new();
+        f(&mut builder);
+        self.outline.add_from_builder(builder);
+        self
+    }
+
+    /// Adds a single outline item at the root level
+    pub fn add_outline_item(&mut self, item: outline::OutlineItem) -> &mut Self {
+        self.outline.add(item);
+        self
+    }
+
+    /// Sets the entire document outline
+    pub fn set_outline(&mut self, outline: outline::Outline) -> &mut Self {
+        self.outline = outline;
+        self
+    }
+
+    /// Returns whether the document has an outline
+    pub fn has_outline(&self) -> bool {
+        !self.outline.is_empty()
     }
 
     /// Draws text at a specific position with character and word spacing
@@ -2234,6 +2289,12 @@ impl Document {
             catalog.set("Names", PdfObject::Dict(names_dict));
         }
 
+        // Add Document Outline (Bookmarks) if present
+        if !self.outline.is_empty() {
+            let outlines_ref = self.build_outline_tree(&page_refs);
+            catalog.set("Outlines", PdfObject::Reference(outlines_ref));
+        }
+
         let catalog_ref = self.context.register(PdfObject::Dict(catalog));
 
         // Note: mod_date is NOT auto-set for reproducible builds.
@@ -2297,6 +2358,173 @@ impl Document {
         // Write PDF
         let objects: Vec<(PdfRef, PdfObject)> = self.context.to_vec();
         crate::writer::write_pdf(&objects, catalog_ref, info_ref)
+    }
+
+    /// Build the outline tree and return the root reference
+    fn build_outline_tree(&mut self, page_refs: &[PdfRef]) -> PdfRef {
+        // Pre-allocate root reference
+        let root_ref = self.context.alloc_ref();
+
+        // Build all outline items recursively
+        // Each item needs: Title, Parent, Prev, Next, First, Last, Count, Dest
+        let (first_ref, last_ref, count) =
+            self.build_outline_items(&self.outline.items.clone(), root_ref, page_refs);
+
+        // Create root dictionary
+        let mut root_dict = PdfDict::new();
+        root_dict.set("Type", PdfObject::Name(PdfName::new("Outlines")));
+        root_dict.set("Count", PdfObject::Integer(count as i64));
+        if let Some(first) = first_ref {
+            root_dict.set("First", PdfObject::Reference(first));
+        }
+        if let Some(last) = last_ref {
+            root_dict.set("Last", PdfObject::Reference(last));
+        }
+
+        self.context.assign(root_ref, PdfObject::Dict(root_dict));
+        root_ref
+    }
+
+    /// Recursively build outline items at a given level
+    /// Returns (first_ref, last_ref, total_count)
+    fn build_outline_items(
+        &mut self,
+        items: &[outline::OutlineItem],
+        parent_ref: PdfRef,
+        page_refs: &[PdfRef],
+    ) -> (Option<PdfRef>, Option<PdfRef>, usize) {
+        if items.is_empty() {
+            return (None, None, 0);
+        }
+
+        let mut first_ref: Option<PdfRef> = None;
+        let mut prev_ref: Option<PdfRef> = None;
+        let mut total_count = 0;
+
+        // Pre-allocate refs for all items at this level
+        let item_refs: Vec<PdfRef> = items.iter().map(|_| self.context.alloc_ref()).collect();
+
+        for (i, item) in items.iter().enumerate() {
+            let item_ref = item_refs[i];
+            let next_ref = item_refs.get(i + 1).copied();
+
+            // Build children first to get their count
+            let (child_first, child_last, child_count) =
+                self.build_outline_items(&item.children, item_ref, page_refs);
+
+            // Create item dictionary
+            let mut item_dict = PdfDict::new();
+            item_dict.set(
+                "Title",
+                PdfObject::String(PdfString::from(item.title.as_str())),
+            );
+            item_dict.set("Parent", PdfObject::Reference(parent_ref));
+
+            // Count: positive if open, negative if closed
+            let display_count = if item.closed {
+                -(child_count as i64)
+            } else {
+                child_count as i64
+            };
+            if child_count > 0 {
+                item_dict.set("Count", PdfObject::Integer(display_count));
+            }
+
+            // Navigation links
+            if let Some(prev) = prev_ref {
+                item_dict.set("Prev", PdfObject::Reference(prev));
+            }
+            if let Some(next) = next_ref {
+                item_dict.set("Next", PdfObject::Reference(next));
+            }
+            if let Some(first) = child_first {
+                item_dict.set("First", PdfObject::Reference(first));
+            }
+            if let Some(last) = child_last {
+                item_dict.set("Last", PdfObject::Reference(last));
+            }
+
+            // Destination
+            if let Some(dest) = &item.destination {
+                match dest {
+                    outline::OutlineDestination::Page { page_index, fit } => {
+                        let mut dest_array = PdfArray::new();
+                        if let Some(&page_ref) = page_refs.get(*page_index) {
+                            dest_array.push(PdfObject::Reference(page_ref));
+                        } else {
+                            dest_array.push(PdfObject::Integer(*page_index as i64));
+                        }
+
+                        match fit {
+                            link::DestinationFit::Fit => {
+                                dest_array.push(PdfObject::Name(PdfName::new("Fit")));
+                            }
+                            link::DestinationFit::FitH(top) => {
+                                dest_array.push(PdfObject::Name(PdfName::new("FitH")));
+                                dest_array.push(match top {
+                                    Some(t) => PdfObject::Real(*t),
+                                    None => PdfObject::Null,
+                                });
+                            }
+                            link::DestinationFit::FitV(left) => {
+                                dest_array.push(PdfObject::Name(PdfName::new("FitV")));
+                                dest_array.push(match left {
+                                    Some(l) => PdfObject::Real(*l),
+                                    None => PdfObject::Null,
+                                });
+                            }
+                            link::DestinationFit::FitR {
+                                left,
+                                bottom,
+                                right,
+                                top,
+                            } => {
+                                dest_array.push(PdfObject::Name(PdfName::new("FitR")));
+                                dest_array.push(PdfObject::Real(*left));
+                                dest_array.push(PdfObject::Real(*bottom));
+                                dest_array.push(PdfObject::Real(*right));
+                                dest_array.push(PdfObject::Real(*top));
+                            }
+                            link::DestinationFit::XYZ { left, top, zoom } => {
+                                dest_array.push(PdfObject::Name(PdfName::new("XYZ")));
+                                dest_array.push(match left {
+                                    Some(l) => PdfObject::Real(*l),
+                                    None => PdfObject::Null,
+                                });
+                                dest_array.push(match top {
+                                    Some(t) => PdfObject::Real(*t),
+                                    None => PdfObject::Null,
+                                });
+                                dest_array.push(match zoom {
+                                    Some(z) => PdfObject::Real(*z),
+                                    None => PdfObject::Null,
+                                });
+                            }
+                        }
+                        item_dict.set("Dest", PdfObject::Array(dest_array));
+                    }
+                    outline::OutlineDestination::Named(name) => {
+                        item_dict.set("Dest", PdfObject::String(PdfString::from(name.as_str())));
+                    }
+                }
+            }
+
+            self.context.assign(item_ref, PdfObject::Dict(item_dict));
+
+            // Track first/last/prev
+            if first_ref.is_none() {
+                first_ref = Some(item_ref);
+            }
+            prev_ref = Some(item_ref);
+
+            // Update total count: 1 for this item + children if open
+            total_count += 1;
+            if !item.closed {
+                total_count += child_count;
+            }
+        }
+
+        (first_ref, prev_ref, total_count)
     }
 }
 
@@ -3574,6 +3802,232 @@ mod tests {
         assert!(
             !pdf_str.contains("/Names <<"),
             "Should not have Names dictionary when no destinations"
+        );
+    }
+
+    // === Outline (Bookmarks) Tests ===
+
+    #[test]
+    fn test_outline_builder_page() {
+        use crate::api::outline::OutlineBuilder;
+
+        let mut builder = OutlineBuilder::new();
+        builder.page("Chapter 1", 0);
+        builder.page("Chapter 2", 1);
+
+        let items = builder.build();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].title, "Chapter 1");
+        assert_eq!(items[1].title, "Chapter 2");
+    }
+
+    #[test]
+    fn test_outline_builder_section() {
+        use crate::api::outline::OutlineBuilder;
+
+        let mut builder = OutlineBuilder::new();
+        builder.section("Part 1", 0, |o| {
+            o.page("Chapter 1", 0);
+            o.page("Chapter 2", 1);
+        });
+        builder.section("Part 2", 2, |o| {
+            o.page("Chapter 3", 2);
+        });
+
+        let items = builder.build();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].children.len(), 2);
+        assert_eq!(items[1].children.len(), 1);
+    }
+
+    #[test]
+    fn test_outline_builder_nested() {
+        use crate::api::outline::OutlineBuilder;
+
+        let mut builder = OutlineBuilder::new();
+        builder.section("Part 1", 0, |o| {
+            o.section("Chapter 1", 0, |o| {
+                o.page("Section 1.1", 0);
+                o.page("Section 1.2", 0);
+            });
+        });
+
+        let items = builder.build();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].children.len(), 1);
+        assert_eq!(items[0].children[0].children.len(), 2);
+    }
+
+    #[test]
+    fn test_outline_builder_closed() {
+        use crate::api::outline::OutlineBuilder;
+
+        let mut builder = OutlineBuilder::new();
+        builder.section_closed("Collapsed Section", 0, |o| {
+            o.page("Hidden Item 1", 0);
+            o.page("Hidden Item 2", 1);
+        });
+
+        let items = builder.build();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].closed);
+        assert_eq!(items[0].children.len(), 2);
+    }
+
+    #[test]
+    fn test_document_outline_method() {
+        let mut doc = Document::new();
+        doc.start_new_page();
+        doc.start_new_page();
+
+        doc.outline(|o| {
+            o.page("Page 1", 0);
+            o.page("Page 2", 1);
+            o.page("Page 3", 2);
+        });
+
+        assert!(doc.has_outline());
+        assert_eq!(doc.outline.items.len(), 3);
+    }
+
+    #[test]
+    fn test_outline_in_pdf_output() {
+        let mut doc = Document::new();
+        doc.text_at("Page 1", [72.0, 700.0]);
+        doc.start_new_page();
+        doc.text_at("Page 2", [72.0, 700.0]);
+
+        doc.outline(|o| {
+            o.page("Introduction", 0);
+            o.page("Chapter 1", 1);
+        });
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Verify outline structure in PDF
+        assert!(
+            pdf_str.contains("/Outlines"),
+            "Should have Outlines in catalog"
+        );
+        assert!(
+            pdf_str.contains("/Type /Outlines"),
+            "Should have Outlines type"
+        );
+        assert!(
+            pdf_str.contains("/Title (Introduction)"),
+            "Should have first title"
+        );
+        assert!(
+            pdf_str.contains("/Title (Chapter 1)"),
+            "Should have second title"
+        );
+    }
+
+    #[test]
+    fn test_outline_with_sections() {
+        let mut doc = Document::new();
+        doc.start_new_page();
+        doc.start_new_page();
+        doc.start_new_page();
+
+        doc.outline(|o| {
+            o.section("Part 1", 0, |o| {
+                o.page("Chapter 1", 0);
+                o.page("Chapter 2", 1);
+            });
+            o.section("Part 2", 2, |o| {
+                o.page("Chapter 3", 2);
+            });
+        });
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Verify hierarchical structure
+        assert!(pdf_str.contains("/Title (Part 1)"), "Should have Part 1");
+        assert!(pdf_str.contains("/Title (Part 2)"), "Should have Part 2");
+        assert!(
+            pdf_str.contains("/Title (Chapter 1)"),
+            "Should have Chapter 1"
+        );
+        assert!(pdf_str.contains("/First"), "Parent should have First child");
+        assert!(pdf_str.contains("/Last"), "Parent should have Last child");
+        assert!(pdf_str.contains("/Count"), "Parent should have Count");
+    }
+
+    #[test]
+    fn test_outline_count_calculation() {
+        let mut doc = Document::new();
+        doc.outline(|o| {
+            o.section("Part 1", 0, |o| {
+                o.page("Chapter 1", 0);
+                o.page("Chapter 2", 0);
+            });
+            o.page("Appendix", 0);
+        });
+
+        // Total: Part 1 (1) + Chapter 1 (1) + Chapter 2 (1) + Appendix (1) = 4
+        assert_eq!(doc.outline.total_count(), 4);
+    }
+
+    #[test]
+    fn test_no_outline_no_outlines_dict() {
+        let mut doc = Document::new();
+        doc.text_at("No bookmarks", [72.0, 700.0]);
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Without outline, Outlines should not exist in catalog
+        assert!(
+            !pdf_str.contains("/Outlines"),
+            "Should not have Outlines when no outline defined"
+        );
+    }
+
+    #[test]
+    fn test_outline_item_builder() {
+        use crate::api::outline::{OutlineDestination, OutlineItem};
+
+        let item = OutlineItem::new("Test")
+            .with_destination(0)
+            .with_closed(true)
+            .with_child(OutlineItem::page("Child", 1));
+
+        assert_eq!(item.title, "Test");
+        assert!(item.closed);
+        assert_eq!(item.children.len(), 1);
+        assert!(matches!(
+            item.destination,
+            Some(OutlineDestination::Page { page_index: 0, .. })
+        ));
+    }
+
+    #[test]
+    fn test_outline_named_destination() {
+        use crate::api::outline::OutlineItem;
+
+        let mut doc = Document::new();
+
+        // Add named destination
+        doc.add_dest("chapter1", 0, link::DestinationFit::Fit);
+
+        // Add outline linking to named destination
+        doc.add_outline_item(OutlineItem::named("Go to Chapter 1", "chapter1"));
+
+        let bytes = doc.render().unwrap();
+        let pdf_str = String::from_utf8_lossy(&bytes);
+
+        // Should have outline with named destination
+        assert!(pdf_str.contains("/Outlines"), "Should have Outlines");
+        assert!(
+            pdf_str.contains("/Title (Go to Chapter 1)"),
+            "Should have title"
+        );
+        assert!(
+            pdf_str.contains("/Dest (chapter1)"),
+            "Should reference named destination"
         );
     }
 }
