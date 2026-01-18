@@ -1410,7 +1410,7 @@ impl LayoutDocument {
                     Self::get_styled_font_name(&base_font, f.style)
                 };
                 let font_size = f.size.unwrap_or(base_size);
-                let base_width = Self::measure_fragment_width(&font_name, &f.text, font_size);
+                let base_width = self.measure_fragment_width_inner(&font_name, &f.text, font_size);
 
                 // Add spacing within fragment
                 let char_count = f.text.chars().count();
@@ -1469,49 +1469,67 @@ impl LayoutDocument {
             // Ensure font is registered
             self.inner.ensure_font(&font_name);
 
-            // Measure text width for positioning next fragment
-            let text_width =
-                Self::measure_fragment_width(&font_name, &fragment.text, frag_font_size);
-
-            // Get mutable access to content
-            let page = &mut self.inner.pages[self.inner.current_page];
-
-            // Save state if we need to change color
-            let needs_color_change = fragment.color.is_some();
-            if needs_color_change {
-                page.content.save_state();
-                if let Some(color) = fragment.color {
-                    page.content.set_fill_color_rgb(color.r, color.g, color.b);
-                }
-            }
-
             // Draw the text with spacing inside BT..ET (PDF spec requirement)
             let char_spacing = self.state.character_spacing;
             let word_spacing = self.state.word_spacing;
 
             // Add inter-fragment spacing BEFORE drawing (not first fragment)
-            // This represents the character spacing between the last char of
-            // previous fragment and the first char of current fragment
             if !is_first_fragment {
                 x += char_spacing;
             }
 
-            page.content.begin_text();
+            // Check if this is an embedded font
+            #[cfg(feature = "fonts")]
+            let is_embedded = self.inner.embedded_fonts.contains_key(&font_name);
+            #[cfg(not(feature = "fonts"))]
+            let is_embedded = false;
 
-            // Always set spacing to ensure correct values
-            page.content.set_character_spacing(char_spacing);
-            page.content.set_word_spacing(word_spacing);
+            let text_width = if is_embedded {
+                #[cfg(feature = "fonts")]
+                {
+                    self.draw_embedded_fragment(
+                        &font_name,
+                        &fragment.text,
+                        frag_font_size,
+                        x,
+                        y,
+                        char_spacing,
+                        word_spacing,
+                        fragment.color,
+                    )
+                }
+                #[cfg(not(feature = "fonts"))]
+                {
+                    0.0
+                }
+            } else {
+                // Standard font path
+                let page = &mut self.inner.pages[self.inner.current_page];
 
-            page.content
-                .set_font(&font_name, frag_font_size)
-                .move_text_pos(x, y)
-                .show_text(&fragment.text)
-                .end_text();
+                // Save state if we need to change color
+                let needs_color_change = fragment.color.is_some();
+                if needs_color_change {
+                    page.content.save_state();
+                    if let Some(color) = fragment.color {
+                        page.content.set_fill_color_rgb(color.r, color.g, color.b);
+                    }
+                }
 
-            // Restore state if we changed color
-            if needs_color_change {
-                page.content.restore_state();
-            }
+                page.content.begin_text();
+                page.content.set_character_spacing(char_spacing);
+                page.content.set_word_spacing(word_spacing);
+                page.content
+                    .set_font(&font_name, frag_font_size)
+                    .move_text_pos(x, y)
+                    .show_text(&fragment.text)
+                    .end_text();
+
+                if needs_color_change {
+                    page.content.restore_state();
+                }
+
+                Self::measure_fragment_width(&font_name, &fragment.text, frag_font_size)
+            };
 
             // Calculate extra width from character and word spacing within this fragment
             let char_count = fragment.text.chars().count();
@@ -1536,6 +1554,82 @@ impl LayoutDocument {
         self.state.bounds_mut().update_stretched_height(cursor_y);
 
         self
+    }
+
+    /// Draws a text fragment using an embedded font, returns the text width
+    #[cfg(feature = "fonts")]
+    fn draw_embedded_fragment(
+        &mut self,
+        font_name: &str,
+        text: &str,
+        font_size: f64,
+        x: f64,
+        y: f64,
+        char_spacing: f64,
+        word_spacing: f64,
+        color: Option<Color>,
+    ) -> f64 {
+        let font = match self.inner.embedded_fonts.get(font_name) {
+            Some(font) => font.clone(),
+            None => return 0.0,
+        };
+
+        let glyphs = font.shape_text(text);
+        if glyphs.is_empty() {
+            return 0.0;
+        }
+
+        // Track used glyphs for subsetting
+        self.inner.track_font_glyphs(font_name, &glyphs);
+
+        // Calculate text width from glyph advances
+        let total_advance: i32 = glyphs.iter().map(|g| g.x_advance).sum();
+        let text_width = total_advance as f64 * font_size / 1000.0;
+
+        // Build hex string for glyph IDs
+        let mut hex = String::with_capacity(glyphs.len() * 4);
+        for glyph in &glyphs {
+            hex.push_str(&format!("{:04X}", glyph.gid));
+        }
+
+        let page = &mut self.inner.pages[self.inner.current_page];
+
+        // Save state if we need to change color
+        let needs_color_change = color.is_some();
+        if needs_color_change {
+            page.content.save_state();
+            if let Some(c) = color {
+                page.content.set_fill_color_rgb(c.r, c.g, c.b);
+            }
+        }
+
+        page.content.begin_text();
+        page.content.set_character_spacing(char_spacing);
+        page.content.set_word_spacing(word_spacing);
+        page.content
+            .set_font(font_name, font_size)
+            .move_text_pos(x, y)
+            .show_text_hex(&hex)
+            .end_text();
+
+        if needs_color_change {
+            page.content.restore_state();
+        }
+
+        text_width
+    }
+
+    /// Measures fragment width, supporting both standard and embedded fonts
+    fn measure_fragment_width_inner(&self, font_name: &str, text: &str, font_size: f64) -> f64 {
+        #[cfg(feature = "fonts")]
+        {
+            if let Some(font) = self.inner.embedded_fonts.get(font_name) {
+                let glyphs = font.shape_text(text);
+                let total_advance: i32 = glyphs.iter().map(|g| g.x_advance).sum();
+                return total_advance as f64 * font_size / 1000.0;
+            }
+        }
+        Self::measure_fragment_width(font_name, text, font_size)
     }
 
     /// Returns the styled font name for standard fonts
