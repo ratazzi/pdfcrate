@@ -19,6 +19,52 @@ pub use reference::PdfRef;
 pub use stream::PdfStream;
 pub use string::{PdfHexString, PdfString};
 
+/// Formats a floating-point number for PDF output using ryu for optimal precision.
+///
+/// This produces the shortest decimal representation that round-trips correctly,
+/// following PDF spec requirements for real numbers (ISO 32000-1:2008 Section 7.3.3).
+///
+/// For values that are exactly integers, returns integer format without decimal point.
+/// For extreme values (< 1e-6 or >= 1e12), falls back to standard formatting.
+pub fn format_real(value: f64) -> String {
+    // Handle special cases
+    if value.is_nan() {
+        return "0".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "999999999".to_string()
+        } else {
+            "-999999999".to_string()
+        };
+    }
+
+    // For exact integers, use integer format
+    if value.fract() == 0.0 && value.abs() < i64::MAX as f64 {
+        return format!("{}", value as i64);
+    }
+
+    // Use ryu for optimal float formatting
+    // Only use ryu for "normal" range values; extreme values use fallback
+    if value == 0.0 || (value.abs() > 1e-6 && value.abs() < 1e12) {
+        let mut buffer = ryu::Buffer::new();
+        let formatted = buffer.format(value);
+        // Remove unnecessary trailing zeros after decimal point
+        if formatted.contains('.') && !formatted.contains('e') && !formatted.contains('E') {
+            formatted
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+                .to_string()
+        } else {
+            formatted.to_string()
+        }
+    } else {
+        // Fallback for extreme values
+        let s = format!("{:.6}", value);
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
 use std::fmt;
 
 /// A PDF object that can be any of the basic PDF types
@@ -276,5 +322,59 @@ mod tests {
         assert_eq!(format!("{}", PdfObject::Bool(true)), "true");
         assert_eq!(format!("{}", PdfObject::Bool(false)), "false");
         assert_eq!(format!("{}", PdfObject::Integer(42)), "42");
+    }
+
+    #[test]
+    fn test_format_real_integers() {
+        // Exact integers should not have decimal point
+        assert_eq!(format_real(0.0), "0");
+        assert_eq!(format_real(1.0), "1");
+        assert_eq!(format_real(-1.0), "-1");
+        assert_eq!(format_real(42.0), "42");
+        assert_eq!(format_real(1000000.0), "1000000");
+    }
+
+    #[test]
+    fn test_format_real_decimals() {
+        // Decimals should be formatted optimally
+        assert_eq!(format_real(0.5), "0.5");
+        assert_eq!(format_real(3.14), "3.14");
+        assert_eq!(format_real(-2.5), "-2.5");
+        // Should not have trailing zeros
+        let result = format_real(1.50);
+        assert!(!result.ends_with('0') || result == "0", "Got: {}", result);
+    }
+
+    #[test]
+    fn test_format_real_precision() {
+        // High precision values should round-trip correctly
+        let value = 0.123456789;
+        let formatted = format_real(value);
+        let parsed: f64 = formatted.parse().unwrap();
+        assert_eq!(
+            value, parsed,
+            "Value should round-trip: {} -> {}",
+            value, formatted
+        );
+    }
+
+    #[test]
+    fn test_format_real_special_values() {
+        // NaN should become 0
+        assert_eq!(format_real(f64::NAN), "0");
+        // Infinity should become large number
+        assert_eq!(format_real(f64::INFINITY), "999999999");
+        assert_eq!(format_real(f64::NEG_INFINITY), "-999999999");
+    }
+
+    #[test]
+    fn test_format_real_small_values() {
+        // Very small values
+        let result = format_real(0.001);
+        assert!(
+            result.contains("0.001") || result == "0.001",
+            "Got: {}",
+            result
+        );
     }
 }

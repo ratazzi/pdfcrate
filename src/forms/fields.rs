@@ -3,7 +3,7 @@
 //! This module handles creating PDF dictionaries for form fields.
 
 use super::{FieldType, FormField, TextAlign};
-use crate::objects::{PdfArray, PdfDict, PdfName, PdfObject, PdfRef};
+use crate::objects::{PdfArray, PdfDict, PdfName, PdfObject, PdfRef, PdfString};
 
 /// Creates the widget annotation dictionary for a form field
 pub fn create_widget_annotation(
@@ -29,8 +29,8 @@ pub fn create_widget_annotation(
     // Page reference
     dict.set("P", PdfObject::Reference(page_ref));
 
-    // Field name
-    dict.set("T", PdfObject::String(field.name.as_str().into()));
+    // Field name (use from_text for proper Unicode encoding)
+    dict.set("T", PdfObject::String(PdfString::from_text(&field.name)));
 
     // Field type
     dict.set(
@@ -43,16 +43,23 @@ pub fn create_widget_annotation(
         dict.set("Ff", PdfObject::Integer(field.flags.value() as i64));
     }
 
-    // Value
+    // Value - type depends on field type per PDF spec
+    // Text/Choice fields: string; Checkbox/Radio: name (Yes/Off)
     if let Some(ref value) = field.value {
-        dict.set("V", PdfObject::Name(PdfName::new(value)));
-        // Default value
-        dict.set("DV", PdfObject::Name(PdfName::new(value)));
+        let v_obj = match field.field_type {
+            FieldType::Text | FieldType::Choice => PdfObject::String(PdfString::from_text(value)),
+            FieldType::CheckBox | FieldType::Radio | FieldType::Button => {
+                PdfObject::Name(PdfName::new(value))
+            }
+            FieldType::Signature => PdfObject::Name(PdfName::new(value)),
+        };
+        dict.set("V", v_obj.clone());
+        dict.set("DV", v_obj);
     }
 
-    // Tooltip
+    // Tooltip (use from_text for proper Unicode encoding)
     if let Some(ref tooltip) = field.tooltip {
-        dict.set("TU", PdfObject::String(tooltip.as_str().into()));
+        dict.set("TU", PdfObject::String(PdfString::from_text(tooltip)));
     }
 
     // Text alignment (Q)
@@ -65,12 +72,12 @@ pub fn create_widget_annotation(
         dict.set("MaxLen", PdfObject::Integer(max_len as i64));
     }
 
-    // Options (for choice fields)
+    // Options (for choice fields, use from_text for proper Unicode encoding)
     if !field.options.is_empty() {
         let opts: Vec<PdfObject> = field
             .options
             .iter()
-            .map(|s| PdfObject::String(s.as_str().into()))
+            .map(|s| PdfObject::String(PdfString::from_text(s)))
             .collect();
         dict.set("Opt", PdfObject::Array(PdfArray::from(opts)));
     }
@@ -195,12 +202,12 @@ fn add_standard_font_resources(_font_dict: &mut PdfDict) {
 
 /// Creates a text field value for the V entry
 pub fn create_text_value(text: &str) -> PdfObject {
-    PdfObject::String(text.into())
+    PdfObject::String(PdfString::from_text(text))
 }
 
 /// Creates a choice field value for the V entry
 pub fn create_choice_value(selected: &str) -> PdfObject {
-    PdfObject::String(selected.into())
+    PdfObject::String(PdfString::from_text(selected))
 }
 
 /// Creates a checkbox/radio button value

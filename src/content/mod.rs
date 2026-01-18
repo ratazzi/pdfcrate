@@ -6,6 +6,8 @@ mod operators;
 
 pub use operators::*;
 
+use crate::objects::format_real;
+
 /// Content stream builder
 ///
 /// Builds PDF content streams using a fluent API.
@@ -314,6 +316,24 @@ impl ContentBuilder {
         self.line("n")
     }
 
+    // Clipping path operators
+
+    /// Set clipping path using nonzero winding number rule (W)
+    ///
+    /// Modifies the current clipping path by intersecting it with the current path.
+    /// Should be followed by a path-painting operator (stroke, fill, or end_path).
+    pub fn clip(&mut self) -> &mut Self {
+        self.line("W")
+    }
+
+    /// Set clipping path using even-odd rule (W*)
+    ///
+    /// Modifies the current clipping path by intersecting it with the current path.
+    /// Should be followed by a path-painting operator (stroke, fill, or end_path).
+    pub fn clip_even_odd(&mut self) -> &mut Self {
+        self.line("W*")
+    }
+
     // Text operators
 
     /// Begin text object (BT)
@@ -455,14 +475,9 @@ pub enum LineJoin {
     Bevel = 2,
 }
 
-/// Formats a number for PDF output
+/// Formats a number for PDF output using ryu for optimal precision
 fn format_number(n: f64) -> String {
-    if n.fract() == 0.0 && n.abs() < i64::MAX as f64 {
-        format!("{}", n as i64)
-    } else {
-        let s = format!("{:.4}", n);
-        s.trim_end_matches('0').trim_end_matches('.').to_string()
-    }
+    format_real(n)
 }
 
 /// Escapes a string for PDF

@@ -2383,7 +2383,7 @@ impl Document {
             let mut names_array = PdfArray::new();
             for (name, (page_index, fit)) in dest_pairs {
                 // Add name string
-                names_array.push(PdfObject::String(PdfString::from(name.as_str())));
+                names_array.push(PdfObject::String(PdfString::from_text(name)));
 
                 // Build destination array [page_ref /FitType ...]
                 let mut dest_array = PdfArray::new();
@@ -2492,20 +2492,24 @@ impl Document {
 
         let info_ref = if has_info {
             let mut info_dict = PdfDict::new();
+            // Use from_text() for proper Unicode encoding (UTF-16BE for non-ASCII)
             if let Some(title) = &self.info.title {
-                info_dict.set("Title", PdfObject::String(title.as_str().into()));
+                info_dict.set("Title", PdfObject::String(PdfString::from_text(title)));
             }
             if let Some(author) = &self.info.author {
-                info_dict.set("Author", PdfObject::String(author.as_str().into()));
+                info_dict.set("Author", PdfObject::String(PdfString::from_text(author)));
             }
             if let Some(subject) = &self.info.subject {
-                info_dict.set("Subject", PdfObject::String(subject.as_str().into()));
+                info_dict.set("Subject", PdfObject::String(PdfString::from_text(subject)));
             }
             if let Some(creator) = &self.info.creator {
-                info_dict.set("Creator", PdfObject::String(creator.as_str().into()));
+                info_dict.set("Creator", PdfObject::String(PdfString::from_text(creator)));
             }
             if let Some(producer) = &self.info.producer {
-                info_dict.set("Producer", PdfObject::String(producer.as_str().into()));
+                info_dict.set(
+                    "Producer",
+                    PdfObject::String(PdfString::from_text(producer)),
+                );
             }
             #[cfg(feature = "std")]
             {
@@ -2580,9 +2584,10 @@ impl Document {
 
             // Create item dictionary
             let mut item_dict = PdfDict::new();
+            // Use from_text() for proper Unicode encoding (UTF-16BE for non-ASCII)
             item_dict.set(
                 "Title",
-                PdfObject::String(PdfString::from(item.title.as_str())),
+                PdfObject::String(PdfString::from_text(&item.title)),
             );
             item_dict.set("Parent", PdfObject::Reference(parent_ref));
 
@@ -2670,7 +2675,7 @@ impl Document {
                         item_dict.set("Dest", PdfObject::Array(dest_array));
                     }
                     outline::OutlineDestination::Named(name) => {
-                        item_dict.set("Dest", PdfObject::String(PdfString::from(name.as_str())));
+                        item_dict.set("Dest", PdfObject::String(PdfString::from_text(name)));
                     }
                 }
             }

@@ -201,4 +201,27 @@ mod tests {
         assert_eq!(PdfName::page().as_str(), "Page");
         assert_eq!(PdfName::catalog().as_str(), "Catalog");
     }
+
+    #[test]
+    fn test_whitespace_encoding() {
+        // All whitespace characters should be encoded as #XX
+        // NULL (0x00), TAB (0x09), LF (0x0A), FF (0x0C), CR (0x0D), SPACE (0x20)
+        let name = PdfName::new("a\0b\tc\nd\x0Ce\rf g");
+        let encoded = name.encode();
+
+        assert!(encoded.contains("#00"), "NULL should be encoded");
+        assert!(encoded.contains("#09"), "TAB should be encoded");
+        assert!(encoded.contains("#0A"), "LF should be encoded");
+        assert!(encoded.contains("#0C"), "FF should be encoded");
+        assert!(encoded.contains("#0D"), "CR should be encoded");
+        assert!(encoded.contains("#20"), "SPACE should be encoded");
+
+        // Should not contain raw whitespace
+        assert!(!encoded.contains('\t'), "TAB should not appear raw");
+        assert!(!encoded.contains('\n'), "LF should not appear raw");
+        assert!(
+            !encoded.contains(' '),
+            "SPACE should not appear raw (except in #20)"
+        );
+    }
 }

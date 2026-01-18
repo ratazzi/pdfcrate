@@ -199,7 +199,7 @@ impl LinkAnnotation {
             }
             LinkAction::Destination(dest) => match dest {
                 LinkDestination::Named(name) => {
-                    dict.set("Dest", PdfObject::String(PdfString::from(name.as_str())));
+                    dict.set("Dest", PdfObject::String(PdfString::from_text(name)));
                 }
                 LinkDestination::Page { page_index, fit } => {
                     // Resolve page index to page reference if available
@@ -266,7 +266,7 @@ impl LinkAnnotation {
                 let mut action = PdfDict::new();
                 action.set("Type", PdfObject::Name(PdfName::new("Action")));
                 action.set("S", PdfObject::Name(PdfName::new("Launch")));
-                action.set("F", PdfObject::String(PdfString::from(path.as_str())));
+                action.set("F", PdfObject::String(PdfString::from_text(path)));
                 if *new_window {
                     action.set("NewWindow", PdfObject::Bool(true));
                 }

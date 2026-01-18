@@ -468,6 +468,7 @@ dependencies = [
  "pretty_assertions",
  "qrcode",
  "rustybuzz 0.10.0",
+ "ryu",
  "subsetter",
  "thiserror",
  "ttf-parser 0.24.1",

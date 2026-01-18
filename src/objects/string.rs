@@ -19,9 +19,32 @@ impl PdfString {
         PdfString(bytes)
     }
 
-    /// Creates a new PdfString from a string
+    /// Creates a new PdfString from a string (raw bytes, ASCII only)
+    ///
+    /// This copies UTF-8 bytes directly. For non-ASCII text in metadata,
+    /// use `from_text()` instead which properly encodes as UTF-16BE.
     pub fn from_str(s: &str) -> Self {
         PdfString(s.as_bytes().to_vec())
+    }
+
+    /// Creates a new PdfString from text with proper PDF text string encoding
+    ///
+    /// For ASCII-only text, uses PDFDocEncoding (same as ASCII for 0x00-0x7F).
+    /// For text containing non-ASCII characters, uses UTF-16BE with BOM.
+    /// This is the correct method for Info dictionary, bookmarks, form fields, etc.
+    pub fn from_text(s: &str) -> Self {
+        // Check if all characters are ASCII
+        if s.is_ascii() {
+            // ASCII text can use PDFDocEncoding directly
+            PdfString(s.as_bytes().to_vec())
+        } else {
+            // Non-ASCII text must use UTF-16BE with BOM
+            let mut bytes = vec![0xFE, 0xFF]; // BOM
+            for ch in s.encode_utf16() {
+                bytes.extend_from_slice(&ch.to_be_bytes());
+            }
+            PdfString(bytes)
+        }
     }
 
     /// Returns the string data as bytes
@@ -218,5 +241,33 @@ mod tests {
     fn test_decode_text() {
         let s = PdfHexString::from_text("Hello");
         assert_eq!(s.decode_text(), "Hello");
+    }
+
+    #[test]
+    fn test_from_text_ascii() {
+        // ASCII text should stay as-is
+        let s = PdfString::from_text("Hello World");
+        assert_eq!(s.as_bytes(), b"Hello World");
+    }
+
+    #[test]
+    fn test_from_text_unicode() {
+        // Non-ASCII text should be encoded as UTF-16BE with BOM
+        let s = PdfString::from_text("你好");
+        // Should start with BOM (0xFE 0xFF)
+        assert_eq!(s.as_bytes()[0], 0xFE);
+        assert_eq!(s.as_bytes()[1], 0xFF);
+        // Decode should round-trip correctly
+        assert_eq!(s.decode_text(), "你好");
+    }
+
+    #[test]
+    fn test_from_text_mixed() {
+        // Mixed ASCII and Unicode
+        let s = PdfString::from_text("Hello 世界");
+        // Contains non-ASCII, so should be UTF-16BE
+        assert_eq!(s.as_bytes()[0], 0xFE);
+        assert_eq!(s.as_bytes()[1], 0xFF);
+        assert_eq!(s.decode_text(), "Hello 世界");
     }
 }

@@ -13,6 +13,8 @@ categories = ["text-processing", "encoding"]
 flate2 = { version = "1.0", default-features = false, features = ["zlib-rs"] }
 thiserror = "1.0"
 log = "0.4"
+# Fast and accurate float-to-string conversion
+ryu = "1.0"
 
 # Font metrics for PDF standard fonts (AFM data)
 pdf-canvas = "0.7"
