@@ -1864,6 +1864,12 @@ impl Document {
         self
     }
 
+    /// Sets document subject
+    pub fn subject(&mut self, subject: &str) -> &mut Self {
+        self.info.subject = Some(subject.to_string());
+        self
+    }
+
     /// Sets creation date to the current time.
     ///
     /// By default, creation_date is None for reproducible builds.

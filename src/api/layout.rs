@@ -272,6 +272,46 @@ impl From<csscolorparser::Color> for Color {
     }
 }
 
+/// Helper type for accepting colors from various input formats
+///
+/// This allows fill_color and stroke_color to accept both hex strings
+/// and Color objects, following Prawn's flexible API.
+#[derive(Debug, Clone)]
+pub enum ColorInput {
+    /// A hex color string (e.g., "ff0000" or "#ff0000")
+    Hex(String),
+    /// A Color object
+    Color(Color),
+}
+
+impl ColorInput {
+    /// Converts the input to a Color
+    pub fn to_color(&self) -> Color {
+        match self {
+            ColorInput::Hex(s) => Color::hex(s),
+            ColorInput::Color(c) => *c,
+        }
+    }
+}
+
+impl From<&str> for ColorInput {
+    fn from(s: &str) -> Self {
+        ColorInput::Hex(s.to_string())
+    }
+}
+
+impl From<String> for ColorInput {
+    fn from(s: String) -> Self {
+        ColorInput::Hex(s)
+    }
+}
+
+impl From<Color> for ColorInput {
+    fn from(c: Color) -> Self {
+        ColorInput::Color(c)
+    }
+}
+
 /// Font style for text rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FontStyle {
@@ -2916,6 +2956,53 @@ impl LayoutDocument {
     }
 
     // === Link methods ===
+
+    /// Sets the fill color for subsequent text and shape operations
+    ///
+    /// This follows Prawn's API where color is set persistently until changed.
+    /// Accepts a hex color string (e.g., "ff0000") or a Color object.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdfcrate::prelude::*;
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    /// layout.fill_color("808080"); // Set gray color using hex
+    /// layout.text("This text will be gray");
+    ///
+    /// layout.fill_color("ff0000"); // Change to red
+    /// layout.text("This text will be red");
+    /// ```
+    pub fn fill_color(&mut self, color: impl Into<ColorInput>) -> &mut Self {
+        let color: ColorInput = color.into();
+        let c = color.to_color();
+        self.inner.pages[self.inner.current_page]
+            .content
+            .set_fill_color_rgb(c.r, c.g, c.b);
+        self
+    }
+
+    /// Sets the stroke color for subsequent line and shape operations
+    ///
+    /// This follows Prawn's API where color is set persistently until changed.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdfcrate::prelude::*;
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    /// layout.stroke_color("0000ff"); // Set blue stroke color
+    /// ```
+    pub fn stroke_color(&mut self, color: impl Into<ColorInput>) -> &mut Self {
+        let color: ColorInput = color.into();
+        let c = color.to_color();
+        self.inner.pages[self.inner.current_page]
+            .content
+            .set_stroke_color_rgb(c.r, c.g, c.b);
+        self
+    }
 
     /// Adds a link annotation to the current page
     ///
