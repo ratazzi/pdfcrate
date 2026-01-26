@@ -395,6 +395,60 @@ impl TextFragment {
     }
 }
 
+/// A run of text that should be rendered with a specific font
+///
+/// Used internally for font fallback analysis.
+#[derive(Debug, Clone)]
+struct FontRun {
+    /// The text content
+    text: String,
+    /// The font name to use
+    font: String,
+}
+
+/// Options for text rendering
+///
+/// Used with `text_opts` to provide per-call options like fallback fonts.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use pdfcrate::api::{Document, LayoutDocument, TextOptions};
+///
+/// let mut doc = LayoutDocument::new(Document::new());
+/// let lxgw = doc.embed_font_file("fonts/LXGWWenKai-Regular.ttf").unwrap();
+///
+/// // Use fallback fonts for this specific text call
+/// doc.text_opts("Hello 你好", TextOptions::new().fallback_fonts(vec![lxgw]));
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct TextOptions {
+    /// Fallback fonts for this text (overrides global fallback fonts)
+    pub fallback_fonts: Option<Vec<String>>,
+}
+
+impl TextOptions {
+    /// Creates new empty text options
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the fallback fonts for this text
+    ///
+    /// These fonts override any globally configured fallback fonts.
+    pub fn fallback_fonts(mut self, fonts: Vec<String>) -> Self {
+        self.fallback_fonts = Some(fonts);
+        self
+    }
+
+    /// Adds a single fallback font
+    pub fn fallback_font(mut self, font: impl Into<String>) -> Self {
+        let fonts = self.fallback_fonts.get_or_insert_with(Vec::new);
+        fonts.push(font.into());
+        self
+    }
+}
+
 /// Options for defining a grid layout system
 ///
 /// A grid divides the page into rows and columns with optional gutters
@@ -807,6 +861,8 @@ struct RepeaterContent {
     /// Text alignment (reserved for future use)
     #[allow(dead_code)]
     align: TextAlign,
+    /// Fallback fonts for text rendering
+    fallback_fonts: Vec<String>,
 }
 
 /// Page margins in points
@@ -1064,6 +1120,8 @@ struct LayoutState {
     character_spacing: f64,
     /// Current word spacing (in points)
     word_spacing: f64,
+    /// Fallback fonts list (in priority order)
+    fallback_fonts: Vec<String>,
 }
 
 impl LayoutState {
@@ -1086,6 +1144,7 @@ impl LayoutState {
             leading: 1.0, // Default 1.0 matches Prawn's default (no extra leading)
             character_spacing: 0.0,
             word_spacing: 0.0,
+            fallback_fonts: Vec::new(),
         }
     }
 
@@ -1290,6 +1349,237 @@ impl LayoutDocument {
         self
     }
 
+    // === Font Fallback Methods ===
+
+    /// Sets the fallback font list for automatic font substitution
+    ///
+    /// When rendering text, if the primary font doesn't have a glyph for a character,
+    /// the fallback fonts are tried in order. This is useful for mixed-script text
+    /// (e.g., Latin + CJK + emoji).
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument};
+    ///
+    /// let mut doc = LayoutDocument::new(Document::new());
+    /// let roboto = doc.embed_font_file("fonts/Roboto-Regular.ttf").unwrap();
+    /// let lxgw = doc.embed_font_file("fonts/LXGWWenKai-Regular.ttf").unwrap();
+    ///
+    /// doc.font(&roboto).size(14.0);
+    /// doc.fallback_fonts(vec![lxgw]);
+    ///
+    /// // Mixed text will automatically use LXGW for Chinese characters
+    /// doc.text("Hello 你好 World 世界");
+    /// ```
+    pub fn fallback_fonts(&mut self, fonts: Vec<String>) -> &mut Self {
+        self.state.fallback_fonts = fonts;
+        self
+    }
+
+    /// Adds a fallback font to the end of the fallback list
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument};
+    ///
+    /// let mut doc = LayoutDocument::new(Document::new());
+    /// doc.add_fallback_font("LXGW");
+    /// doc.add_fallback_font("NotoEmoji");
+    /// ```
+    pub fn add_fallback_font(&mut self, font: &str) -> &mut Self {
+        self.state.fallback_fonts.push(font.to_string());
+        self
+    }
+
+    /// Clears all fallback fonts
+    pub fn clear_fallback_fonts(&mut self) -> &mut Self {
+        self.state.fallback_fonts.clear();
+        self
+    }
+
+    /// Returns the current list of fallback fonts
+    pub fn get_fallback_fonts(&self) -> &[String] {
+        &self.state.fallback_fonts
+    }
+
+    /// Checks if a character is supported by WinAnsiEncoding
+    ///
+    /// WinAnsiEncoding (CP1252) includes:
+    /// - ASCII (0x00-0x7F)
+    /// - Latin-1 Supplement (0xA0-0xFF) - note: NOT the C1 control range 0x80-0x9F
+    /// - Special characters mapped from higher Unicode code points to positions 0x80-0x9F
+    ///
+    /// Important: Unicode code points U+0080-U+009F are C1 control characters and are
+    /// NOT the same as WinAnsi positions 0x80-0x9F. WinAnsi maps those positions to
+    /// characters like € (U+20AC), " (U+201C), etc.
+    fn is_winansi_char(c: char) -> bool {
+        let cp = c as u32;
+
+        // ASCII range (0x00-0x7F)
+        if cp < 128 {
+            return true;
+        }
+
+        // C1 control characters (U+0080-U+009F) are NOT in WinAnsiEncoding
+        // These are distinct from the WinAnsi byte positions 0x80-0x9F
+        if (0x80..=0x9F).contains(&cp) {
+            return false;
+        }
+
+        // Latin-1 Supplement printable range (U+00A0-U+00FF)
+        // All characters in this range are supported by WinAnsiEncoding
+        if (0xA0..=0xFF).contains(&cp) {
+            return true;
+        }
+
+        // Unicode characters mapped to WinAnsiEncoding positions 0x80-0x9F
+        // These are the actual characters that WinAnsi encodes at those byte positions
+        matches!(
+            cp,
+            0x20AC  // € Euro sign -> 0x80
+            | 0x201A  // ‚ Single low-9 quotation mark -> 0x82
+            | 0x0192  // ƒ Latin small letter f with hook -> 0x83
+            | 0x201E  // „ Double low-9 quotation mark -> 0x84
+            | 0x2026  // … Horizontal ellipsis -> 0x85
+            | 0x2020  // † Dagger -> 0x86
+            | 0x2021  // ‡ Double dagger -> 0x87
+            | 0x02C6  // ˆ Modifier letter circumflex accent -> 0x88
+            | 0x2030  // ‰ Per mille sign -> 0x89
+            | 0x0160  // Š Latin capital letter S with caron -> 0x8A
+            | 0x2039  // ‹ Single left-pointing angle quotation -> 0x8B
+            | 0x0152  // Œ Latin capital ligature OE -> 0x8C
+            | 0x017D  // Ž Latin capital letter Z with caron -> 0x8E
+            | 0x2018  // ' Left single quotation mark -> 0x91
+            | 0x2019  // ' Right single quotation mark -> 0x92
+            | 0x201C  // " Left double quotation mark -> 0x93
+            | 0x201D  // " Right double quotation mark -> 0x94
+            | 0x2022  // • Bullet -> 0x95
+            | 0x2013  // – En dash -> 0x96
+            | 0x2014  // — Em dash -> 0x97
+            | 0x02DC  // ˜ Small tilde -> 0x98
+            | 0x2122  // ™ Trade mark sign -> 0x99
+            | 0x0161  // š Latin small letter s with caron -> 0x9A
+            | 0x203A  // › Single right-pointing angle quotation -> 0x9B
+            | 0x0153  // œ Latin small ligature oe -> 0x9C
+            | 0x017E  // ž Latin small letter z with caron -> 0x9E
+            | 0x0178 // Ÿ Latin capital letter Y with diaeresis -> 0x9F
+        )
+    }
+
+    /// Checks if a font has a glyph for the given character
+    #[cfg(feature = "fonts")]
+    fn glyph_present(&self, c: char, font_name: &str) -> bool {
+        // Check embedded fonts first
+        if let Some(font) = self.inner.embedded_fonts.get(font_name) {
+            return font.has_glyph(c);
+        }
+
+        // Standard fonts use WinAnsiEncoding (except Symbol and ZapfDingbats)
+        if let Some(std_font) = crate::font::StandardFont::from_name(font_name) {
+            return match std_font {
+                crate::font::StandardFont::Symbol | crate::font::StandardFont::ZapfDingbats => {
+                    // Symbol fonts have their own encoding, conservatively return false
+                    // for non-ASCII to trigger fallback for regular text
+                    c.is_ascii()
+                }
+                _ => Self::is_winansi_char(c),
+            };
+        }
+
+        false
+    }
+
+    /// Fallback for non-fonts feature - always returns false for non-standard fonts
+    #[cfg(not(feature = "fonts"))]
+    fn glyph_present(&self, c: char, font_name: &str) -> bool {
+        // Standard fonts use WinAnsiEncoding (except Symbol and ZapfDingbats)
+        if let Some(std_font) = crate::font::StandardFont::from_name(font_name) {
+            return match std_font {
+                crate::font::StandardFont::Symbol | crate::font::StandardFont::ZapfDingbats => {
+                    c.is_ascii()
+                }
+                _ => Self::is_winansi_char(c),
+            };
+        }
+        false
+    }
+
+    /// Finds the best font for a character from the primary font and fallback list
+    fn find_font_for_glyph_with(
+        &self,
+        c: char,
+        primary_font: &str,
+        fallback_fonts: &[String],
+    ) -> String {
+        // First check the primary font
+        if self.glyph_present(c, primary_font) {
+            return primary_font.to_string();
+        }
+
+        // Try each fallback font in order
+        for fallback in fallback_fonts {
+            if self.glyph_present(c, fallback) {
+                return fallback.clone();
+            }
+        }
+
+        // No font has the glyph, return primary (will render .notdef)
+        primary_font.to_string()
+    }
+
+    /// Analyzes text and splits it into runs by font
+    ///
+    /// Returns a list of (text, font_name) pairs where each run uses a single font.
+    fn analyze_text_for_fallback_with(
+        &self,
+        text: &str,
+        primary_font: &str,
+        fallback_fonts: &[String],
+    ) -> Vec<FontRun> {
+        // Fast path: no fallback fonts configured
+        if fallback_fonts.is_empty() {
+            return vec![FontRun {
+                text: text.to_string(),
+                font: primary_font.to_string(),
+            }];
+        }
+
+        let mut runs = Vec::new();
+        let mut current_run = String::new();
+        let mut current_font = String::new();
+
+        for c in text.chars() {
+            let font = self.find_font_for_glyph_with(c, primary_font, fallback_fonts);
+
+            if current_font.is_empty() {
+                current_font = font;
+                current_run.push(c);
+            } else if font == current_font {
+                current_run.push(c);
+            } else {
+                // Font changed, save current run and start new one
+                runs.push(FontRun {
+                    text: current_run,
+                    font: current_font,
+                });
+                current_run = c.to_string();
+                current_font = font;
+            }
+        }
+
+        // Save the last run
+        if !current_run.is_empty() {
+            runs.push(FontRun {
+                text: current_run,
+                font: current_font,
+            });
+        }
+
+        runs
+    }
+
     /// Returns the current line height based on font metrics and leading
     ///
     /// Uses actual AFM metrics (ascender - descender) for standard fonts,
@@ -1359,9 +1649,62 @@ impl LayoutDocument {
     /// The cursor is moved down by the line height after drawing.
     /// Text is not wrapped - use `text_wrap` for automatic wrapping.
     ///
+    /// When fallback fonts are configured (globally or per-call), the text is
+    /// automatically analyzed and split into runs using the appropriate font
+    /// for each character.
+    ///
     /// Note: Like Prawn, the cursor represents the TOP of the text line.
     /// The text baseline is positioned below the cursor by the font ascender.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument};
+    ///
+    /// let mut doc = LayoutDocument::new(Document::new());
+    /// doc.text("Hello World");
+    /// ```
     pub fn text(&mut self, text: &str) -> &mut Self {
+        // If fallback fonts are configured, use fallback-aware rendering
+        if !self.state.fallback_fonts.is_empty() {
+            return self.text_with_fallback_fonts(text, &self.state.fallback_fonts.clone());
+        }
+
+        // Original implementation (no fallback)
+        self.text_simple(text)
+    }
+
+    /// Draws text with options at the current cursor position
+    ///
+    /// This method allows passing per-call options like fallback fonts,
+    /// similar to Prawn's text method with options hash.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument, TextOptions};
+    ///
+    /// let mut doc = LayoutDocument::new(Document::new());
+    /// let lxgw = doc.embed_font_file("fonts/LXGWWenKai-Regular.ttf").unwrap();
+    ///
+    /// // Use fallback fonts for this specific text call
+    /// doc.text_opts("Hello 你好", TextOptions::new().fallback_fonts(vec![lxgw]));
+    /// ```
+    pub fn text_opts(&mut self, text: &str, options: TextOptions) -> &mut Self {
+        // Per-call fallback fonts take precedence over global ones
+        let fallback_fonts = options
+            .fallback_fonts
+            .unwrap_or_else(|| self.state.fallback_fonts.clone());
+
+        if !fallback_fonts.is_empty() {
+            return self.text_with_fallback_fonts(text, &fallback_fonts);
+        }
+
+        self.text_simple(text)
+    }
+
+    /// Internal: renders text without fallback processing
+    fn text_simple(&mut self, text: &str) -> &mut Self {
         let bounds = self.state.bounds();
         let left = bounds.absolute_left();
         let right = bounds.absolute_right();
@@ -1402,6 +1745,26 @@ impl LayoutDocument {
         self
     }
 
+    /// Internal: renders text with font fallback support
+    fn text_with_fallback_fonts(&mut self, text: &str, fallback_fonts: &[String]) -> &mut Self {
+        let primary_font = self.inner.current_font.clone();
+        let runs = self.analyze_text_for_fallback_with(text, &primary_font, fallback_fonts);
+
+        // Convert runs to TextFragments
+        let fragments: Vec<TextFragment> = runs
+            .into_iter()
+            .map(|run| {
+                let mut frag = TextFragment::new(run.text);
+                if run.font != primary_font {
+                    frag = frag.font(run.font);
+                }
+                frag
+            })
+            .collect();
+
+        self.formatted_text(&fragments)
+    }
+
     /// Draws formatted text with mixed styles at the current cursor position
     ///
     /// This method allows rendering text with different styles (bold, italic),
@@ -1432,6 +1795,7 @@ impl LayoutDocument {
 
         let base_font = self.inner.current_font.clone();
         let base_size = self.inner.current_font_size;
+        let fallback_fonts = self.state.fallback_fonts.clone();
 
         // Calculate total width for alignment (including spacing)
         let char_spacing = self.state.character_spacing;
@@ -1444,13 +1808,29 @@ impl LayoutDocument {
             .iter()
             .filter(|f| !f.text.is_empty())
             .map(|f| {
-                let font_name = if let Some(ref font) = f.font {
+                let primary_font = if let Some(ref font) = f.font {
                     font.clone()
                 } else {
                     Self::get_styled_font_name(&base_font, f.style)
                 };
                 let font_size = f.size.unwrap_or(base_size);
-                let base_width = self.measure_fragment_width_inner(&font_name, &f.text, font_size);
+
+                // Calculate width with fallback support
+                let base_width = if fallback_fonts.is_empty() {
+                    self.measure_fragment_width_inner(&primary_font, &f.text, font_size)
+                } else {
+                    // Split by fallback fonts and measure each run
+                    let runs = self.analyze_text_for_fallback_with(
+                        &f.text,
+                        &primary_font,
+                        &fallback_fonts,
+                    );
+                    runs.iter()
+                        .map(|run| {
+                            self.measure_fragment_width_inner(&run.font, &run.text, font_size)
+                        })
+                        .sum()
+                };
 
                 // Add spacing within fragment
                 let char_count = f.text.chars().count();
@@ -1497,19 +1877,14 @@ impl LayoutDocument {
                 continue;
             }
 
-            // Determine font name based on style
-            let font_name = if let Some(ref font) = fragment.font {
+            // Determine primary font name based on style
+            let primary_font = if let Some(ref font) = fragment.font {
                 font.clone()
             } else {
                 Self::get_styled_font_name(&base_font, fragment.style)
             };
 
             let frag_font_size = fragment.size.unwrap_or(base_size);
-
-            // Ensure font is registered
-            self.inner.ensure_font(&font_name);
-
-            // Draw the text with spacing inside BT..ET (PDF spec requirement)
             let char_spacing = self.state.character_spacing;
             let word_spacing = self.state.word_spacing;
 
@@ -1518,69 +1893,97 @@ impl LayoutDocument {
                 x += char_spacing;
             }
 
-            // Check if this is an embedded font
-            #[cfg(feature = "fonts")]
-            let is_embedded = self.inner.embedded_fonts.contains_key(&font_name);
-            #[cfg(not(feature = "fonts"))]
-            let is_embedded = false;
+            // Split text into runs by fallback fonts (or single run if no fallback)
+            let runs = if fallback_fonts.is_empty() {
+                vec![FontRun {
+                    text: fragment.text.clone(),
+                    font: primary_font.clone(),
+                }]
+            } else {
+                self.analyze_text_for_fallback_with(&fragment.text, &primary_font, &fallback_fonts)
+            };
 
-            let text_width = if is_embedded {
+            // Render each run with the appropriate font
+            let mut is_first_run = true;
+            for run in &runs {
+                if run.text.is_empty() {
+                    continue;
+                }
+
+                // Ensure font is registered
+                self.inner.ensure_font(&run.font);
+
+                // Check if this is an embedded font
                 #[cfg(feature = "fonts")]
-                {
-                    self.draw_embedded_fragment(
-                        &font_name,
-                        &fragment.text,
-                        frag_font_size,
-                        x,
-                        y,
-                        char_spacing,
-                        word_spacing,
-                        fragment.color,
-                    )
-                }
+                let is_embedded = self.inner.embedded_fonts.contains_key(&run.font);
                 #[cfg(not(feature = "fonts"))]
-                {
-                    0.0
-                }
-            } else {
-                // Standard font path
-                let page = &mut self.inner.pages[self.inner.current_page];
+                let is_embedded = false;
 
-                // Save state if we need to change color
-                let needs_color_change = fragment.color.is_some();
-                if needs_color_change {
-                    page.content.save_state();
-                    if let Some(color) = fragment.color {
-                        page.content.set_fill_color_rgb(color.r, color.g, color.b);
+                // Add character spacing between runs within same fragment
+                if !is_first_run {
+                    x += char_spacing;
+                }
+
+                let text_width = if is_embedded {
+                    #[cfg(feature = "fonts")]
+                    {
+                        self.draw_embedded_fragment(
+                            &run.font,
+                            &run.text,
+                            frag_font_size,
+                            x,
+                            y,
+                            char_spacing,
+                            word_spacing,
+                            fragment.color,
+                        )
                     }
-                }
+                    #[cfg(not(feature = "fonts"))]
+                    {
+                        0.0
+                    }
+                } else {
+                    // Standard font path
+                    let page = &mut self.inner.pages[self.inner.current_page];
 
-                page.content.begin_text();
-                page.content.set_character_spacing(char_spacing);
-                page.content.set_word_spacing(word_spacing);
-                page.content
-                    .set_font(&font_name, frag_font_size)
-                    .move_text_pos(x, y)
-                    .show_text(&fragment.text)
-                    .end_text();
+                    // Save state if we need to change color
+                    let needs_color_change = fragment.color.is_some();
+                    if needs_color_change {
+                        page.content.save_state();
+                        if let Some(color) = fragment.color {
+                            page.content.set_fill_color_rgb(color.r, color.g, color.b);
+                        }
+                    }
 
-                if needs_color_change {
-                    page.content.restore_state();
-                }
+                    page.content.begin_text();
+                    page.content.set_character_spacing(char_spacing);
+                    page.content.set_word_spacing(word_spacing);
+                    page.content
+                        .set_font(&run.font, frag_font_size)
+                        .move_text_pos(x, y)
+                        .show_text(&run.text)
+                        .end_text();
 
-                Self::measure_fragment_width(&font_name, &fragment.text, frag_font_size)
-            };
+                    if needs_color_change {
+                        page.content.restore_state();
+                    }
 
-            // Calculate extra width from character and word spacing within this fragment
-            let char_count = fragment.text.chars().count();
-            let char_spacing_extra = if char_count > 0 {
-                char_spacing * (char_count as f64 - 1.0)
-            } else {
-                0.0
-            };
-            let space_count = fragment.text.chars().filter(|&c| c == ' ').count();
-            let word_spacing_extra = word_spacing * space_count as f64;
-            x += text_width + char_spacing_extra + word_spacing_extra;
+                    Self::measure_fragment_width(&run.font, &run.text, frag_font_size)
+                };
+
+                // Calculate extra width from character and word spacing within this run
+                let char_count = run.text.chars().count();
+                let char_spacing_extra = if char_count > 0 {
+                    char_spacing * (char_count as f64 - 1.0)
+                } else {
+                    0.0
+                };
+                let space_count = run.text.chars().filter(|&c| c == ' ').count();
+                let word_spacing_extra = word_spacing * space_count as f64;
+                x += text_width + char_spacing_extra + word_spacing_extra;
+
+                is_first_run = false;
+            }
 
             is_first_fragment = false;
         }
@@ -1763,8 +2166,38 @@ impl LayoutDocument {
         // For justify mode paragraph ends, use character_spacing but zero word_spacing
         // This matches the wrapping calculation which excludes word_spacing
         let char_spacing = self.state.character_spacing;
-        self.inner
-            .text_at_with_spacing(text, [left, y], char_spacing, 0.0);
+
+        // Support font fallback
+        if self.state.fallback_fonts.is_empty() {
+            self.inner
+                .text_at_with_spacing(text, [left, y], char_spacing, 0.0);
+        } else {
+            let primary_font = self.inner.current_font.clone();
+            let fallback_fonts = self.state.fallback_fonts.clone();
+            let runs = self.analyze_text_for_fallback_with(text, &primary_font, &fallback_fonts);
+
+            let mut x = left;
+            let mut is_first_run = true;
+            for run in &runs {
+                if run.text.is_empty() {
+                    continue;
+                }
+                // Add character_spacing between runs (not before first run)
+                if !is_first_run {
+                    x += char_spacing;
+                }
+                is_first_run = false;
+
+                self.inner.ensure_font(&run.font);
+                self.inner.font(&run.font);
+                self.inner
+                    .text_at_with_spacing(&run.text, [x, y], char_spacing, 0.0);
+                x += self.measure_fragment_width_inner(&run.font, &run.text, font_size)
+                    + char_spacing * (run.text.chars().count().saturating_sub(1)) as f64;
+            }
+            // Restore primary font
+            self.inner.font(&primary_font);
+        }
 
         let line_height = self.line_height();
         self.state.cursor_y -= line_height;
@@ -2042,8 +2475,22 @@ impl LayoutDocument {
     }
 
     /// Measures text width including character and word spacing
+    ///
+    /// This method considers fallback fonts when measuring width, ensuring
+    /// accurate text wrapping for mixed-font content.
     fn measure_text_width_with_spacing(&self, text: &str) -> f64 {
-        let base_width = self.measure_text_width(text);
+        // Calculate base width considering fallback fonts
+        let base_width = if self.state.fallback_fonts.is_empty() {
+            self.measure_text_width(text)
+        } else {
+            let primary_font = self.inner.current_font.clone();
+            let fallback_fonts = &self.state.fallback_fonts;
+            let font_size = self.inner.current_font_size;
+            let runs = self.analyze_text_for_fallback_with(text, &primary_font, fallback_fonts);
+            runs.iter()
+                .map(|run| self.measure_fragment_width_inner(&run.font, &run.text, font_size))
+                .sum()
+        };
 
         // Add character spacing (applied between characters)
         let char_count = text.chars().count();
@@ -2064,8 +2511,20 @@ impl LayoutDocument {
     ///
     /// In justify mode, word spacing is calculated dynamically to fill the line,
     /// so we should not include user-set word_spacing in wrap calculations.
+    /// This method considers fallback fonts when measuring width.
     fn measure_text_width_for_justify(&self, text: &str) -> f64 {
-        let base_width = self.measure_text_width(text);
+        // Calculate base width considering fallback fonts
+        let base_width = if self.state.fallback_fonts.is_empty() {
+            self.measure_text_width(text)
+        } else {
+            let primary_font = self.inner.current_font.clone();
+            let fallback_fonts = &self.state.fallback_fonts;
+            let font_size = self.inner.current_font_size;
+            let runs = self.analyze_text_for_fallback_with(text, &primary_font, fallback_fonts);
+            runs.iter()
+                .map(|run| self.measure_fragment_width_inner(&run.font, &run.text, font_size))
+                .sum()
+        };
 
         // Add character spacing (applied between characters)
         let char_count = text.chars().count();
@@ -2083,9 +2542,43 @@ impl LayoutDocument {
         let char_spacing = self.state.character_spacing;
         let word_spacing = self.state.word_spacing;
 
-        // Use the new method that places Tc/Tw inside BT..ET
-        self.inner
-            .text_at_with_spacing(text, pos, char_spacing, word_spacing);
+        // Support font fallback
+        if self.state.fallback_fonts.is_empty() {
+            self.inner
+                .text_at_with_spacing(text, pos, char_spacing, word_spacing);
+        } else {
+            let font_size = self.inner.current_font_size;
+            let primary_font = self.inner.current_font.clone();
+            let fallback_fonts = self.state.fallback_fonts.clone();
+            let runs = self.analyze_text_for_fallback_with(text, &primary_font, &fallback_fonts);
+
+            let mut x = pos[0];
+            let y = pos[1];
+            let mut is_first_run = true;
+            for run in &runs {
+                if run.text.is_empty() {
+                    continue;
+                }
+                // Add character_spacing between runs (not before first run)
+                if !is_first_run {
+                    x += char_spacing;
+                }
+                is_first_run = false;
+
+                self.inner.ensure_font(&run.font);
+                self.inner.font(&run.font);
+                self.inner
+                    .text_at_with_spacing(&run.text, [x, y], char_spacing, word_spacing);
+
+                let run_char_count = run.text.chars().count();
+                let run_space_count = run.text.chars().filter(|&c| c == ' ').count();
+                x += self.measure_fragment_width_inner(&run.font, &run.text, font_size)
+                    + char_spacing * (run_char_count.saturating_sub(1)) as f64
+                    + word_spacing * run_space_count as f64;
+            }
+            // Restore primary font
+            self.inner.font(&primary_font);
+        }
     }
 
     /// Draws text with justified alignment (word spacing calculated to fill width)
@@ -2105,11 +2598,22 @@ impl LayoutDocument {
             return;
         }
 
-        // Calculate base width without any word spacing
-        // but including character spacing
-        let base_width = self.measure_text_width(text);
-        let char_count = text.chars().count();
+        let font_size = self.inner.current_font_size;
         let char_spacing = self.state.character_spacing;
+        let char_count = text.chars().count();
+
+        // Calculate base width considering fallback fonts
+        let base_width = if self.state.fallback_fonts.is_empty() {
+            self.measure_text_width(text)
+        } else {
+            let primary_font = self.inner.current_font.clone();
+            let fallback_fonts = self.state.fallback_fonts.clone();
+            let runs = self.analyze_text_for_fallback_with(text, &primary_font, &fallback_fonts);
+            runs.iter()
+                .map(|run| self.measure_fragment_width_inner(&run.font, &run.text, font_size))
+                .sum()
+        };
+
         let char_spacing_width = if char_count > 0 {
             char_spacing * (char_count as f64 - 1.0)
         } else {
@@ -2123,15 +2627,48 @@ impl LayoutDocument {
 
         // Don't apply negative spacing (would compress text beyond natural width)
         // Use word_spacing=0 to match the justify wrap calculation
-        if justify_word_spacing < 0.0 {
-            self.inner
-                .text_at_with_spacing(text, [left, y], char_spacing, 0.0);
-            return;
-        }
+        let word_spacing = if justify_word_spacing < 0.0 {
+            0.0
+        } else {
+            justify_word_spacing
+        };
 
-        // Draw text with calculated word spacing
-        self.inner
-            .text_at_with_spacing(text, [left, y], char_spacing, justify_word_spacing);
+        // Draw text with fallback support
+        if self.state.fallback_fonts.is_empty() {
+            self.inner
+                .text_at_with_spacing(text, [left, y], char_spacing, word_spacing);
+        } else {
+            let primary_font = self.inner.current_font.clone();
+            let fallback_fonts = self.state.fallback_fonts.clone();
+            let runs = self.analyze_text_for_fallback_with(text, &primary_font, &fallback_fonts);
+
+            let mut x = left;
+            let mut is_first_run = true;
+            for run in &runs {
+                if run.text.is_empty() {
+                    continue;
+                }
+                // Add character_spacing between runs (not before first run)
+                if !is_first_run {
+                    x += char_spacing;
+                }
+                is_first_run = false;
+
+                self.inner.ensure_font(&run.font);
+                self.inner.font(&run.font);
+                self.inner
+                    .text_at_with_spacing(&run.text, [x, y], char_spacing, word_spacing);
+
+                // Advance x by text width + spacing
+                let run_char_count = run.text.chars().count();
+                let run_space_count = run.text.chars().filter(|&c| c == ' ').count();
+                x += self.measure_fragment_width_inner(&run.font, &run.text, font_size)
+                    + char_spacing * (run_char_count.saturating_sub(1)) as f64
+                    + word_spacing * run_space_count as f64;
+            }
+            // Restore primary font
+            self.inner.font(&primary_font);
+        }
     }
 
     /// Wraps text to fit within the specified width
@@ -2298,6 +2835,7 @@ impl LayoutDocument {
             font: self.inner.current_font.clone(),
             font_size: self.inner.current_font_size,
             align: self.state.text_align,
+            fallback_fonts: self.state.fallback_fonts.clone(),
         });
         self
     }
@@ -2404,7 +2942,34 @@ impl LayoutDocument {
                 if repeater.pages.applies_to(page_num) {
                     self.inner.go_to_page(page_idx);
                     self.inner.font(&repeater.font).size(repeater.font_size);
-                    self.inner.text_at(&repeater.text, repeater.position);
+
+                    // Render with fallback support
+                    if repeater.fallback_fonts.is_empty() {
+                        self.inner.text_at(&repeater.text, repeater.position);
+                    } else {
+                        let runs = self.analyze_text_for_fallback_with(
+                            &repeater.text,
+                            &repeater.font,
+                            &repeater.fallback_fonts,
+                        );
+                        let mut x = repeater.position[0];
+                        let y = repeater.position[1];
+                        for run in &runs {
+                            if run.text.is_empty() {
+                                continue;
+                            }
+                            self.inner.ensure_font(&run.font);
+                            self.inner.font(&run.font);
+                            self.inner.text_at(&run.text, [x, y]);
+                            x += self.measure_fragment_width_inner(
+                                &run.font,
+                                &run.text,
+                                repeater.font_size,
+                            );
+                        }
+                        // Restore primary font
+                        self.inner.font(&repeater.font);
+                    }
                 }
             }
 
@@ -2454,6 +3019,7 @@ impl LayoutDocument {
                         }
                     };
 
+                    // Page numbers are typically just digits, no fallback needed
                     self.inner.text_at(&text, [x, y]);
                 }
             }
@@ -3894,5 +4460,227 @@ mod tests {
 
         assert!(pdf_str.contains("/Fit]"), "Should have Fit destination");
         assert!(pdf_str.contains("/XYZ"), "Should have XYZ destination");
+    }
+
+    // =========================================================================
+    // Fallback fonts tests
+    // =========================================================================
+
+    #[test]
+    fn test_fallback_fonts_global_setting() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Initially no fallback fonts
+        assert!(layout.state.fallback_fonts.is_empty());
+
+        // Set fallback fonts
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+        assert_eq!(layout.state.fallback_fonts.len(), 1);
+        assert_eq!(layout.state.fallback_fonts[0], "Courier");
+
+        // Clear fallback fonts
+        layout.fallback_fonts(vec![]);
+        assert!(layout.state.fallback_fonts.is_empty());
+    }
+
+    #[test]
+    fn test_text_wrap_with_fallback_renders() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Set fallback fonts
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+
+        // text_wrap should work with fallback fonts configured
+        layout.font("Helvetica").size(12.0);
+        layout.text_wrap("Hello World - this text should wrap correctly.");
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_text_with_fallback_renders() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Set fallback fonts
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+
+        // text should work with fallback fonts configured
+        layout.font("Helvetica").size(12.0);
+        layout.text("Hello World");
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_measure_text_width_with_spacing_no_fallback() {
+        let doc = Document::new();
+        let layout = LayoutDocument::new(doc);
+
+        // Without fallback fonts, should use simple measurement
+        let width = layout.measure_text_width_with_spacing("Hello");
+        assert!(width > 0.0);
+    }
+
+    #[test]
+    fn test_measure_text_width_with_spacing_with_fallback() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Set fallback fonts
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+
+        // With fallback fonts, should still measure correctly
+        let width = layout.measure_text_width_with_spacing("Hello");
+        assert!(width > 0.0);
+    }
+
+    #[test]
+    fn test_measure_text_width_for_justify_no_fallback() {
+        let doc = Document::new();
+        let layout = LayoutDocument::new(doc);
+
+        // Without fallback fonts, should use simple measurement
+        let width = layout.measure_text_width_for_justify("Hello World");
+        assert!(width > 0.0);
+    }
+
+    #[test]
+    fn test_measure_text_width_for_justify_with_fallback() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Set fallback fonts
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+
+        // With fallback fonts, should still measure correctly
+        let width = layout.measure_text_width_for_justify("Hello World");
+        assert!(width > 0.0);
+    }
+
+    #[test]
+    fn test_text_justify_with_fallback() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Set fallback fonts and justify alignment
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+        layout.align(TextAlign::Justify);
+
+        // text_wrap with justify should work with fallback fonts
+        layout.font("Helvetica").size(12.0);
+        layout.text_wrap("This is a longer paragraph of text that should be justified across the full width of the text area with proper word spacing calculated.");
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_character_spacing_with_fallback() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Set fallback fonts and character spacing
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+        layout.character_spacing(1.0);
+
+        // text should work with both fallback and character spacing
+        layout.font("Helvetica").size(12.0);
+        layout.text("Hello World");
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_text_align_center_with_fallback() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Set fallback fonts and center alignment
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+        layout.align(TextAlign::Center);
+
+        // text should work with both fallback and center alignment
+        layout.font("Helvetica").size(12.0);
+        layout.text("Centered text with fallback");
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_text_align_right_with_fallback() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+
+        // Set fallback fonts and right alignment
+        layout.fallback_fonts(vec!["Courier".to_string()]);
+        layout.align(TextAlign::Right);
+
+        // text should work with both fallback and right alignment
+        layout.font("Helvetica").size(12.0);
+        layout.text("Right-aligned text with fallback");
+
+        let bytes = layout.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    #[test]
+    fn test_winansi_char_detection() {
+        // ASCII characters should be supported
+        assert!(LayoutDocument::is_winansi_char('A'));
+        assert!(LayoutDocument::is_winansi_char('z'));
+        assert!(LayoutDocument::is_winansi_char('0'));
+        assert!(LayoutDocument::is_winansi_char(' '));
+
+        // Latin-1 Supplement characters should be supported
+        assert!(LayoutDocument::is_winansi_char('é')); // U+00E9
+        assert!(LayoutDocument::is_winansi_char('ñ')); // U+00F1
+        assert!(LayoutDocument::is_winansi_char('ü')); // U+00FC
+        assert!(LayoutDocument::is_winansi_char('©')); // U+00A9
+        assert!(LayoutDocument::is_winansi_char('®')); // U+00AE
+
+        // Special WinAnsi characters from higher Unicode ranges
+        assert!(LayoutDocument::is_winansi_char('€')); // U+20AC Euro
+        assert!(LayoutDocument::is_winansi_char('–')); // U+2013 En dash
+        assert!(LayoutDocument::is_winansi_char('—')); // U+2014 Em dash
+        assert!(LayoutDocument::is_winansi_char('\u{201C}')); // U+201C Left double quote "
+        assert!(LayoutDocument::is_winansi_char('\u{201D}')); // U+201D Right double quote "
+        assert!(LayoutDocument::is_winansi_char('\u{2018}')); // U+2018 Left single quote '
+        assert!(LayoutDocument::is_winansi_char('\u{2019}')); // U+2019 Right single quote '
+        assert!(LayoutDocument::is_winansi_char('…')); // U+2026 Ellipsis
+        assert!(LayoutDocument::is_winansi_char('•')); // U+2022 Bullet
+        assert!(LayoutDocument::is_winansi_char('™')); // U+2122 Trademark
+        assert!(LayoutDocument::is_winansi_char('‰')); // U+2030 Per mille
+                                                       // Other WinAnsi special characters
+        assert!(LayoutDocument::is_winansi_char('\u{0152}')); // U+0152 Œ
+        assert!(LayoutDocument::is_winansi_char('\u{0153}')); // U+0153 œ
+        assert!(LayoutDocument::is_winansi_char('\u{0160}')); // U+0160 Š
+        assert!(LayoutDocument::is_winansi_char('\u{0161}')); // U+0161 š
+
+        // Characters NOT in WinAnsiEncoding should return false
+        assert!(!LayoutDocument::is_winansi_char('中')); // Chinese
+        assert!(!LayoutDocument::is_winansi_char('日')); // Japanese
+        assert!(!LayoutDocument::is_winansi_char('한')); // Korean
+        assert!(!LayoutDocument::is_winansi_char('α')); // Greek alpha (not in WinAnsi)
+        assert!(!LayoutDocument::is_winansi_char('→')); // Arrow
+
+        // C1 control characters (U+0080-U+009F) are NOT in WinAnsiEncoding
+        // These are distinct from the WinAnsi byte positions 0x80-0x9F
+        assert!(!LayoutDocument::is_winansi_char('\u{0080}')); // C1 control, not Euro
+        assert!(!LayoutDocument::is_winansi_char('\u{0081}')); // C1 control
+        assert!(!LayoutDocument::is_winansi_char('\u{0082}')); // C1 control, not ‚
+        assert!(!LayoutDocument::is_winansi_char('\u{008D}')); // C1 control
+        assert!(!LayoutDocument::is_winansi_char('\u{008F}')); // C1 control
+        assert!(!LayoutDocument::is_winansi_char('\u{0090}')); // C1 control
+        assert!(!LayoutDocument::is_winansi_char('\u{0091}')); // C1 control, not '
+        assert!(!LayoutDocument::is_winansi_char('\u{0093}')); // C1 control, not "
+        assert!(!LayoutDocument::is_winansi_char('\u{009D}')); // C1 control
+        assert!(!LayoutDocument::is_winansi_char('\u{009F}')); // C1 control, not Ÿ
     }
 }

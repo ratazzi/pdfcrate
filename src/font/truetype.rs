@@ -191,6 +191,13 @@ impl EmbeddedFont {
         })
     }
 
+    /// Checks if the font contains a glyph for the given character
+    ///
+    /// Returns true if the font has a valid glyph (not .notdef) for the character.
+    pub fn has_glyph(&self, c: char) -> bool {
+        self.glyph_id(c).map(|gid| gid != 0).unwrap_or(false)
+    }
+
     /// Looks up a glyph ID for a character using the font's cmap
     pub fn glyph_id(&self, c: char) -> Option<u16> {
         use ttf_parser::Face;

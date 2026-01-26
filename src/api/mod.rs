@@ -33,7 +33,7 @@ pub use image::{EmbeddedImage, ImageOptions, ImageSource, Position};
 pub use layout::{
     BoundingBox, Color, FontStyle, Grid, GridBox, GridOptions, LayoutDocument, Margin, MultiBox,
     Overflow, PageNumberConfig, PageNumberPosition, RepeaterPages, TextAlign, TextBoxResult,
-    TextFragment,
+    TextFragment, TextOptions,
 };
 pub use link::{DestinationFit, HighlightMode, LinkAction, LinkAnnotation, LinkDestination};
 pub use outline::{Outline, OutlineBuilder, OutlineDestination, OutlineItem};
