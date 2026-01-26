@@ -43,10 +43,10 @@ pdf-writer = "0.12"
 pretty_assertions = "1.0"
 
 [features]
-default = ["std", "png", "fonts", "text-shaping", "svg"]
+default = ["std", "png", "fonts", "text-shaping", "svg", "barcode"]
 std = []  # Standard library support (file I/O)
 fonts = ["ttf-parser", "subsetter"]
 text-shaping = ["rustybuzz"]
 svg = ["usvg"]
 barcode = ["qrcode", "barcoders"]
-full = ["std", "png", "fonts", "svg", "barcode"]
+full = ["std", "png", "fonts", "text-shaping", "svg", "barcode"]
