@@ -3,9 +3,10 @@
 use super::measurements::{cm, inch, mm};
 
 /// Standard page sizes
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum PageSize {
     /// A4: 210mm x 297mm (595.28 x 841.89 points)
+    #[default]
     A4,
     /// A3: 297mm x 420mm (841.89 x 1190.55 points)
     A3,
@@ -53,12 +54,6 @@ impl PageSize {
     /// Creates a custom page size from inches
     pub fn from_inches(width: f64, height: f64) -> Self {
         PageSize::Custom(inch(width), inch(height))
-    }
-}
-
-impl Default for PageSize {
-    fn default() -> Self {
-        PageSize::A4
     }
 }
 

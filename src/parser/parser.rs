@@ -227,8 +227,8 @@ mod tests {
 
     #[test]
     fn test_parse_real() {
-        match parse(b"3.14").unwrap() {
-            PdfObject::Real(r) => assert!((r - 3.14).abs() < 0.001),
+        match parse(b"2.73").unwrap() {
+            PdfObject::Real(r) => assert!((r - 2.73).abs() < 0.001),
             _ => panic!("Expected real"),
         }
     }

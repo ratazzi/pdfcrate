@@ -439,8 +439,8 @@ mod tests {
 
     #[test]
     fn test_lexer_real() {
-        let mut lexer = Lexer::new(b"3.14");
-        assert_eq!(lexer.next_token().unwrap(), Token::Real(3.14));
+        let mut lexer = Lexer::new(b"2.73");
+        assert_eq!(lexer.next_token().unwrap(), Token::Real(2.73));
     }
 
     #[test]

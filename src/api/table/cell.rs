@@ -319,7 +319,7 @@ impl ImageContent {
 }
 
 /// Content type for table cells
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum CellContent {
     /// Text content
     Text(String),
@@ -328,6 +328,7 @@ pub enum CellContent {
     /// Subtable (nested table) - stores the raw data for later rendering
     Subtable(SubtableData),
     /// Empty cell
+    #[default]
     Empty,
 }
 
@@ -338,12 +339,6 @@ pub struct SubtableData {
     pub rows: Vec<Vec<String>>,
     /// Column widths (optional)
     pub column_widths: Option<Vec<f64>>,
-}
-
-impl Default for CellContent {
-    fn default() -> Self {
-        CellContent::Empty
-    }
 }
 
 impl From<&str> for CellContent {

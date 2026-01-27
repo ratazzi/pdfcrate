@@ -114,7 +114,7 @@ struct PageData {
 }
 
 /// Document metadata
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DocumentInfo {
     pub title: Option<String>,
     pub author: Option<String>,
@@ -134,22 +134,6 @@ pub struct DocumentInfo {
     /// NOT automatically set during render() to support reproducible builds.
     #[cfg(feature = "std")]
     pub mod_date: Option<SystemTime>,
-}
-
-impl Default for DocumentInfo {
-    fn default() -> Self {
-        DocumentInfo {
-            title: None,
-            author: None,
-            subject: None,
-            creator: None,
-            producer: None,
-            #[cfg(feature = "std")]
-            creation_date: None,
-            #[cfg(feature = "std")]
-            mod_date: None,
-        }
-    }
 }
 
 impl DocumentInfo {
@@ -295,6 +279,7 @@ fn format_pdf_date(time: SystemTime) -> Option<String> {
 
     // Calculate year
     loop {
+        #[allow(clippy::manual_is_multiple_of)]
         let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
         let year_days = if is_leap { 366 } else { 365 };
         if days >= year_days {
@@ -313,7 +298,9 @@ fn format_pdf_date(time: SystemTime) -> Option<String> {
         match m {
             1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
             4 | 6 | 9 | 11 => 30,
-            2 => {
+            2 =>
+            {
+                #[allow(clippy::manual_is_multiple_of)]
                 if (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) {
                     29
                 } else {
@@ -1816,7 +1803,7 @@ impl Document {
             self.pages[self.current_page]
                 .content
                 .begin_text()
-                .set_font(&font_name, 7.0)
+                .set_font(font_name, 7.0)
                 .set_text_matrix(1.0, 0.0, 0.0, 1.0, x - 5.0, at[1] - 10.0)
                 .show_text(&label)
                 .end_text();
@@ -1839,7 +1826,7 @@ impl Document {
             self.pages[self.current_page]
                 .content
                 .begin_text()
-                .set_font(&font_name, 7.0)
+                .set_font(font_name, 7.0)
                 .set_text_matrix(1.0, 0.0, 0.0, 1.0, at[0] - 17.0, y - 2.0)
                 .show_text(&label)
                 .end_text();
@@ -2475,9 +2462,9 @@ impl Document {
         // Pre-format dates to determine if they're valid (post-1970)
         // This ensures has_info is based on actual content, not just Option::is_some()
         #[cfg(feature = "std")]
-        let creation_date_str = self.info.creation_date.and_then(|d| format_pdf_date(d));
+        let creation_date_str = self.info.creation_date.and_then(format_pdf_date);
         #[cfg(feature = "std")]
-        let mod_date_str = self.info.mod_date.and_then(|d| format_pdf_date(d));
+        let mod_date_str = self.info.mod_date.and_then(format_pdf_date);
 
         // Create info dictionary only if there's actual content
         let has_info = self.info.title.is_some()

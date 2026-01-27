@@ -116,6 +116,7 @@ pub struct SvgRenderer<'a> {
     /// Cache for fonts (fontdb::ID -> pdf_font_name)
     font_cache: HashMap<fontdb::ID, String>,
     /// Font data cache (fontdb::ID -> (data, face_index, units_per_em, font_key))
+    #[allow(clippy::type_complexity)]
     font_data_cache: HashMap<fontdb::ID, (Arc<Vec<u8>>, u32, u16, String)>,
     /// Glyph usage per font (fontdb::ID -> glyph_id -> unicode text)
     font_glyphs: HashMap<fontdb::ID, BTreeMap<u16, String>>,
@@ -233,7 +234,9 @@ impl<'a> SvgRenderer<'a> {
                             let font_id = glyph.font;
 
                             // Cache font data if not already cached
-                            if !self.font_data_cache.contains_key(&font_id) {
+                            if let std::collections::hash_map::Entry::Vacant(e) =
+                                self.font_data_cache.entry(font_id)
+                            {
                                 fontdb.with_face_data(font_id, |data, face_index| {
                                     if let Ok(face) = ttf_parser::Face::parse(data, face_index) {
                                         let units_per_em = face.units_per_em();
@@ -260,15 +263,12 @@ impl<'a> SvgRenderer<'a> {
                                                     h
                                                 })
                                             });
-                                        self.font_data_cache.insert(
-                                            font_id,
-                                            (
-                                                Arc::new(data.to_vec()),
-                                                face_index,
-                                                units_per_em,
-                                                font_key,
-                                            ),
-                                        );
+                                        e.insert((
+                                            Arc::new(data.to_vec()),
+                                            face_index,
+                                            units_per_em,
+                                            font_key,
+                                        ));
                                     }
                                 });
                             }
@@ -304,6 +304,7 @@ impl<'a> SvgRenderer<'a> {
     }
 
     /// Renders a group node
+    #[allow(clippy::only_used_in_recursion)]
     fn render_group(
         &mut self,
         group: &usvg::Group,

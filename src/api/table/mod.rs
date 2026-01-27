@@ -43,20 +43,15 @@ pub enum TablePosition {
 }
 
 /// Column width specification
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ColumnWidths {
     /// Divide width equally among columns
+    #[default]
     Equal,
     /// Explicit widths for each column
     Fixed(Vec<f64>),
     /// Auto-calculate based on content (Phase 2)
     Auto,
-}
-
-impl Default for ColumnWidths {
-    fn default() -> Self {
-        ColumnWidths::Equal
-    }
 }
 
 /// Options for table creation
@@ -630,6 +625,7 @@ impl Table {
         let mut high = chars.len();
 
         while low < high {
+            #[allow(clippy::manual_div_ceil)]
             let mid = (low + high + 1) / 2;
             let prefix: String = chars[..mid].iter().collect();
             let prefix_width = doc.measure_text(&prefix);
@@ -1345,6 +1341,7 @@ impl Table {
     ///
     /// Iteratively reduces font size until text fits within the cell,
     /// or reaches the minimum font size.
+    #[allow(clippy::too_many_arguments)]
     fn calculate_shrink_to_fit_text(
         &self,
         doc: &mut LayoutDocument,

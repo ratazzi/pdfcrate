@@ -3,6 +3,7 @@
 //! This module handles parsing PDF documents from bytes.
 
 pub mod lexer;
+#[allow(clippy::module_inception)]
 mod parser;
 pub mod xref;
 

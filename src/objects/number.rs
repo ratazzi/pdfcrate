@@ -118,10 +118,10 @@ mod tests {
 
     #[test]
     fn test_real() {
-        let n = PdfNumber::real(3.14159);
+        let n = PdfNumber::real(1.23456);
         assert!(n.is_real());
-        assert!((n.as_real() - 3.14159).abs() < 0.00001);
-        assert_eq!(format!("{}", n), "3.14159");
+        assert!((n.as_real() - 1.23456).abs() < 0.00001);
+        assert_eq!(format!("{}", n), "1.23456");
     }
 
     #[test]
@@ -135,7 +135,7 @@ mod tests {
         let n: PdfNumber = 42i32.into();
         assert!(n.is_integer());
 
-        let n: PdfNumber = 3.14f64.into();
+        let n: PdfNumber = 2.73f64.into();
         assert!(n.is_real());
     }
 }

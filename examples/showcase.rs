@@ -17,37 +17,51 @@
 //!
 //! Run with: cargo run --example showcase --features "fonts,text-shaping,svg"
 
-// Import individual demo modules
+// Import individual demo modules (each has its own main/helpers unused here)
+#[allow(dead_code)]
 #[path = "alpha_demo.rs"]
 mod alpha_demo;
+#[allow(dead_code)]
 #[cfg(feature = "fonts")]
 #[path = "cjk_demo.rs"]
 mod cjk_demo;
+#[allow(dead_code)]
 #[cfg(feature = "fonts")]
 #[path = "custom_font_demo.rs"]
 mod custom_font_demo;
+#[allow(dead_code)]
 #[path = "drawing_demo.rs"]
 mod drawing_demo;
+#[allow(dead_code)]
 #[path = "forms_demo.rs"]
 mod forms_demo;
+#[allow(dead_code)]
 #[path = "grid_demo.rs"]
 mod grid_demo;
+#[allow(dead_code)]
 #[path = "jpeg_demo.rs"]
 mod jpeg_demo;
+#[allow(dead_code)]
 #[path = "layout_advanced_demo.rs"]
 mod layout_advanced_demo;
+#[allow(dead_code)]
 #[path = "layout_demo.rs"]
 mod layout_demo;
+#[allow(dead_code)]
 #[cfg(feature = "fonts")]
 #[path = "ligatures_demo.rs"]
 mod ligatures_demo;
+#[allow(dead_code)]
 #[path = "pdf_embed_demo.rs"]
 mod pdf_embed_demo;
+#[allow(dead_code)]
 #[path = "png_demo.rs"]
 mod png_demo;
+#[allow(dead_code)]
 #[cfg(feature = "svg")]
 #[path = "svg_barcode_demo.rs"]
 mod svg_barcode_demo;
+#[allow(dead_code)]
 #[path = "text_box_overflow_demo.rs"]
 mod text_box_overflow_demo;
 

@@ -409,7 +409,7 @@ impl EmbeddedFont {
                 });
             }
 
-            return glyphs;
+            glyphs
         }
 
         #[cfg(not(feature = "text-shaping"))]
@@ -840,7 +840,7 @@ impl SubsettedFont {
             let gid = self
                 .glyph_set
                 .iter()
-                .find(|(_, unicode)| unicode.chars().next() == Some(c))
+                .find(|(_, unicode)| unicode.starts_with(c))
                 .map(|(&gid, _)| gid)
                 .unwrap_or(0);
             hex.push_str(&format!("{:04X}", gid));

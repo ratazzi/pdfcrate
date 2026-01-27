@@ -38,8 +38,7 @@ impl PdfName {
 
         for byte in self.0.bytes() {
             // Characters that need to be encoded as #XX
-            if byte < 0x21
-                || byte > 0x7E
+            if !(0x21..=0x7E).contains(&byte)
                 || byte == b'#'
                 || byte == b'/'
                 || byte == b'%'

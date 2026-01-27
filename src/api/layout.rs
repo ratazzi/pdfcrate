@@ -740,6 +740,7 @@ impl RepeaterPages {
         match self {
             RepeaterPages::All => true,
             RepeaterPages::Odd => page % 2 == 1,
+            #[allow(clippy::manual_is_multiple_of)]
             RepeaterPages::Even => page % 2 == 0,
             RepeaterPages::Pages(pages) => pages.contains(&page),
             RepeaterPages::Range(start, end) => page >= *start && page <= *end,
@@ -2001,6 +2002,7 @@ impl LayoutDocument {
 
     /// Draws a text fragment using an embedded font, returns the text width
     #[cfg(feature = "fonts")]
+    #[allow(clippy::too_many_arguments)]
     fn draw_embedded_fragment(
         &mut self,
         font_name: &str,
@@ -3181,9 +3183,9 @@ impl LayoutDocument {
         let finished_bbox = self.state.bounds_stack.pop().unwrap();
 
         // Update parent cursor position
-        if height.is_some() {
+        if let Some(h) = height {
             // Fixed height: cursor moves to below the fixed-height box
-            self.state.cursor_y = abs_y - height.unwrap();
+            self.state.cursor_y = abs_y - h;
         } else {
             // Stretchy: cursor is at the bottom of content
             self.state.cursor_y = abs_y - finished_bbox.height();

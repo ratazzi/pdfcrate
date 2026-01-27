@@ -23,6 +23,7 @@ impl PdfString {
     ///
     /// This copies UTF-8 bytes directly. For non-ASCII text in metadata,
     /// use `from_text()` instead which properly encodes as UTF-16BE.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         PdfString(s.as_bytes().to_vec())
     }

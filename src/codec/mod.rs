@@ -101,8 +101,8 @@ pub fn ascii85_decode(data: &[u8]) -> Result<Vec<u8>> {
     // Handle partial group
     if count > 0 {
         // Pad with 'u' (84)
-        for i in count..5 {
-            chunk[i] = 84;
+        for item in chunk.iter_mut().skip(count) {
+            *item = 84;
         }
         let value = chunk[0] * 85 * 85 * 85 * 85
             + chunk[1] * 85 * 85 * 85

@@ -108,7 +108,7 @@ pub struct FontMetrics {
 
 impl StandardFont {
     /// Returns the corresponding pdf_canvas::BuiltinFont
-    fn to_builtin_font(&self) -> BuiltinFont {
+    fn as_builtin_font(&self) -> BuiltinFont {
         match self {
             StandardFont::Courier => BuiltinFont::Courier,
             StandardFont::CourierBold => BuiltinFont::Courier_Bold,
@@ -131,7 +131,7 @@ impl StandardFont {
     ///
     /// Uses AFM metrics from pdf-canvas for accurate text measurement.
     pub fn string_width(&self, text: &str) -> i32 {
-        self.to_builtin_font().get_width_raw(text) as i32
+        self.as_builtin_font().get_width_raw(text) as i32
     }
 
     /// Returns approximate metrics for this font

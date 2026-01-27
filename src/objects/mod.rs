@@ -313,7 +313,7 @@ mod tests {
         assert_eq!(PdfObject::Null.type_name(), "null");
         assert_eq!(PdfObject::Bool(true).type_name(), "boolean");
         assert_eq!(PdfObject::Integer(42).type_name(), "integer");
-        assert_eq!(PdfObject::Real(3.14).type_name(), "real");
+        assert_eq!(PdfObject::Real(2.73).type_name(), "real");
     }
 
     #[test]
@@ -338,7 +338,7 @@ mod tests {
     fn test_format_real_decimals() {
         // Decimals should be formatted optimally
         assert_eq!(format_real(0.5), "0.5");
-        assert_eq!(format_real(3.14), "3.14");
+        assert_eq!(format_real(2.73), "2.73");
         assert_eq!(format_real(-2.5), "-2.5");
         // Should not have trailing zeros
         let result = format_real(1.50);

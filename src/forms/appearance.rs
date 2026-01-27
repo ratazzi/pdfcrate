@@ -244,7 +244,7 @@ fn create_appearance_stream(
 /// Calculates automatic font size based on field height
 fn calculate_auto_font_size(height: f64) -> f64 {
     // Leave some padding
-    (height - 4.0).max(6.0).min(24.0)
+    (height - 4.0).clamp(6.0, 24.0)
 }
 
 /// Generates appearance dictionary with multiple states (for checkboxes)
@@ -274,7 +274,7 @@ mod tests {
         let field = FormField::text("test", [0.0, 0.0, 200.0, 20.0]).with_value("Hello");
 
         let stream = generate_text_appearance(&field, None);
-        assert!(stream.data().len() > 0);
+        assert!(!stream.data().is_empty());
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod tests {
         let field = FormField::checkbox("check", [0.0, 0.0, 20.0, 20.0], true);
 
         let stream = generate_checkbox_appearance(&field, None);
-        assert!(stream.data().len() > 0);
+        assert!(!stream.data().is_empty());
     }
 
     #[test]
