@@ -16,6 +16,7 @@ A Rust library for creating and manipulating PDF documents with a focus on ease 
 - **Links and outlines** - Hyperlinks, internal links, and document bookmarks
 - **Forms** - Interactive form fields (text, checkbox, radio, dropdown)
 - **WASM support** - Works in WebAssembly environments (tested with Cloudflare Workers)
+- **Python bindings** - Use pdfcrate from Python via PyO3
 
 ## Installation
 
@@ -118,6 +119,34 @@ Document::generate("with_image.pdf", |doc| {
 })?;
 ```
 
+## Python
+
+pdfcrate provides Python bindings via [PyO3](https://pyo3.rs/) and [maturin](https://www.maturin.rs/).
+
+```bash
+# Install in development mode
+uv run maturin develop --features python
+
+# Run the showcase
+uv run python examples/showcase.py
+```
+
+```python
+from pdfcrate import Document, Margin, Color, TextFragment
+
+doc = Document(margin=Margin(36, 36, 36, 36))
+doc.title("Hello from Python")
+
+doc.font("Helvetica", 24)
+doc.text("Hello, World!")
+
+doc.move_down(20)
+doc.font("Helvetica", 12)
+doc.text("Created with pdfcrate Python bindings.")
+
+doc.save("hello.pdf")
+```
+
 ## Feature Flags
 
 All features are pure Rust and WASM-compatible.
@@ -130,6 +159,7 @@ All features are pure Rust and WASM-compatible.
 | `text-shaping` | Yes | Complex text shaping via rustybuzz |
 | `svg` | Yes | SVG rendering support |
 | `barcode` | Yes | QR code and barcode generation |
+| `python` | No | Python bindings (PyO3) |
 
 To use minimal features:
 

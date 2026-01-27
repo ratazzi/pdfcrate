@@ -3893,6 +3893,120 @@ impl LayoutDocument {
 
         self
     }
+
+    // === Python binding support methods ===
+
+    /// Pushes indentation - for Python bindings
+    ///
+    /// This is the low-level method used by Python context managers.
+    /// For normal Rust usage, prefer the closure-based `indent()` method.
+    #[doc(hidden)]
+    pub fn push_indent(&mut self, left: f64, right: f64) {
+        self.state.bounds_mut().add_left_padding(left);
+        self.state.bounds_mut().add_right_padding(right);
+    }
+
+    /// Pops indentation - for Python bindings
+    ///
+    /// This is the low-level method used by Python context managers.
+    /// For normal Rust usage, prefer the closure-based `indent()` method.
+    #[doc(hidden)]
+    pub fn pop_indent(&mut self, left: f64, right: f64) {
+        self.state.bounds_mut().subtract_left_padding(left);
+        self.state.bounds_mut().subtract_right_padding(right);
+    }
+
+    /// Pushes a bounding box onto the stack - for Python bindings
+    ///
+    /// Returns the saved cursor position for later restoration.
+    /// This is the low-level method used by Python context managers.
+    /// For normal Rust usage, prefer the closure-based `bounding_box()` method.
+    #[doc(hidden)]
+    pub fn push_bounding_box(&mut self, point: [f64; 2], width: f64, height: Option<f64>) -> f64 {
+        let parent = self.state.bounds();
+
+        // Calculate absolute coordinates
+        let abs_x = parent.absolute_left() + point[0];
+        let abs_y = self.state.cursor_y - point[1];
+
+        let bbox = BoundingBox::new(abs_x, abs_y, width, height);
+
+        // Push to stack
+        self.state.bounds_stack.push(bbox);
+
+        // Save cursor and set new cursor to bbox top
+        let old_cursor = self.state.cursor_y;
+        self.state.cursor_y = abs_y;
+
+        old_cursor
+    }
+
+    /// Pops a bounding box from the stack - for Python bindings
+    ///
+    /// Returns the actual height of the bounding box.
+    /// This is the low-level method used by Python context managers.
+    /// For normal Rust usage, prefer the closure-based `bounding_box()` method.
+    #[doc(hidden)]
+    pub fn pop_bounding_box(&mut self, old_cursor: f64, fixed_height: Option<f64>) -> f64 {
+        // Update stretched height before popping
+        let cursor_y = self.state.cursor_y;
+        if let Some(bbox) = self.state.bounds_stack.last_mut() {
+            bbox.update_stretched_height(cursor_y);
+        }
+
+        // Pop and get the finished bbox
+        let finished_bbox = self.state.bounds_stack.pop().unwrap();
+        let abs_y = finished_bbox.absolute_top();
+
+        // Update parent cursor position
+        if let Some(height) = fixed_height {
+            self.state.cursor_y = abs_y - height;
+        } else {
+            self.state.cursor_y = abs_y - finished_bbox.height();
+        }
+
+        // If cursor moved below old cursor, keep the new position
+        if self.state.cursor_y > old_cursor {
+            self.state.cursor_y = old_cursor;
+        }
+
+        finished_bbox.height()
+    }
+
+    /// Gets the current cursor y position
+    #[doc(hidden)]
+    pub fn cursor_y(&self) -> f64 {
+        self.state.cursor_y
+    }
+
+    /// Sets the cursor y position directly
+    #[doc(hidden)]
+    pub fn set_cursor_y(&mut self, y: f64) {
+        self.state.cursor_y = y;
+    }
+
+    /// Pushes a bounding box at absolute coordinates - for Python grid support
+    ///
+    /// Returns the saved cursor position for later restoration.
+    #[doc(hidden)]
+    pub fn push_bounding_box_absolute(
+        &mut self,
+        abs_x: f64,
+        abs_y: f64,
+        width: f64,
+        height: Option<f64>,
+    ) -> f64 {
+        let bbox = BoundingBox::new(abs_x, abs_y, width, height);
+
+        // Push to stack
+        self.state.bounds_stack.push(bbox);
+
+        // Save cursor and set new cursor to bbox top
+        let old_cursor = self.state.cursor_y;
+        self.state.cursor_y = abs_y;
+
+        old_cursor
+    }
 }
 
 // Allow LayoutDocument to be used like Document

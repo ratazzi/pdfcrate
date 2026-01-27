@@ -38,6 +38,14 @@ pub mod svg;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+#[cfg(feature = "python")]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::large_enum_variant,
+    clippy::field_reassign_with_default
+)]
+pub mod python;
+
 mod error;
 
 pub use error::{Error, Result};

@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.87"
 description = "A Rust library for creating and manipulating PDF documents"
 license = "MIT"
+authors = ["ratazzi <ratazzi@gmail.com>"]
 repository = "https://github.com/ratazzi/pdfcrate"
 keywords = ["pdf", "document", "generator"]
 categories = ["text-processing", "encoding"]
@@ -36,6 +37,12 @@ barcoders = { version = "2.0", optional = true }
 # Color parsing (CSS color strings)
 csscolorparser = { version = "0.8", default-features = false, features = ["named-colors"] }
 
+# Python bindings (optional)
+[dependencies.pyo3]
+version = "0.23"
+features = ["extension-module", "abi3-py39"]
+optional = true
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 
@@ -52,3 +59,4 @@ text-shaping = ["rustybuzz"]
 svg = ["usvg"]
 barcode = ["qrcode", "barcoders"]
 full = ["std", "png", "fonts", "text-shaping", "svg", "barcode"]
+python = ["pyo3", "full"]

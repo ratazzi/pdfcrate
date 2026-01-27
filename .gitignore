@@ -1,2 +1,13 @@
 /target
 *.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.so
+*.dylib
+*.pyd
+dist/
+.venv/
