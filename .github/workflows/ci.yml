@@ -29,6 +29,9 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
+      - name: Remove Cargo.lock for MSRV compatibility
+        if: matrix.rust != 'stable'
+        run: rm -f Cargo.lock
       - run: cargo test
 
   fmt:
