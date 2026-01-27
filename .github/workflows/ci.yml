@@ -22,16 +22,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, "1.70"]
+        rust: [stable, "1.87"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      - name: Remove Cargo.lock for MSRV compatibility
-        if: matrix.rust != 'stable'
-        run: rm -f Cargo.lock
       - run: cargo test
 
   fmt:

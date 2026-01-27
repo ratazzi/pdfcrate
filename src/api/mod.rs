@@ -279,8 +279,8 @@ fn format_pdf_date(time: SystemTime) -> Option<String> {
 
     // Calculate year
     loop {
-        #[allow(clippy::manual_is_multiple_of)]
-        let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        let is_leap =
+            (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
         let year_days = if is_leap { 366 } else { 365 };
         if days >= year_days {
             days -= year_days;
@@ -298,10 +298,8 @@ fn format_pdf_date(time: SystemTime) -> Option<String> {
         match m {
             1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
             4 | 6 | 9 | 11 => 30,
-            2 =>
-            {
-                #[allow(clippy::manual_is_multiple_of)]
-                if (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) {
+            2 => {
+                if (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400) {
                     29
                 } else {
                     28

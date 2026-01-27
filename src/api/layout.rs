@@ -740,8 +740,7 @@ impl RepeaterPages {
         match self {
             RepeaterPages::All => true,
             RepeaterPages::Odd => page % 2 == 1,
-            #[allow(clippy::manual_is_multiple_of)]
-            RepeaterPages::Even => page % 2 == 0,
+            RepeaterPages::Even => page.is_multiple_of(2),
             RepeaterPages::Pages(pages) => pages.contains(&page),
             RepeaterPages::Range(start, end) => page >= *start && page <= *end,
             RepeaterPages::Except(pages) => !pages.contains(&page),

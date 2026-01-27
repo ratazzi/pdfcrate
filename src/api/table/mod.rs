@@ -625,8 +625,7 @@ impl Table {
         let mut high = chars.len();
 
         while low < high {
-            #[allow(clippy::manual_div_ceil)]
-            let mid = (low + high + 1) / 2;
+            let mid = (low + high).div_ceil(2);
             let prefix: String = chars[..mid].iter().collect();
             let prefix_width = doc.measure_text(&prefix);
 

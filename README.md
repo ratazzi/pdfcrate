@@ -140,7 +140,7 @@ pdfcrate = { version = "0.1", default-features = false }
 
 ## Minimum Supported Rust Version (MSRV)
 
-Rust 1.70 or later.
+Rust 1.87 or later.
 
 ## License
 
