@@ -41,6 +41,7 @@ wasm-bindgen = "0.2"
 [dev-dependencies]
 pdf-writer = "0.12"
 pretty_assertions = "1.0"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [features]
 default = ["std", "png", "fonts", "text-shaping", "svg", "barcode"]

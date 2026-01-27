@@ -1,0 +1,5 @@
+# Font files are downloaded via scripts/download-fonts.sh
+*.ttf
+*.otf
+*.woff
+*.woff2
