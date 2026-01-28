@@ -1353,6 +1353,7 @@ impl Document {
 
         let img_width = image_data.width;
         let img_height = image_data.height;
+        let bits_per_component = image_data.bits_per_component;
 
         // Create XObject stream
         let xobject = image_data.to_xobject();
@@ -1375,7 +1376,17 @@ impl Document {
                 "ColorSpace",
                 PdfObject::Name(crate::objects::PdfName::new("DeviceGray")),
             );
-            mask_dict.set("BitsPerComponent", PdfObject::Integer(8));
+            mask_dict.set(
+                "BitsPerComponent",
+                PdfObject::Integer(bits_per_component as i64),
+            );
+            mask_dict.set(
+                "Decode",
+                PdfObject::Array(crate::objects::PdfArray::from_vec(vec![
+                    PdfObject::Real(0.0),
+                    PdfObject::Real(1.0),
+                ])),
+            );
 
             let mask_ref = self.context.register(PdfObject::Stream(mask_stream));
 

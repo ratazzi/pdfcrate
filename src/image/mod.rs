@@ -3,7 +3,7 @@
 //! This module handles embedding images in PDF documents.
 
 use crate::error::{Error, Result};
-use crate::objects::{PdfName, PdfObject, PdfStream};
+use crate::objects::{PdfArray, PdfName, PdfObject, PdfStream};
 
 /// Image format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,7 +178,10 @@ pub fn embed_png(data: &[u8]) -> Result<ImageData> {
     use png::Decoder;
     use std::io::Cursor;
 
-    let decoder = Decoder::new(Cursor::new(data));
+    let mut decoder = Decoder::new(Cursor::new(data));
+    // Normalize to 8-bit per component: expand sub-8-bit to 8-bit, strip 16-bit to 8-bit.
+    // This ensures consistent handling in alpha separation and PDF embedding.
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder
         .read_info()
         .map_err(|e| Error::Image(e.to_string()))?;
@@ -225,7 +228,8 @@ pub fn embed_png(data: &[u8]) -> Result<ImageData> {
     Ok(ImageData {
         width: info.width,
         height: info.height,
-        bits_per_component: info.bit_depth as u8,
+        // Always 8 because we normalize via EXPAND | STRIP_16 transformations
+        bits_per_component: 8,
         color_space,
         data: image_data,
         soft_mask,
@@ -253,6 +257,24 @@ impl ImageData {
                 PdfObject::Integer(self.bits_per_component as i64),
             );
             stream_dict.set("Filter", PdfObject::Name(PdfName::new("DCTDecode")));
+            // CMYK JPEGs (typically from Photoshop) use inverted values compared to
+            // what PDF expects. The Decode array inverts each component (1→0, 0→1).
+            // Both Prawn and pdf-lib apply this inversion for CMYK images.
+            if self.color_space == ColorSpace::DeviceCMYK {
+                stream_dict.set(
+                    "Decode",
+                    PdfObject::Array(PdfArray::from_vec(vec![
+                        PdfObject::Real(1.0),
+                        PdfObject::Real(0.0),
+                        PdfObject::Real(1.0),
+                        PdfObject::Real(0.0),
+                        PdfObject::Real(1.0),
+                        PdfObject::Real(0.0),
+                        PdfObject::Real(1.0),
+                        PdfObject::Real(0.0),
+                    ])),
+                );
+            }
             stream
         } else {
             // Compress with Flate while preserving image dictionary entries.
