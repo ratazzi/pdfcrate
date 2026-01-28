@@ -787,7 +787,8 @@ impl Table {
 #[pyclass]
 pub struct TransparentContext {
     doc: Py<Document>,
-    original_alpha: f64,
+    original_fill_alpha: f64,
+    original_stroke_alpha: f64,
 }
 
 #[pymethods]
@@ -804,9 +805,9 @@ impl TransparentContext {
         _exc_val: Option<&Bound<'_, pyo3::types::PyAny>>,
         _exc_tb: Option<&Bound<'_, pyo3::types::PyAny>>,
     ) -> bool {
-        // Restore original alpha
         let borrowed = self.doc.borrow(py);
-        *borrowed.current_alpha.lock().unwrap() = self.original_alpha;
+        *borrowed.current_fill_alpha.lock().unwrap() = self.original_fill_alpha;
+        *borrowed.current_stroke_alpha.lock().unwrap() = self.original_stroke_alpha;
         false
     }
 }
@@ -1038,7 +1039,8 @@ pub struct Document {
     line_width: Mutex<f64>,
     current_font: Mutex<String>,
     current_font_size: Mutex<f64>,
-    current_alpha: Mutex<f64>,
+    current_fill_alpha: Mutex<f64>,
+    current_stroke_alpha: Mutex<f64>,
     dash_pattern: Mutex<Option<(Vec<f64>, f64)>>, // (pattern, phase)
 }
 
@@ -1067,7 +1069,8 @@ impl Document {
             line_width: Mutex::new(1.0),
             current_font: Mutex::new("Helvetica".to_string()),
             current_font_size: Mutex::new(12.0),
-            current_alpha: Mutex::new(1.0),
+            current_fill_alpha: Mutex::new(1.0),
+            current_stroke_alpha: Mutex::new(1.0),
             dash_pattern: Mutex::new(None),
         }
     }
@@ -1235,15 +1238,25 @@ impl Document {
     }
 
     /// Set transparency (returns context manager)
-    fn transparent(slf: Py<Self>, py: Python<'_>, alpha: f64) -> PyResult<TransparentContext> {
+    #[pyo3(signature = (fill_opacity, stroke_opacity=None))]
+    fn transparent(
+        slf: Py<Self>,
+        py: Python<'_>,
+        fill_opacity: f64,
+        stroke_opacity: Option<f64>,
+    ) -> PyResult<TransparentContext> {
+        let stroke_opacity = stroke_opacity.unwrap_or(fill_opacity);
         let borrowed = slf.borrow(py);
-        let original_alpha = *borrowed.current_alpha.lock().unwrap();
-        *borrowed.current_alpha.lock().unwrap() = alpha;
+        let original_fill_alpha = *borrowed.current_fill_alpha.lock().unwrap();
+        let original_stroke_alpha = *borrowed.current_stroke_alpha.lock().unwrap();
+        *borrowed.current_fill_alpha.lock().unwrap() = fill_opacity;
+        *borrowed.current_stroke_alpha.lock().unwrap() = stroke_opacity;
         drop(borrowed);
 
         Ok(TransparentContext {
             doc: slf,
-            original_alpha,
+            original_fill_alpha,
+            original_stroke_alpha,
         })
     }
 
@@ -1431,7 +1444,8 @@ impl Document {
         let fill_c = *borrowed.fill_color.lock().unwrap();
         let stroke_c = *borrowed.stroke_color.lock().unwrap();
         let lw = *borrowed.line_width.lock().unwrap();
-        let alpha = *borrowed.current_alpha.lock().unwrap();
+        let fill_alpha = *borrowed.current_fill_alpha.lock().unwrap();
+        let stroke_alpha = *borrowed.current_stroke_alpha.lock().unwrap();
 
         match &mut *guard {
             DocumentInner::Basic(doc) => {
@@ -1453,8 +1467,8 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    doc.transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    doc.transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(doc);
                 }
@@ -1478,8 +1492,10 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    layout.inner_mut().transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    layout
+                        .inner_mut()
+                        .transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(layout.inner_mut());
                 }
@@ -1506,7 +1522,8 @@ impl Document {
         let fill_c = *borrowed.fill_color.lock().unwrap();
         let stroke_c = *borrowed.stroke_color.lock().unwrap();
         let lw = *borrowed.line_width.lock().unwrap();
-        let alpha = *borrowed.current_alpha.lock().unwrap();
+        let fill_alpha = *borrowed.current_fill_alpha.lock().unwrap();
+        let stroke_alpha = *borrowed.current_stroke_alpha.lock().unwrap();
 
         match &mut *guard {
             DocumentInner::Basic(doc) => {
@@ -1525,8 +1542,8 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    doc.transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    doc.transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(doc);
                 }
@@ -1547,8 +1564,10 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    layout.inner_mut().transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    layout
+                        .inner_mut()
+                        .transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(layout.inner_mut());
                 }
@@ -1576,7 +1595,8 @@ impl Document {
         let fill_c = *borrowed.fill_color.lock().unwrap();
         let stroke_c = *borrowed.stroke_color.lock().unwrap();
         let lw = *borrowed.line_width.lock().unwrap();
-        let alpha = *borrowed.current_alpha.lock().unwrap();
+        let fill_alpha = *borrowed.current_fill_alpha.lock().unwrap();
+        let stroke_alpha = *borrowed.current_stroke_alpha.lock().unwrap();
 
         match &mut *guard {
             DocumentInner::Basic(doc) => {
@@ -1598,8 +1618,8 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    doc.transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    doc.transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(doc);
                 }
@@ -1623,8 +1643,10 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    layout.inner_mut().transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    layout
+                        .inner_mut()
+                        .transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(layout.inner_mut());
                 }
@@ -1653,7 +1675,8 @@ impl Document {
         let fill_c = *borrowed.fill_color.lock().unwrap();
         let stroke_c = *borrowed.stroke_color.lock().unwrap();
         let lw = *borrowed.line_width.lock().unwrap();
-        let alpha = *borrowed.current_alpha.lock().unwrap();
+        let fill_alpha = *borrowed.current_fill_alpha.lock().unwrap();
+        let stroke_alpha = *borrowed.current_stroke_alpha.lock().unwrap();
 
         match &mut *guard {
             DocumentInner::Basic(doc) => {
@@ -1676,8 +1699,8 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    doc.transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    doc.transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(doc);
                 }
@@ -1702,8 +1725,10 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    layout.inner_mut().transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    layout
+                        .inner_mut()
+                        .transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(layout.inner_mut());
                 }
@@ -1729,7 +1754,8 @@ impl Document {
         let fill_c = *borrowed.fill_color.lock().unwrap();
         let stroke_c = *borrowed.stroke_color.lock().unwrap();
         let lw = *borrowed.line_width.lock().unwrap();
-        let alpha = *borrowed.current_alpha.lock().unwrap();
+        let fill_alpha = *borrowed.current_fill_alpha.lock().unwrap();
+        let stroke_alpha = *borrowed.current_stroke_alpha.lock().unwrap();
 
         let pts: Vec<[f64; 2]> = points.iter().map(|(x, y)| [*x, *y]).collect();
 
@@ -1749,8 +1775,8 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    doc.transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    doc.transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(doc);
                 }
@@ -1770,8 +1796,10 @@ impl Document {
                         });
                     }
                 };
-                if alpha < 1.0 {
-                    layout.inner_mut().transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    layout
+                        .inner_mut()
+                        .transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(layout.inner_mut());
                 }
@@ -1807,7 +1835,8 @@ impl Document {
         let stroke_c = *borrowed.stroke_color.lock().unwrap();
         let lw = *borrowed.line_width.lock().unwrap();
         let dash = borrowed.dash_pattern.lock().unwrap().clone();
-        let alpha = *borrowed.current_alpha.lock().unwrap();
+        let fill_alpha = *borrowed.current_fill_alpha.lock().unwrap();
+        let stroke_alpha = *borrowed.current_stroke_alpha.lock().unwrap();
 
         match &mut *guard {
             DocumentInner::Basic(doc) => {
@@ -1823,8 +1852,8 @@ impl Document {
                         }
                     });
                 };
-                if alpha < 1.0 {
-                    doc.transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    doc.transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(doc);
                 }
@@ -1842,8 +1871,10 @@ impl Document {
                         }
                     });
                 };
-                if alpha < 1.0 {
-                    layout.inner_mut().transparent(alpha, draw);
+                if fill_alpha < 1.0 || stroke_alpha < 1.0 {
+                    layout
+                        .inner_mut()
+                        .transparent(fill_alpha, stroke_alpha, draw);
                 } else {
                     draw(layout.inner_mut());
                 }

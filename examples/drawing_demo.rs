@@ -125,7 +125,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     });
 
     // Hexagon (stroke + fill with transparency)
-    doc.transparent(0.6, |doc| {
+    doc.transparent(0.6, 0.6, |doc| {
         doc.fill(|ctx| {
             ctx.color(0.5, 0.3, 0.8).polygon(&[
                 [430.0, 280.0],
@@ -160,13 +160,13 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         ctx.color(1.0, 0.0, 0.0)
             .circle([circle_cx, circle_cy], 35.0);
     });
-    doc.transparent(0.7, |d| {
+    doc.transparent(0.7, 0.7, |d| {
         d.fill(|ctx| {
             ctx.color(0.0, 1.0, 0.0)
                 .circle([circle_cx + 40.0, circle_cy], 35.0);
         });
     });
-    doc.transparent(0.4, |d| {
+    doc.transparent(0.4, 0.4, |d| {
         d.fill(|ctx| {
             ctx.color(0.0, 0.0, 1.0)
                 .circle([circle_cx + 20.0, circle_cy - 35.0], 35.0);
@@ -183,14 +183,14 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
             .rect_tl([rect_x, rect_top_y], 80.0, 55.0);
     });
     // Blue rect (65%)
-    doc.transparent(0.65, |d| {
+    doc.transparent(0.65, 0.65, |d| {
         d.fill(|ctx| {
             ctx.color(0.2, 0.6, 0.9)
                 .rect_tl([rect_x + 45.0, rect_top_y], 80.0, 55.0);
         });
     });
     // Green rect (35%)
-    doc.transparent(0.35, |d| {
+    doc.transparent(0.35, 0.35, |d| {
         d.fill(|ctx| {
             ctx.color(0.3, 0.85, 0.3)
                 .rect_tl([rect_x + 22.0, rect_top_y + 30.0], 80.0, 55.0);

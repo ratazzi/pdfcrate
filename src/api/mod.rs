@@ -94,6 +94,8 @@ pub struct Document {
     form: AcroForm,
     /// ExtGState resources for transparency (name -> ref)
     ext_gstates: Vec<(String, PdfRef)>,
+    /// ExtGState cache: gs_name -> cache_key ("fill_opacity_stroke_opacity")
+    ext_gstate_cache: std::collections::HashMap<String, String>,
     /// Shading resources for gradients (name -> ref)
     shadings: Vec<(String, PdfRef)>,
     /// Named destinations (name -> (page_index, fit))
@@ -349,6 +351,7 @@ impl Document {
             image_counter: 0,
             form: AcroForm::new(),
             ext_gstates: Vec::new(),
+            ext_gstate_cache: std::collections::HashMap::new(),
             shadings: Vec::new(),
             destinations: std::collections::HashMap::new(),
             outline: outline::Outline::new(),
@@ -1632,7 +1635,11 @@ impl Document {
         self.draw_svg(svg, pos, width, height)
     }
 
-    /// Strokes a path using a closure
+    /// Sets up a stroke context for drawing
+    ///
+    /// Shape methods (e.g. `rectangle`, `circle`) automatically stroke the path.
+    /// For manual path building with `move_to`/`line_to`, call `stroke_path()`
+    /// explicitly to paint the path.
     pub fn stroke<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut StrokeContext),
@@ -1642,11 +1649,15 @@ impl Document {
         };
         ctx.content.save_state();
         f(&mut ctx);
-        ctx.content.stroke().restore_state();
+        ctx.content.restore_state();
         self
     }
 
-    /// Fills a path using a closure
+    /// Sets up a fill context for drawing
+    ///
+    /// Shape methods (e.g. `rectangle`, `circle`) automatically fill the path.
+    /// For manual path building with `move_to`/`line_to`, call `fill_path()`
+    /// explicitly to paint the path.
     pub fn fill<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut FillContext),
@@ -1656,15 +1667,49 @@ impl Document {
         };
         ctx.content.save_state();
         f(&mut ctx);
-        ctx.content.fill().restore_state();
+        ctx.content.restore_state();
+        self
+    }
+
+    /// Fills and strokes a path using a closure
+    ///
+    /// Draws shapes that are both filled and stroked using the PDF `B` operator.
+    /// This matches Prawn's `fill_and_stroke` method.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// doc.fill_and_stroke(|ctx| {
+    ///     ctx.fill_color(1.0, 0.0, 0.0);
+    ///     ctx.stroke_color(0.0, 0.0, 0.0);
+    ///     ctx.line_width(2.0);
+    ///     ctx.rectangle([100.0, 100.0], 200.0, 100.0);
+    /// });
+    /// ```
+    pub fn fill_and_stroke<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut FillAndStrokeContext),
+    {
+        let mut ctx = FillAndStrokeContext {
+            content: &mut self.pages[self.current_page].content,
+        };
+        ctx.content.save_state();
+        f(&mut ctx);
+        ctx.content.restore_state();
         self
     }
 
     /// Applies transparency to operations within the closure
     ///
+    /// Matches Prawn's `transparent(fill_opacity, stroke_opacity)`.
+    ///
     /// # Arguments
     ///
-    /// * `opacity` - Opacity value from 0.0 (fully transparent) to 1.0 (fully opaque)
+    /// * `fill_opacity` - Fill opacity from 0.0 (fully transparent) to 1.0 (fully opaque)
+    /// * `stroke_opacity` - Stroke opacity from 0.0 (fully transparent) to 1.0 (fully opaque)
     /// * `f` - Closure containing operations to be drawn with transparency
     ///
     /// # Example
@@ -1673,52 +1718,64 @@ impl Document {
     /// use pdfcrate::api::Document;
     ///
     /// let mut doc = Document::new();
-    /// doc.transparent(0.5, |doc| {
+    /// // Both fill and stroke at 50% opacity
+    /// doc.transparent(0.5, 0.5, |doc| {
     ///     doc.fill(|ctx| {
     ///         ctx.color(1.0, 0.0, 0.0);
     ///         ctx.rectangle([100.0, 100.0], 200.0, 100.0);
     ///     });
     /// });
+    ///
+    /// // Fill at 50% opacity, stroke at 75% opacity
+    /// doc.transparent(0.5, 0.75, |doc| {
+    ///     doc.fill_and_stroke(|ctx| {
+    ///         ctx.fill_color(1.0, 0.0, 0.0);
+    ///         ctx.stroke_color(0.0, 0.0, 0.0);
+    ///         ctx.rectangle([100.0, 100.0], 200.0, 100.0);
+    ///     });
+    /// });
     /// ```
-    pub fn transparent<F>(&mut self, opacity: f64, f: F) -> &mut Self
+    pub fn transparent<F>(&mut self, fill_opacity: f64, stroke_opacity: f64, f: F) -> &mut Self
     where
         F: FnOnce(&mut Self),
     {
-        // Clamp opacity to valid range
-        let opacity = opacity.clamp(0.0, 1.0);
+        let fill_opacity = fill_opacity.clamp(0.0, 1.0);
+        let stroke_opacity = stroke_opacity.clamp(0.0, 1.0);
 
-        // Create ExtGState dictionary for transparency
-        let gs_ref = self.context.alloc_ref();
-        let gs_name = format!("GS{}", gs_ref.object_number());
+        // Cache key: "fill_opacity_stroke_opacity"
+        let cache_key = format!("{}_{}", fill_opacity, stroke_opacity);
 
-        let mut gs_dict = PdfDict::new();
-        gs_dict.set("Type", PdfObject::Name("ExtGState".into()));
-        gs_dict.set("CA", PdfObject::Real(opacity)); // Stroke alpha
-        gs_dict.set("ca", PdfObject::Real(opacity)); // Fill alpha
+        let gs_name = if let Some((name, _)) = self
+            .ext_gstates
+            .iter()
+            .find(|(n, _)| self.ext_gstate_cache.get(n.as_str()) == Some(&cache_key))
+        {
+            name.clone()
+        } else {
+            // Create new ExtGState dictionary
+            let gs_ref = self.context.alloc_ref();
+            let gs_name = format!("GS{}", gs_ref.object_number());
 
-        self.context.assign(gs_ref, PdfObject::Dict(gs_dict));
+            let mut gs_dict = PdfDict::new();
+            gs_dict.set("Type", PdfObject::Name("ExtGState".into()));
+            gs_dict.set("CA", PdfObject::Real(stroke_opacity)); // Stroke alpha
+            gs_dict.set("ca", PdfObject::Real(fill_opacity)); // Fill alpha
 
-        // Add to current page resources
+            self.context.assign(gs_ref, PdfObject::Dict(gs_dict));
+            self.ext_gstates.push((gs_name.clone(), gs_ref));
+            self.ext_gstate_cache.insert(gs_name.clone(), cache_key);
+            gs_name
+        };
+
+        // Apply graphics state
         let page = &mut self.pages[self.current_page];
         page.content.save_state();
         page.content.set_graphics_state(&gs_name);
-
-        // Store the gs resource reference for later use during render
-        // We'll need to add it to the page's ExtGState resources
-        self.ensure_extgstate_resource(&gs_name, gs_ref);
 
         f(self);
 
         self.pages[self.current_page].content.restore_state();
         self
-    }
-
-    /// Ensures ExtGState resource is registered (internal helper)
-    fn ensure_extgstate_resource(&mut self, name: &str, gs_ref: PdfRef) {
-        // Add to ext_gstates if not already present
-        if !self.ext_gstates.iter().any(|(n, _)| n == name) {
-            self.ext_gstates.push((name.to_string(), gs_ref));
-        }
     }
 
     /// Draws X and Y coordinate axes with tick marks and labels
@@ -3102,6 +3159,191 @@ impl<'a> FillContext<'a> {
     }
 }
 
+/// Context for fill-and-stroke operations
+///
+/// Provides methods for drawing shapes that are both filled and stroked
+/// using the PDF `B` operator, matching Prawn's `fill_and_stroke` behavior.
+pub struct FillAndStrokeContext<'a> {
+    content: &'a mut ContentBuilder,
+}
+
+impl<'a> FillAndStrokeContext<'a> {
+    /// Sets fill color (RGB)
+    pub fn fill_color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
+        self.content.set_fill_color_rgb(r, g, b);
+        self
+    }
+
+    /// Sets fill color (grayscale)
+    pub fn fill_gray(&mut self, gray: f64) -> &mut Self {
+        self.content.set_fill_color_gray(gray);
+        self
+    }
+
+    /// Sets fill color (CMYK)
+    pub fn fill_cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.content.set_fill_color_cmyk(c, m, y, k);
+        self
+    }
+
+    /// Sets stroke color (RGB)
+    pub fn stroke_color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
+        self.content.set_stroke_color_rgb(r, g, b);
+        self
+    }
+
+    /// Sets stroke color (grayscale)
+    pub fn stroke_gray(&mut self, gray: f64) -> &mut Self {
+        self.content.set_stroke_color_gray(gray);
+        self
+    }
+
+    /// Sets stroke color (CMYK)
+    pub fn stroke_cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.content.set_stroke_color_cmyk(c, m, y, k);
+        self
+    }
+
+    /// Sets line width
+    pub fn line_width(&mut self, width: f64) -> &mut Self {
+        self.content.set_line_width(width);
+        self
+    }
+
+    /// Sets dash pattern
+    pub fn dash(&mut self, pattern: &[f64]) -> &mut Self {
+        self.content.set_dash(pattern, 0.0);
+        self
+    }
+
+    /// Sets dash pattern with phase
+    pub fn dash_with_phase(&mut self, pattern: &[f64], phase: f64) -> &mut Self {
+        self.content.set_dash(pattern, phase);
+        self
+    }
+
+    /// Clears dash pattern (solid line)
+    pub fn undash(&mut self) -> &mut Self {
+        self.content.clear_dash();
+        self
+    }
+
+    /// Sets line cap style
+    pub fn cap(&mut self, cap: crate::content::LineCap) -> &mut Self {
+        self.content.set_line_cap(cap);
+        self
+    }
+
+    /// Sets line join style
+    pub fn join(&mut self, join: crate::content::LineJoin) -> &mut Self {
+        self.content.set_line_join(join);
+        self
+    }
+
+    /// Draws, fills, and strokes a rectangle
+    ///
+    /// The origin is the bottom-left corner (PDF native coordinates).
+    pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
+        self.content.rect(origin[0], origin[1], width, height);
+        self.content.fill_and_stroke();
+        self
+    }
+
+    /// Draws, fills, and strokes a rectangle with top-left origin (Prawn-style)
+    pub fn rect_tl(&mut self, top_left: [f64; 2], width: f64, height: f64) -> &mut Self {
+        let bottom_left = [top_left[0], top_left[1] - height];
+        self.rectangle(bottom_left, width, height)
+    }
+
+    /// Draws, fills, and strokes a rounded rectangle
+    ///
+    /// The origin is the bottom-left corner (PDF native coordinates).
+    pub fn rounded_rectangle(
+        &mut self,
+        origin: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        self.content
+            .rounded_rect(origin[0], origin[1], width, height, radius);
+        self.content.fill_and_stroke();
+        self
+    }
+
+    /// Draws, fills, and strokes a rounded rectangle with top-left origin (Prawn-style)
+    pub fn rounded_rect_tl(
+        &mut self,
+        top_left: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        let bottom_left = [top_left[0], top_left[1] - height];
+        self.rounded_rectangle(bottom_left, width, height, radius)
+    }
+
+    /// Draws, fills, and strokes a circle
+    pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
+        self.content.circle(center[0], center[1], radius);
+        self.content.fill_and_stroke();
+        self
+    }
+
+    /// Draws, fills, and strokes an ellipse
+    pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
+        self.content.ellipse(center[0], center[1], rx, ry);
+        self.content.fill_and_stroke();
+        self
+    }
+
+    /// Moves to a point (for path building)
+    pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
+        self.content.move_to(x, y);
+        self
+    }
+
+    /// Draws a line to a point (for path building)
+    pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
+        self.content.line_to(x, y);
+        self
+    }
+
+    /// Draws a cubic Bezier curve (for path building)
+    pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
+        self.content
+            .curve_to(cp1[0], cp1[1], cp2[0], cp2[1], end[0], end[1]);
+        self
+    }
+
+    /// Closes the current path (for path building)
+    pub fn close_path(&mut self) -> &mut Self {
+        self.content.close_path();
+        self
+    }
+
+    /// Fills and strokes the current path (for path building)
+    pub fn fill_and_stroke_path(&mut self) -> &mut Self {
+        self.content.fill_and_stroke();
+        self
+    }
+
+    /// Draws, fills, and strokes a polygon by connecting the given points
+    pub fn polygon(&mut self, points: &[[f64; 2]]) -> &mut Self {
+        if points.is_empty() {
+            return self;
+        }
+
+        self.content.move_to(points[0][0], points[0][1]);
+        for point in &points[1..] {
+            self.content.line_to(point[0], point[1]);
+        }
+        self.content.close_path();
+        self.content.fill_and_stroke();
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3740,6 +3982,189 @@ mod tests {
         // If this doesn't panic, the API is working
         let bytes = doc.render().unwrap();
         assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    // === fill_and_stroke Tests ===
+
+    #[test]
+    fn test_fill_and_stroke_uses_b_operator() {
+        // FillAndStrokeContext shapes should use the B operator (fill and stroke)
+        use crate::content::ContentBuilder;
+
+        let mut content = ContentBuilder::new();
+        content.save_state();
+
+        content.set_fill_color_rgb(1.0, 0.0, 0.0);
+        content.set_stroke_color_rgb(0.0, 0.0, 1.0);
+        content.rect(100.0, 100.0, 50.0, 50.0);
+        content.fill_and_stroke();
+
+        content.restore_state();
+
+        let bytes = content.build();
+        let output = String::from_utf8_lossy(&bytes);
+
+        // Should contain B operator (fill and stroke)
+        assert!(
+            output.contains("\nB\n"),
+            "Expected B operator. Output:\n{}",
+            output
+        );
+        // Should contain fill color (rg) and stroke color (RG)
+        assert!(output.contains("1 0 0 rg"), "Should contain red fill color");
+        assert!(
+            output.contains("0 0 1 RG"),
+            "Should contain blue stroke color"
+        );
+        // Should NOT contain separate S or f operators
+        assert!(
+            !output.contains("\nS\n"),
+            "Should not contain separate stroke S"
+        );
+        assert!(
+            !output.contains("\nf\n"),
+            "Should not contain separate fill f"
+        );
+    }
+
+    #[test]
+    fn test_fill_and_stroke_document_api() {
+        let mut doc = Document::new();
+
+        doc.fill_and_stroke(|ctx| {
+            ctx.fill_color(1.0, 0.0, 0.0);
+            ctx.stroke_color(0.0, 0.0, 1.0);
+            ctx.line_width(2.0);
+            ctx.rectangle([100.0, 100.0], 200.0, 100.0);
+            ctx.circle([300.0, 300.0], 50.0);
+        });
+
+        let bytes = doc.render().unwrap();
+        assert!(bytes.starts_with(b"%PDF-1.7"));
+    }
+
+    // === Transparency Tests ===
+
+    #[test]
+    fn test_transparent_separate_fill_stroke_opacity() {
+        let mut doc = Document::new();
+
+        // Fill at 50%, stroke at 80%
+        doc.transparent(0.5, 0.8, |doc| {
+            doc.fill_and_stroke(|ctx| {
+                ctx.fill_color(1.0, 0.0, 0.0);
+                ctx.stroke_color(0.0, 0.0, 0.0);
+                ctx.rectangle([100.0, 100.0], 200.0, 100.0);
+            });
+        });
+
+        let bytes = doc.render().unwrap();
+        let output = String::from_utf8_lossy(&bytes);
+
+        // ExtGState should have separate CA (stroke) and ca (fill)
+        assert!(
+            output.contains("/ca 0.5"),
+            "Should contain fill opacity ca 0.5. Output:\n{}",
+            output
+        );
+        assert!(
+            output.contains("/CA 0.8"),
+            "Should contain stroke opacity CA 0.8. Output:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_transparent_same_opacity() {
+        let mut doc = Document::new();
+
+        doc.transparent(0.5, 0.5, |doc| {
+            doc.fill(|ctx| {
+                ctx.color(1.0, 0.0, 0.0);
+                ctx.rectangle([100.0, 100.0], 200.0, 100.0);
+            });
+        });
+
+        let bytes = doc.render().unwrap();
+        let output = String::from_utf8_lossy(&bytes);
+
+        assert!(
+            output.contains("/ca 0.5"),
+            "Should contain fill opacity 0.5"
+        );
+        assert!(
+            output.contains("/CA 0.5"),
+            "Should contain stroke opacity 0.5"
+        );
+    }
+
+    #[test]
+    fn test_transparent_extgstate_caching() {
+        let mut doc = Document::new();
+
+        // Call transparent twice with the same opacity values
+        doc.transparent(0.5, 0.8, |doc| {
+            doc.fill(|ctx| {
+                ctx.color(1.0, 0.0, 0.0);
+                ctx.rectangle([100.0, 100.0], 50.0, 50.0);
+            });
+        });
+        doc.transparent(0.5, 0.8, |doc| {
+            doc.fill(|ctx| {
+                ctx.color(0.0, 1.0, 0.0);
+                ctx.rectangle([200.0, 100.0], 50.0, 50.0);
+            });
+        });
+
+        // Should only have one ExtGState entry for this opacity combination
+        assert_eq!(
+            doc.ext_gstates.len(),
+            1,
+            "Expected 1 cached ExtGState, found {}",
+            doc.ext_gstates.len()
+        );
+
+        // Different opacity should create a new entry
+        doc.transparent(0.3, 0.3, |doc| {
+            doc.fill(|ctx| {
+                ctx.color(0.0, 0.0, 1.0);
+                ctx.rectangle([300.0, 100.0], 50.0, 50.0);
+            });
+        });
+
+        assert_eq!(
+            doc.ext_gstates.len(),
+            2,
+            "Expected 2 ExtGState entries after different opacity, found {}",
+            doc.ext_gstates.len()
+        );
+    }
+
+    #[test]
+    fn test_stroke_no_redundant_operator() {
+        // After removing the trailing stroke() from Document::stroke(),
+        // each shape should have exactly one S operator, no extra empty-path S
+        use crate::content::ContentBuilder;
+
+        let mut content = ContentBuilder::new();
+        content.save_state();
+
+        // One rectangle with stroke
+        content.set_stroke_color_rgb(1.0, 0.0, 0.0);
+        content.rect(100.0, 100.0, 50.0, 50.0);
+        content.stroke();
+
+        content.restore_state();
+
+        let bytes = content.build();
+        let output = String::from_utf8_lossy(&bytes);
+
+        let stroke_count = output.matches("\nS\n").count();
+        assert_eq!(
+            stroke_count, 1,
+            "Expected exactly 1 stroke operator, found {}. Output:\n{}",
+            stroke_count, output
+        );
     }
 
     // === Link Annotation Tests ===
