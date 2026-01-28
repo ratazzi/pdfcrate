@@ -5,11 +5,22 @@
 use super::{FieldType, FormField, TextAlign};
 use crate::objects::{PdfArray, PdfDict, PdfName, PdfObject, PdfRef, PdfString};
 
+/// Checkbox appearance references (Off state and Yes state)
+pub struct CheckboxAppearanceRefs {
+    pub off_ref: PdfRef,
+    pub yes_ref: PdfRef,
+}
+
 /// Creates the widget annotation dictionary for a form field
+///
+/// For checkboxes, pass `checkbox_ap` with Off/Yes appearance refs to generate
+/// the correct `/AP << /N << /Yes ref /Off ref >> >>` structure and `/AS` entry.
+/// For other field types, pass `appearance_ref` as a single normal appearance stream.
 pub fn create_widget_annotation(
     field: &FormField,
     page_ref: PdfRef,
     appearance_ref: Option<PdfRef>,
+    checkbox_ap: Option<CheckboxAppearanceRefs>,
 ) -> PdfDict {
     let mut dict = PdfDict::new();
 
@@ -136,7 +147,22 @@ pub fn create_widget_annotation(
     }
 
     // Appearance dictionary
-    if let Some(ap_ref) = appearance_ref {
+    if let Some(cb_ap) = checkbox_ap {
+        // Checkbox: /AP << /N << /Yes ref /Off ref >> >>
+        let mut n_dict = PdfDict::new();
+        n_dict.set("Yes", PdfObject::Reference(cb_ap.yes_ref));
+        n_dict.set("Off", PdfObject::Reference(cb_ap.off_ref));
+        let mut ap = PdfDict::new();
+        ap.set("N", PdfObject::Dict(n_dict));
+        dict.set("AP", PdfObject::Dict(ap));
+
+        // /AS entry: current appearance state
+        let is_checked = field.value.as_deref() == Some("Yes");
+        dict.set(
+            "AS",
+            PdfObject::Name(PdfName::new(if is_checked { "Yes" } else { "Off" })),
+        );
+    } else if let Some(ap_ref) = appearance_ref {
         let mut ap = PdfDict::new();
         ap.set("N", PdfObject::Reference(ap_ref));
         dict.set("AP", PdfObject::Dict(ap));
@@ -228,11 +254,65 @@ mod tests {
         let field = FormField::text("test", [100.0, 700.0, 300.0, 720.0]);
         let page_ref = PdfRef::new(1);
 
-        let dict = create_widget_annotation(&field, page_ref, None);
+        let dict = create_widget_annotation(&field, page_ref, None, None);
 
         assert_eq!(dict.get_type(), Some("Annot"));
         assert!(dict.get("Rect").is_some());
         assert!(dict.get("T").is_some());
+    }
+
+    #[test]
+    fn test_checkbox_widget_annotation_has_ap_states_and_as() {
+        let field = FormField::checkbox("agree", [100.0, 650.0, 120.0, 670.0], true);
+        let page_ref = PdfRef::new(1);
+        let cb_ap = CheckboxAppearanceRefs {
+            off_ref: PdfRef::new(10),
+            yes_ref: PdfRef::new(11),
+        };
+
+        let dict = create_widget_annotation(&field, page_ref, None, Some(cb_ap));
+
+        // Should have AP dictionary
+        let ap = dict.get("AP").expect("missing AP");
+        if let PdfObject::Dict(ap_dict) = ap {
+            // AP/N should be a dictionary (not a reference)
+            let n = ap_dict.get("N").expect("missing AP/N");
+            if let PdfObject::Dict(n_dict) = n {
+                assert!(n_dict.get("Yes").is_some(), "missing AP/N/Yes");
+                assert!(n_dict.get("Off").is_some(), "missing AP/N/Off");
+            } else {
+                panic!("AP/N should be a Dict, got {:?}", n);
+            }
+        } else {
+            panic!("AP should be a Dict");
+        }
+
+        // Should have AS entry
+        let as_entry = dict.get("AS").expect("missing AS");
+        if let PdfObject::Name(name) = as_entry {
+            assert_eq!(name.as_str(), "Yes");
+        } else {
+            panic!("AS should be a Name");
+        }
+    }
+
+    #[test]
+    fn test_checkbox_unchecked_has_as_off() {
+        let field = FormField::checkbox("agree", [100.0, 650.0, 120.0, 670.0], false);
+        let page_ref = PdfRef::new(1);
+        let cb_ap = CheckboxAppearanceRefs {
+            off_ref: PdfRef::new(10),
+            yes_ref: PdfRef::new(11),
+        };
+
+        let dict = create_widget_annotation(&field, page_ref, None, Some(cb_ap));
+
+        let as_entry = dict.get("AS").expect("missing AS");
+        if let PdfObject::Name(name) = as_entry {
+            assert_eq!(name.as_str(), "Off");
+        } else {
+            panic!("AS should be a Name");
+        }
     }
 
     #[test]

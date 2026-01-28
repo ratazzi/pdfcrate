@@ -2302,13 +2302,31 @@ impl Document {
                     .copied()
                     .unwrap_or_else(|| page_refs.last().copied().unwrap_or(pages_ref));
 
-                // Generate appearance stream for the field
-                let appearance_stream = crate::forms::generate_appearance(field, None);
-                let appearance_ref = self.context.register(PdfObject::Stream(appearance_stream));
+                // Generate appearance stream(s) for the field
+                let (appearance_ref, checkbox_ap) = if field.field_type
+                    == crate::forms::FieldType::CheckBox
+                {
+                    // Checkbox: generate separate Off and Yes appearance streams
+                    let (ap_off, ap_yes) = crate::forms::generate_checkbox_appearances(field, None);
+                    let off_ref = self.context.register(PdfObject::Stream(ap_off));
+                    let yes_ref = self.context.register(PdfObject::Stream(ap_yes));
+                    (
+                        None,
+                        Some(crate::forms::CheckboxAppearanceRefs { off_ref, yes_ref }),
+                    )
+                } else {
+                    let appearance_stream = crate::forms::generate_appearance(field, None);
+                    let ap_ref = self.context.register(PdfObject::Stream(appearance_stream));
+                    (Some(ap_ref), None)
+                };
 
                 // Create widget annotation dictionary with correct page reference
-                let widget =
-                    crate::forms::create_widget_annotation(field, page_ref, Some(appearance_ref));
+                let widget = crate::forms::create_widget_annotation(
+                    field,
+                    page_ref,
+                    appearance_ref,
+                    checkbox_ap,
+                );
                 let widget_ref = self.context.register(PdfObject::Dict(widget));
                 field_refs_all.push(widget_ref);
 

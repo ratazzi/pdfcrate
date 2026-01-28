@@ -46,6 +46,8 @@ pub struct EmbeddedFont {
     pub descender: i32,
     /// Cap height
     pub cap_height: i32,
+    /// x-height (height of lowercase 'x')
+    pub x_height: i32,
     /// Stem vertical width (estimated)
     pub stem_v: i32,
     /// Font bounding box [x_min, y_min, x_max, y_max]
@@ -117,6 +119,10 @@ impl EmbeddedFont {
             .capital_height()
             .map(|h| (h as f64 * scale) as i32)
             .unwrap_or(ascender);
+        let x_height = face
+            .x_height()
+            .map(|h| (h as f64 * scale) as i32)
+            .unwrap_or(0);
 
         // Font bounding box
         let global_bbox = face.global_bounding_box();
@@ -179,6 +185,7 @@ impl EmbeddedFont {
             ascender,
             descender,
             cap_height,
+            x_height,
             stem_v,
             bbox,
             units_per_em,
@@ -527,6 +534,9 @@ impl EmbeddedFont {
         dict.set("Ascent", PdfObject::Integer(self.ascender as i64));
         dict.set("Descent", PdfObject::Integer(self.descender as i64));
         dict.set("CapHeight", PdfObject::Integer(self.cap_height as i64));
+        if self.x_height != 0 {
+            dict.set("XHeight", PdfObject::Integer(self.x_height as i64));
+        }
         dict.set("StemV", PdfObject::Integer(self.stem_v as i64));
         dict.set("FontFile2", PdfObject::Reference(font_file_ref));
 
@@ -944,6 +954,7 @@ mod tests {
             ascender: 800,
             descender: -200,
             cap_height: 700,
+            x_height: 0,
             stem_v: 80,
             bbox: [0, -200, 1000, 800],
             units_per_em: 1000,
@@ -972,6 +983,7 @@ mod tests {
             ascender: 800,
             descender: -200,
             cap_height: 700,
+            x_height: 0,
             stem_v: 80,
             bbox: [0, -200, 1000, 800],
             units_per_em: 1000,
