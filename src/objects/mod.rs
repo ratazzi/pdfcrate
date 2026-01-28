@@ -50,7 +50,12 @@ pub fn format_real(value: f64) -> String {
         let mut buffer = ryu::Buffer::new();
         let formatted = buffer.format(value);
         // Remove unnecessary trailing zeros after decimal point
-        if formatted.contains('.') && !formatted.contains('e') && !formatted.contains('E') {
+        // PDF spec does not allow scientific notation (e.g. "1.1e-6")
+        if formatted.contains('e') || formatted.contains('E') {
+            // ryu produced scientific notation — fall back to fixed-point
+            let s = format!("{:.10}", value);
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else if formatted.contains('.') {
             formatted
                 .trim_end_matches('0')
                 .trim_end_matches('.')
@@ -376,5 +381,21 @@ mod tests {
             "Got: {}",
             result
         );
+    }
+
+    #[test]
+    fn test_format_real_no_scientific_notation() {
+        // PDF spec does not allow scientific notation
+        // ryu may produce 'e' notation for values near 1e-6
+        let test_values = [1.1e-6, 1.5e-6, 2.0e-6, 9.9e-6, 1e-6, 1e-7, 1e-10];
+        for &v in &test_values {
+            let result = format_real(v);
+            assert!(
+                !result.contains('e') && !result.contains('E'),
+                "Scientific notation in PDF real: format_real({}) = {:?}",
+                v,
+                result,
+            );
+        }
     }
 }
