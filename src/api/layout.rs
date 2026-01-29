@@ -1462,7 +1462,8 @@ impl LayoutDocument {
     pub fn text(&mut self, text: &str) -> &mut Self {
         // If fallback fonts are configured, use fallback-aware rendering
         if !self.state.fallback_fonts.is_empty() {
-            return self.text_with_fallback_fonts(text, &self.state.fallback_fonts.clone());
+            let fallback_fonts = self.state.fallback_fonts.clone();
+            return self.text_with_fallback_fonts(text, &fallback_fonts);
         }
 
         // Original implementation (no fallback)
@@ -1542,15 +1543,15 @@ impl LayoutDocument {
 
     /// Internal: renders text with font fallback support
     fn text_with_fallback_fonts(&mut self, text: &str, fallback_fonts: &[String]) -> &mut Self {
-        let primary_font = self.inner.current_font.clone();
-        let runs = self.analyze_text_for_fallback_with(text, &primary_font, fallback_fonts);
+        let primary_font = &self.inner.current_font;
+        let runs = self.analyze_text_for_fallback_with(text, primary_font, fallback_fonts);
 
         // Convert runs to TextFragments
         let fragments: Vec<TextFragment> = runs
             .into_iter()
             .map(|run| {
                 let mut frag = TextFragment::new(run.text);
-                if run.font != primary_font {
+                if run.font != *primary_font {
                     frag = frag.font(run.font);
                 }
                 frag
@@ -1604,22 +1605,30 @@ impl LayoutDocument {
             .filter(|f| !f.text.is_empty())
             .map(|f| {
                 let primary_font = if let Some(ref font) = f.font {
-                    font.clone()
+                    font.as_str()
                 } else {
-                    Self::get_styled_font_name(&base_font, f.style)
+                    base_font.as_str()
+                };
+                let styled_font = if f.font.is_some() {
+                    None
+                } else {
+                    Some(Self::get_styled_font_name(primary_font, f.style))
                 };
                 let font_size = f.size.unwrap_or(base_size);
 
                 // Calculate width with fallback support
                 let base_width = if fallback_fonts.is_empty() {
-                    self.measure_fragment_width_inner(&primary_font, &f.text, font_size)
+                    match styled_font.as_deref() {
+                        Some(styled) => {
+                            self.measure_fragment_width_inner(styled, &f.text, font_size)
+                        }
+                        None => self.measure_fragment_width_inner(primary_font, &f.text, font_size),
+                    }
                 } else {
                     // Split by fallback fonts and measure each run
-                    let runs = self.analyze_text_for_fallback_with(
-                        &f.text,
-                        &primary_font,
-                        &fallback_fonts,
-                    );
+                    let primary_font = styled_font.as_deref().unwrap_or(primary_font);
+                    let runs =
+                        self.analyze_text_for_fallback_with(&f.text, primary_font, &fallback_fonts);
                     runs.iter()
                         .map(|run| {
                             self.measure_fragment_width_inner(&run.font, &run.text, font_size)
@@ -1674,9 +1683,14 @@ impl LayoutDocument {
 
             // Determine primary font name based on style
             let primary_font = if let Some(ref font) = fragment.font {
-                font.clone()
+                font.as_str()
             } else {
-                Self::get_styled_font_name(&base_font, fragment.style)
+                base_font.as_str()
+            };
+            let styled_font = if fragment.font.is_some() {
+                None
+            } else {
+                Some(Self::get_styled_font_name(primary_font, fragment.style))
             };
 
             let frag_font_size = fragment.size.unwrap_or(base_size);
@@ -1692,10 +1706,11 @@ impl LayoutDocument {
             let runs = if fallback_fonts.is_empty() {
                 vec![FontRun {
                     text: fragment.text.clone(),
-                    font: primary_font.clone(),
+                    font: styled_font.unwrap_or_else(|| primary_font.to_string()),
                 }]
             } else {
-                self.analyze_text_for_fallback_with(&fragment.text, &primary_font, &fallback_fonts)
+                let primary_font = styled_font.as_deref().unwrap_or(primary_font);
+                self.analyze_text_for_fallback_with(&fragment.text, primary_font, &fallback_fonts)
             };
 
             // Render each run with the appropriate font
@@ -1969,8 +1984,10 @@ impl LayoutDocument {
                 .text_at_with_spacing(text, [left, y], char_spacing, 0.0);
         } else {
             let primary_font = self.inner.current_font.clone();
-            let fallback_fonts = self.state.fallback_fonts.clone();
-            let runs = self.analyze_text_for_fallback_with(text, &primary_font, &fallback_fonts);
+            let runs = {
+                let fallback_fonts = &self.state.fallback_fonts;
+                self.analyze_text_for_fallback_with(text, &primary_font, fallback_fonts)
+            };
 
             let mut x = left;
             let mut is_first_run = true;
@@ -2350,8 +2367,10 @@ impl LayoutDocument {
         } else {
             let font_size = self.inner.current_font_size;
             let primary_font = self.inner.current_font.clone();
-            let fallback_fonts = self.state.fallback_fonts.clone();
-            let runs = self.analyze_text_for_fallback_with(text, &primary_font, &fallback_fonts);
+            let runs = {
+                let fallback_fonts = &self.state.fallback_fonts;
+                self.analyze_text_for_fallback_with(text, &primary_font, fallback_fonts)
+            };
 
             let mut x = pos[0];
             let y = pos[1];
@@ -2408,8 +2427,10 @@ impl LayoutDocument {
             self.measure_text_width(text)
         } else {
             let primary_font = self.inner.current_font.clone();
-            let fallback_fonts = self.state.fallback_fonts.clone();
-            let runs = self.analyze_text_for_fallback_with(text, &primary_font, &fallback_fonts);
+            let runs = {
+                let fallback_fonts = &self.state.fallback_fonts;
+                self.analyze_text_for_fallback_with(text, &primary_font, fallback_fonts)
+            };
             runs.iter()
                 .map(|run| self.measure_fragment_width_inner(&run.font, &run.text, font_size))
                 .sum()
@@ -2440,8 +2461,10 @@ impl LayoutDocument {
                 .text_at_with_spacing(text, [left, y], char_spacing, word_spacing);
         } else {
             let primary_font = self.inner.current_font.clone();
-            let fallback_fonts = self.state.fallback_fonts.clone();
-            let runs = self.analyze_text_for_fallback_with(text, &primary_font, &fallback_fonts);
+            let runs = {
+                let fallback_fonts = &self.state.fallback_fonts;
+                self.analyze_text_for_fallback_with(text, &primary_font, fallback_fonts)
+            };
 
             let mut x = left;
             let mut is_first_run = true;

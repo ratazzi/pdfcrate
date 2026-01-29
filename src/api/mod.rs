@@ -560,9 +560,8 @@ impl Document {
 
     /// Draws text at a specific position
     pub fn text_at(&mut self, text: &str, pos: [f64; 2]) -> &mut Self {
-        self.ensure_font(&self.current_font.clone());
-
         let font_name = self.current_font.clone();
+        self.ensure_font(&font_name);
         let font_size = self.current_font_size;
         let is_embedded = self.current_font_embedded;
 
@@ -736,9 +735,8 @@ impl Document {
         char_spacing: f64,
         word_spacing: f64,
     ) -> &mut Self {
-        self.ensure_font(&self.current_font.clone());
-
         let font_name = self.current_font.clone();
+        self.ensure_font(&font_name);
         let font_size = self.current_font_size;
         let is_embedded = self.current_font_embedded;
 
@@ -776,9 +774,8 @@ impl Document {
     /// This is useful for comparing kerning/shaping behavior in embedded fonts.
     #[cfg(feature = "fonts")]
     pub fn text_at_no_kerning(&mut self, text: &str, pos: [f64; 2]) -> &mut Self {
-        self.ensure_font(&self.current_font.clone());
-
         let font_name = self.current_font.clone();
+        self.ensure_font(&font_name);
         let font_size = self.current_font_size;
 
         if self.current_font_embedded {
