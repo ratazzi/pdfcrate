@@ -26,19 +26,8 @@ PAGE_WIDTH = 595.0
 PAGE_HEIGHT = 842.0
 
 
-def create_showcase():
-    """Create comprehensive PDF showcase matching Rust and Ruby versions."""
-
-    # Use 36pt margin to match Prawn default
-    doc = Document(margin=Margin(36, 36, 36, 36))
-    doc.title("pdfcrate Python Showcase").author("pdfcrate")
-
-    # Track page indices for outline
-    page_idx = 0
-    drawing_page = page_idx
-
-    # Drawing Primitives, Polygons & Transparency
-
+def add_drawing_primitives_page(doc):
+    """Page 1: Drawing Primitives, Polygons & Transparency"""
     # Draw coordinate axes for visual reference (gray)
     doc.stroke_axis(at=(20, 20), color=(0.6, 0.6, 0.6), step=100)
 
@@ -70,8 +59,8 @@ def create_showcase():
     doc.stroke(Color(0.2, 0.7, 0.4), 2.5)
     doc.circle((150, 420), 40, do_fill=False, do_stroke=True)
 
-    # Dashed line
-    doc.stroke(Color(0.2, 0.2, 0.2), 1.5)
+    # Dashed line (matches Ruby's inherited 2.5pt line width)
+    doc.stroke(Color(0.2, 0.2, 0.2), 2.5)
     doc.dash([6.0, 4.0])
     doc.line((60, 360), (240, 360))
     doc.undash()
@@ -163,13 +152,9 @@ def create_showcase():
     doc.text_at("Circles: 100%, 70%, 40%", (60, 70))
     doc.text_at("Rectangles: 100%, 65%, 35%", (320, 70))
 
-    page_idx += 1
-    png_page = page_idx
 
-    # Embedded PNG
-
-    doc.new_page()
-
+def add_png_page(doc):
+    """Page 2: Embedded PNG"""
     margin = 36.0
     header_height = 32.0
 
@@ -177,28 +162,23 @@ def create_showcase():
     doc.text_at("Embedded PNG", (margin, PAGE_HEIGHT - margin - 16))
 
     if os.path.exists("examples/example.png"):
-        # Calculate fit dimensions (matches Rust fit_image function)
         available_width = PAGE_WIDTH - 2 * margin
         available_height = PAGE_HEIGHT - 2 * margin - header_height
-
-        # Position is bottom-left corner of available area, image will be centered within fit bounds
         doc.image_at("examples/example.png", (margin, margin), fit=(available_width, available_height))
     else:
         doc.font("Helvetica-Oblique", 11)
         doc.text_at("(example.png not found - run from project root)", (margin, 700))
 
-    page_idx += 1
-    jpeg_page = page_idx
 
-    # Embedded JPEG
-
-    doc.new_page()
+def add_jpeg_page(doc):
+    """Page 3: Embedded JPEG"""
+    margin = 36.0
+    header_height = 32.0
 
     doc.font("Helvetica", 14)
     doc.text_at("JPEG (converted from PNG at runtime)", (margin, PAGE_HEIGHT - margin - 16))
 
     if os.path.exists("examples/example.png"):
-        # Convert PNG to JPEG at runtime
         try:
             from PIL import Image
             img = Image.open("examples/example.png")
@@ -209,8 +189,6 @@ def create_showcase():
 
             available_width = PAGE_WIDTH - 2 * margin
             available_height = PAGE_HEIGHT - 2 * margin - header_height
-
-            # Position is bottom-left corner of available area, image will be centered within fit bounds
             doc.image_bytes(jpeg_bytes, "jpeg", (margin, margin), fit=(available_width, available_height))
         except ImportError:
             doc.font("Helvetica-Oblique", 11)
@@ -219,12 +197,11 @@ def create_showcase():
         doc.font("Helvetica-Oblique", 11)
         doc.text_at("(example.png not found - run from project root)", (margin, 700))
 
-    page_idx += 1
-    alpha_page = page_idx
 
-    # PNG with Alpha Transparency
-
-    doc.new_page()
+def add_alpha_png_page(doc):
+    """Page 4: PNG with Alpha Transparency"""
+    margin = 36.0
+    header_height = 32.0
 
     doc.font("Helvetica", 14)
     doc.text_at("PNG with alpha transparency", (margin, PAGE_HEIGHT - margin - 16))
@@ -232,20 +209,14 @@ def create_showcase():
     if os.path.exists("examples/example.png"):
         available_width = PAGE_WIDTH - 2 * margin
         available_height = PAGE_HEIGHT - 2 * margin - header_height
-
-        # Position is bottom-left corner of available area, image will be centered within fit bounds
         doc.image_at("examples/example.png", (margin, margin), fit=(available_width, available_height))
     else:
         doc.font("Helvetica-Oblique", 11)
         doc.text_at("(example-alpha.png not found - run from project root)", (margin, 700))
 
-    page_idx += 1
-    custom_font_page = page_idx
 
-    # Custom Font Embedding
-
-    doc.new_page()
-
+def add_custom_font_page(doc):
+    """Page 5: Custom Font Embedding"""
     font_margin = 48.0
 
     # Header band
@@ -257,31 +228,26 @@ def create_showcase():
     FONT_ITALIC_PATH = "examples/fonts/Roboto-Italic.ttf"
 
     if os.path.exists(FONT_PATH) and os.path.exists(FONT_BOLD_PATH) and os.path.exists(FONT_ITALIC_PATH):
-        # Embed fonts
         font_regular = doc.embed_font(FONT_PATH)
         font_bold = doc.embed_font(FONT_BOLD_PATH)
         font_italic = doc.embed_font(FONT_ITALIC_PATH)
 
-        # Page title (using embedded font)
         doc.font(font_bold.name, 28)
         doc.text_at("Custom Font Embedding", (font_margin, 800))
 
         doc.font(font_regular.name, 12)
         doc.text_at("TrueType fonts with full Unicode support", (font_margin, 778))
 
-        # Section 1: Font showcase
         y = 700.0
 
         doc.font("Helvetica", 14)
         doc.text_at("Font Comparison:", (font_margin, y))
         y -= 30.0
 
-        # Standard font
         doc.font("Helvetica", 16)
         doc.text_at("Helvetica (Standard): The quick brown fox jumps over the lazy dog.", (font_margin, y))
         y -= 25.0
 
-        # Embedded fonts
         doc.font(font_regular.name, 16)
         doc.text_at("Roboto Regular: The quick brown fox jumps over the lazy dog.", (font_margin, y))
         y -= 25.0
@@ -294,7 +260,6 @@ def create_showcase():
         doc.text_at("Roboto Italic: The quick brown fox jumps over the lazy dog.", (font_margin, y))
         y -= 45.0
 
-        # Section 2: Size variations
         doc.font("Helvetica", 14)
         doc.text_at("Size Variations:", (font_margin, y))
         y -= 25.0
@@ -305,7 +270,6 @@ def create_showcase():
             y -= size + 8.0
         y -= 20.0
 
-        # Section 3: Text measurement
         doc.font("Helvetica", 14)
         doc.text_at("Text Measurement:", (font_margin, y))
         y -= 30.0
@@ -314,10 +278,8 @@ def create_showcase():
         sample_text = "Measured Text Width"
         text_width = doc.measure_text(sample_text)
 
-        # Draw the text
         doc.text_at(sample_text, (font_margin, y))
 
-        # Draw a line under it showing the measured width
         doc.stroke(Color(0.9, 0.2, 0.2), 2.0)
         doc.line((font_margin, y - 5), (font_margin + text_width, y - 5))
 
@@ -325,12 +287,10 @@ def create_showcase():
         doc.text_at(f"Width: {text_width:.1f} points at 18pt", (font_margin, y - 20))
         y -= 60.0
 
-        # Section 4: Mixed content
         doc.font("Helvetica", 14)
         doc.text_at("Mixed Fonts in Document:", (font_margin, y))
         y -= 30.0
 
-        # Draw a box with mixed font content
         doc.stroke(Color.gray(0.7), 1.0)
         doc.rounded_rect((font_margin, y + 10), PAGE_WIDTH - font_margin * 2, 90, 8, do_fill=False, do_stroke=True)
 
@@ -348,12 +308,9 @@ def create_showcase():
         doc.font("Helvetica-Oblique", 11)
         doc.text_at("(Roboto fonts not found - download from Google Fonts)", (font_margin, 700))
 
-    page_idx += 1
 
-    # Ligatures and Kerning
-
-    doc.new_page()
-
+def add_ligatures_page(doc):
+    """Page 6: Ligatures and Kerning"""
     lig_margin = 48.0
 
     # Header band
@@ -376,7 +333,6 @@ def create_showcase():
         y = 700.0
         doc.font(maple_font.name, 22)
 
-        # Ligature samples
         samples = ["== != === !== <= >= -> => <-> <=>"]
         for line in samples:
             doc.text_at(line, (lig_margin, y))
@@ -440,12 +396,9 @@ def create_showcase():
         doc.font("Helvetica-Oblique", 11)
         doc.text_at("(MapleMono NF font not found)", (lig_margin, 700))
 
-    page_idx += 1
 
-    # CJK Font Support
-
-    doc.new_page()
-
+def add_cjk_page(doc):
+    """Page 7: CJK Font Support"""
     cjk_margin = 48.0
 
     # Header band
@@ -461,7 +414,6 @@ def create_showcase():
         cjk_regular = doc.embed_font(CJK_FONT_REGULAR)
         cjk_medium = doc.embed_font(CJK_FONT_MEDIUM)
 
-        # Page title
         doc.font(cjk_medium.name, 28)
         doc.text_at("CJK 字体支持", (cjk_margin, 800))
 
@@ -470,7 +422,6 @@ def create_showcase():
 
         y = 710.0
 
-        # Section 1: Chinese text samples
         doc.font("Helvetica", 14)
         doc.text_at("Chinese Text Samples:", (cjk_margin, y))
         y -= 30.0
@@ -487,7 +438,6 @@ def create_showcase():
         doc.text_at("Medium: 日月盈昃，辰宿列张", (cjk_margin, y))
         y -= 40.0
 
-        # Section 2: Mixed content
         doc.font("Helvetica", 14)
         doc.text_at("Mixed Language Content:", (cjk_margin, y))
         y -= 30.0
@@ -500,7 +450,6 @@ def create_showcase():
         doc.text_at("可用于 Cloudflare Workers 等 WASM 环境", (cjk_margin, y))
         y -= 40.0
 
-        # Section 3: Classical Chinese
         doc.font("Helvetica", 14)
         doc.text_at("Classical Chinese:", (cjk_margin, y))
         y -= 30.0
@@ -518,7 +467,6 @@ def create_showcase():
             y -= 20.0
         y -= 20.0
 
-        # Section 4: Japanese text
         doc.font("Helvetica", 14)
         doc.text_at("Japanese Text:", (cjk_margin, y))
         y -= 30.0
@@ -531,7 +479,6 @@ def create_showcase():
         doc.text_at("漢字混じり: 東京は日本の首都です", (cjk_margin, y))
         y -= 40.0
 
-        # Section 5: Size variations with CJK
         doc.font("Helvetica", 14)
         doc.text_at("Size Variations:", (cjk_margin, y))
         y -= 25.0
@@ -541,7 +488,6 @@ def create_showcase():
             doc.text_at(f"{int(size)}pt: 中文字体大小测试", (cjk_margin, y))
             y -= size + 8.0
 
-        # Footer note
         doc.font("Helvetica", 10)
         doc.text_at("Note: CJK fonts are subsetted - only used glyphs are embedded to reduce file size.", (cjk_margin, 60))
     else:
@@ -551,13 +497,9 @@ def create_showcase():
         doc.font("Helvetica-Oblique", 11)
         doc.text_at("(LXGW WenKai fonts not found)", (cjk_margin, 700))
 
-    page_idx += 1
-    forms_page = page_idx
 
-    # Interactive Forms
-
-    doc.new_page()
-
+def add_forms_page(doc):
+    """Page 8: Interactive Forms"""
     form_margin = 48.0
 
     # Header band
@@ -577,75 +519,61 @@ def create_showcase():
     field_height = 20.0
     row_height = 35.0
 
-    # Section: Contact Information
     doc.font("Helvetica", 14)
     doc.text_at("Contact Information", (label_x, y))
     y -= row_height
 
     doc.font("Helvetica", 11)
 
-    # Name field
     doc.text_at("Name:", (label_x, y + 5))
     doc.text_field("name", (field_x, y, field_x + field_width, y + field_height))
     y -= row_height
 
-    # Email field
     doc.text_at("Email:", (label_x, y + 5))
     doc.text_field("email", (field_x, y, field_x + field_width, y + field_height))
     y -= row_height
 
-    # Phone field
     doc.text_at("Phone:", (label_x, y + 5))
     doc.text_field("phone", (field_x, y, field_x + 150, y + field_height))
     y -= row_height + 20
 
-    # Section: Preferences
     doc.font("Helvetica", 14)
     doc.text_at("Preferences", (label_x, y))
     y -= row_height
 
     doc.font("Helvetica", 11)
 
-    # Newsletter checkbox
     doc.text_at("Subscribe:", (label_x, y + 5))
     doc.checkbox("newsletter", (field_x, y, field_x + 18, y + 18), checked=True)
     doc.text_at("Newsletter", (field_x + 25, y + 5))
     y -= row_height
 
-    # Updates checkbox
     doc.text_at("Receive:", (label_x, y + 5))
     doc.checkbox("updates", (field_x, y, field_x + 18, y + 18), checked=False)
     doc.text_at("Product updates", (field_x + 25, y + 5))
     y -= row_height + 20
 
-    # Section: Selection
     doc.font("Helvetica", 14)
     doc.text_at("Selection", (label_x, y))
     y -= row_height
 
     doc.font("Helvetica", 11)
 
-    # Country dropdown
     doc.text_at("Country:", (label_x, y + 5))
     doc.dropdown("country", (field_x, y, field_x + field_width, y + field_height),
                  ["USA", "Canada", "UK", "Germany", "France", "Japan"])
     y -= row_height
 
-    # Department dropdown
     doc.text_at("Department:", (label_x, y + 5))
     doc.dropdown("department", (field_x, y, field_x + 150, y + field_height),
                  ["Sales", "Engineering", "Marketing", "Support"])
 
-    # Footer note
     doc.font("Helvetica", 10)
     doc.text_at("Note: Form fields are interactive - click to edit in a PDF viewer.", (form_margin, 80))
 
-    page_idx += 1
 
-    # SVG Barcode
-
-    doc.new_page()
-
+def add_svg_barcode_page(doc):
+    """Page 9: SVG Barcode"""
     svg_margin = 48.0
 
     # Header band
@@ -698,7 +626,6 @@ def create_showcase():
     x = svg_margin
     y = 520.0
 
-    # Background rectangle (using top-left origin)
     rect_top_y = y + target_height + 8
     doc.fill(Color.gray(0.97))
     doc.rect((x - 8, rect_top_y), target_width + 16, target_height + 16)
@@ -710,13 +637,9 @@ def create_showcase():
     doc.font("Helvetica", 10)
     doc.text_at("Use SVG for barcodes, charts, and icons without rasterization.", (svg_margin, 470))
 
-    page_idx += 1
-    layout_page = page_idx
 
-    # LayoutDocument Demo
-
-    doc.new_page()
-
+def add_layout_document_page(doc):
+    """Page 10: LayoutDocument Demo"""
     # Header band
     doc.fill(Color.gray(0.95))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
@@ -727,9 +650,6 @@ def create_showcase():
     doc.font("Helvetica", 11)
     doc.text_at("Prawn-style cursor-based layout (no manual coordinate calculation)", (36, 780))
 
-    # Reset to layout mode with proper margins
-    # Match Rust: top_margin = 136 (136pt from page top = 842-136 = 706 cursor start)
-    # Python already has 36pt top margin, so move down 136-36 = 100 to reach same position
     doc.move_down(100)
 
     # Section 1: Bounding Box Demo
@@ -737,8 +657,6 @@ def create_showcase():
     doc.text("1. Nested Bounding Boxes:")
     doc.move_down(10)
 
-    # Outer box (fixed height)
-    # Prawn-style: y is position from bounds.bottom, pass cursor() to place at current position
     y = doc.cursor()
     with doc.bounding_box(220, height=90, y=y):
         doc.stroke_bounds()
@@ -746,7 +664,6 @@ def create_showcase():
         doc.text("Outer box (220x90)")
         doc.move_down(5)
 
-        # Inner box (nested)
         inner_y = doc.cursor()
         with doc.bounding_box(160, x=15, y=inner_y):
             doc.stroke_bounds()
@@ -762,14 +679,12 @@ def create_showcase():
 
     box_top = doc.cursor()
 
-    # Left box
     with doc.bounding_box(140, height=60, y=box_top):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
         doc.text("Left Box")
         doc.text("Width: 140pt")
 
-    # Right box (same y level)
     doc.set_cursor(box_top)
     with doc.bounding_box(140, height=60, x=160, y=box_top):
         doc.stroke_bounds()
@@ -779,7 +694,7 @@ def create_showcase():
 
     doc.move_down(15)
 
-    # Section 2: Formatted text (mixed styles)
+    # Section 2: Formatted text
     doc.font("Helvetica", 12)
     doc.text("3. Formatted Text (Mixed Styles):")
     doc.move_down(8)
@@ -860,12 +775,9 @@ def create_showcase():
         doc.text("stroke_bounds() draws")
         doc.text("the current bounding box")
 
-    page_idx += 1
 
-    # Text Box Overflow Modes
-
-    doc.new_page()
-
+def add_text_box_overflow_page(doc):
+    """Page 11: Text Box Overflow Modes"""
     # Header band
     doc.fill(Color.gray(0.95))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
@@ -876,17 +788,12 @@ def create_showcase():
     doc.font("Helvetica", 11)
     doc.text_at("Truncate, ShrinkToFit, and Expand behaviors", (48, 784))
 
-    # Sample text that will overflow
     long_text = ("Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
                  "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
                  "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris. "
                  "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum.")
 
-    # Reset cursor for layout mode
-    # Match Rust: top_margin = 136, left margin = 48
-    doc.move_down(100)  # 136 - 36 = 100 (account for existing margin)
-
-    # Indent to match Rust's 48pt left margin (our margin is 36pt, so indent 12pt)
+    doc.move_down(100)
     doc.indent_push(12, 0)
 
     box_width = 220.0
@@ -902,13 +809,11 @@ def create_showcase():
     doc.text("Text that exceeds the box height is silently discarded:")
     doc.move_down(10)
 
-    # Draw border and text in the same bounding_box
     y = doc.cursor()
     outer_height = box_height + padding * 2
     with doc.bounding_box(box_width + padding * 2, height=outer_height, y=y):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
-        # Prawn-style: point[1] is Y from bounds.bottom, place at top with padding
         truncate_result = doc.text_box(long_text, (padding, outer_height - padding), box_width, box_height, Overflow.Truncate)
 
     doc.move_down(10)
@@ -948,14 +853,10 @@ def create_showcase():
     doc.text("Box height expands to fit all content:")
     doc.move_down(10)
 
-    # For Expand, render text first, then draw border with actual height
     cursor_before = doc.cursor()
     doc.font("Helvetica", 9)
-    # Prawn-style: point[1] is Y from bounds.bottom
-    # Subtract padding from y to create top padding (text starts below border top)
     expand_result = doc.text_box(long_text, (padding, cursor_before - padding), box_width, box_height, Overflow.Expand)
 
-    # Draw border around the expanded content using float
     with doc.float():
         doc.set_cursor(cursor_before)
         with doc.bounding_box(box_width + padding * 2, height=expand_result.height + padding * 2, y=cursor_before):
@@ -967,7 +868,7 @@ def create_showcase():
 
     doc.move_down(25)
 
-    # Section 4: Comparison - same text, all three modes side by side
+    # Section 4: Comparison
     doc.font("Helvetica-Bold", 14)
     doc.text("4. Side-by-Side Comparison")
     doc.move_down(8)
@@ -984,16 +885,13 @@ def create_showcase():
 
     row_top = doc.cursor()
 
-    # Box 1: Truncate
     with doc.bounding_box(compare_width, height=compare_height, y=row_top):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
-        # Prawn-style: point[1] is Y from bounds.bottom
         doc.text_box(compare_text, (small_padding, compare_height - small_padding),
                      compare_width - small_padding * 2, compare_height - small_padding * 2,
                      Overflow.Truncate)
 
-    # Box 2: ShrinkToFit
     doc.set_cursor(row_top)
     with doc.bounding_box(compare_width, height=compare_height, x=compare_width + gap, y=row_top):
         doc.stroke_bounds()
@@ -1002,26 +900,20 @@ def create_showcase():
                      compare_width - small_padding * 2, compare_height - small_padding * 2,
                      shrink_to_fit=5.0)
 
-    # Box 3: Expand
     doc.set_cursor(row_top)
     doc.font("Helvetica", 9)
-    # Prawn-style: point[1] is Y from bounds.bottom
-    # Subtract small_padding from y to create top padding
     expand_cmp_result = doc.text_box(compare_text, ((compare_width + gap) * 2 + small_padding, row_top - small_padding),
                                       compare_width - small_padding * 2, compare_height - small_padding * 2,
                                       Overflow.Expand)
 
-    # Draw border for expanded box
     with doc.float():
         doc.set_cursor(row_top)
         with doc.bounding_box(compare_width, height=expand_cmp_result.height + small_padding * 2, x=(compare_width + gap) * 2, y=row_top):
             doc.stroke_bounds()
 
-    # Labels below the boxes
     max_box_height = max(compare_height, expand_cmp_result.height + small_padding * 2)
     doc.set_cursor(row_top - max_box_height - 5)
 
-    # Convert relative cursor to absolute Y for text_at (same as Rust version)
     left_margin = 48.0
     label_y = doc.bounds_bottom() + doc.cursor()
     doc.font("Helvetica", 7)
@@ -1029,16 +921,11 @@ def create_showcase():
     doc.text_at("ShrinkToFit(5.0)", (left_margin + compare_width + gap + small_padding, label_y))
     doc.text_at(f"Expand (h={expand_cmp_result.height + small_padding * 2:.0f})", (left_margin + (compare_width + gap) * 2 + small_padding, label_y))
 
-    # Pop the indent we added at the start of this page
     doc.indent_pop(12, 0)
 
-    page_idx += 1
-    layout_advanced_page = page_idx
 
-    # Text Layout Features
-
-    doc.new_page()
-
+def add_text_layout_page(doc):
+    """Page 12: Text Layout Features"""
     # Header band
     doc.fill(Color.gray(0.95))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
@@ -1049,9 +936,8 @@ def create_showcase():
     doc.font("Helvetica", 11)
     doc.text_at("Text alignment, leading, wrapping & text boxes", (48, 784))
 
-    # Use absolute positioning for content (matches Rust)
     left_margin = 48.0
-    y = 720.0  # Start below header
+    y = 720.0
 
     # Section 1: Text Alignment
     doc.font("Helvetica-Bold", 12)
@@ -1062,11 +948,9 @@ def create_showcase():
     doc.text_at("Left aligned text (default)", (left_margin, y))
     y -= 12
 
-    # Center (approximate)
     doc.text_at("Center aligned text", ((PAGE_WIDTH - 120) / 2, y))
     y -= 12
 
-    # Right aligned
     doc.text_at("Right aligned text", (PAGE_WIDTH - left_margin - 100, y))
     y -= 20
 
@@ -1075,7 +959,6 @@ def create_showcase():
     doc.text_at("2. Leading (Line Spacing)", (left_margin, y))
     y -= 16
 
-    # Left column
     col1_x = left_margin
     col2_x = 320.0
     leading_y = y
@@ -1097,7 +980,6 @@ def create_showcase():
     y -= 9
     doc.text_at("  Line 2 with tight spacing", (col1_x, y))
 
-    # Right column - Loose
     y2 = leading_y
     doc.font("Helvetica", 8.5)
     doc.text_at("Loose leading (1.8x):", (col2_x, y2))
@@ -1129,18 +1011,15 @@ def create_showcase():
     doc.text_at("4. Text Box (Fixed Height)", (left_margin, y))
     y -= 14
 
-    # Draw two boxes with borders
     box_width = 235.0
     box_height = 55.0
     box1_x = left_margin
     box2_x = left_margin + 265
 
-    # Draw box borders
     doc.stroke(Color.gray(0.6), 0.5)
     doc.rect((box1_x, y), box_width, box_height, do_fill=False, do_stroke=True)
     doc.rect((box2_x, y), box_width, box_height, do_fill=False, do_stroke=True)
 
-    # Text inside boxes
     doc.font("Helvetica", 7.5)
     box1_lines = [
         "Text boxes constrain content to a fixed height.",
@@ -1165,17 +1044,12 @@ def create_showcase():
 
     y = y - box_height - 25
 
-    # Footer
     doc.font("Helvetica-Oblique", 8)
     doc.text_at("All text layout features work seamlessly with LayoutDocument", (130, y))
 
-    page_idx += 1
-    table_page = page_idx
 
-    # Table Demo
-
-    doc.new_page()
-
+def add_table_page(doc):
+    """Page 13: Table Demo"""
     # Header band
     doc.fill(Color.gray(0.95))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
@@ -1186,10 +1060,8 @@ def create_showcase():
     doc.font("Helvetica", 11)
     doc.text_at("Data tables with headers, row colors, and styling", (48, 784))
 
-    # Reset for layout mode
     doc.move_down(100)
 
-    # Basic table
     doc.font("Helvetica-Bold", 14)
     doc.text("1. Basic Table")
     doc.move_down(10)
@@ -1203,7 +1075,6 @@ def create_showcase():
     ])
     doc.move_down(20)
 
-    # Table with fixed column widths
     doc.font("Helvetica-Bold", 14)
     doc.text("2. Fixed Column Widths")
     doc.move_down(10)
@@ -1217,7 +1088,6 @@ def create_showcase():
     ], TableOptions(column_widths=[150, 80, 80, 80]))
     doc.move_down(20)
 
-    # Table with header and row colors
     doc.font("Helvetica-Bold", 14)
     doc.text("3. Table with Row Colors")
     doc.move_down(10)
@@ -1231,17 +1101,11 @@ def create_showcase():
         ["004", "Inactive", "Fourth item"],
     ], TableOptions(header=1, row_colors=[Color.white(), Color.gray(0.95)]))
 
-    page_idx += 1
-    grid_page = page_idx
 
-    # Grid System
-
-    doc.new_page()
-
-    # Define a 6-row, 4-column grid with 10pt gutters
+def add_grid_page(doc):
+    """Page 14: Grid System"""
     doc.define_grid(rows=6, columns=4, gutter=10)
 
-    # Row 0: Header cells with title
     with doc.grid_span((0, 0), (0, 3)):
         doc.stroke_bounds()
         doc.font("Helvetica-Bold", 24)
@@ -1250,7 +1114,6 @@ def create_showcase():
         doc.font("Helvetica", 11)
         doc.text("Prawn-style grid layout for precise positioning")
 
-    # Row 1: Vertical span and large span
     with doc.grid_span((1, 0), (2, 0)):
         doc.stroke_bounds()
         doc.font("Helvetica-Bold", 10)
@@ -1268,7 +1131,6 @@ def create_showcase():
         doc.text("Perfect for content areas, sidebars, or")
         doc.text("any layout requiring multiple cells.")
 
-    # Row 3-4: Nav, Main Content, Side
     with doc.grid_cell(3, 0):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
@@ -1289,15 +1151,114 @@ def create_showcase():
         doc.font("Helvetica", 9)
         doc.text("Side")
 
-    # Row 5: Footer cells
     for col in range(4):
         with doc.grid_cell(5, col):
             doc.stroke_bounds()
             doc.font("Helvetica", 9)
             doc.text(f"Footer {col + 1}")
 
-    # Build document outline (bookmarks)
 
+def create_showcase():
+    """Create comprehensive PDF showcase matching Rust and Ruby versions."""
+
+    doc = Document(margin=Margin(36, 36, 36, 36))
+    doc.title("pdfcrate Python Showcase").author("pdfcrate")
+
+    # Track page indices for outline
+    page_idx = 0
+    drawing_page = page_idx
+
+    # Page 1: Drawing Primitives
+    add_drawing_primitives_page(doc)
+
+    page_idx += 1
+    png_page = page_idx
+
+    # Page 2: Embedded PNG
+    doc.new_page()
+    add_png_page(doc)
+
+    page_idx += 1
+    jpeg_page = page_idx
+
+    # Page 3: Embedded JPEG
+    doc.new_page()
+    add_jpeg_page(doc)
+
+    page_idx += 1
+    alpha_page = page_idx
+
+    # Page 4: PNG with Alpha
+    doc.new_page()
+    add_alpha_png_page(doc)
+
+    page_idx += 1
+    custom_font_page = page_idx
+
+    # Page 5: Custom Font Embedding
+    doc.new_page()
+    add_custom_font_page(doc)
+
+    page_idx += 1
+
+    # Page 6: Ligatures and Kerning
+    doc.new_page()
+    add_ligatures_page(doc)
+
+    page_idx += 1
+
+    # Page 7: CJK Font Support
+    doc.new_page()
+    add_cjk_page(doc)
+
+    page_idx += 1
+    forms_page = page_idx
+
+    # Page 8: Interactive Forms
+    doc.new_page()
+    add_forms_page(doc)
+
+    page_idx += 1
+
+    # Page 9: SVG Barcode
+    doc.new_page()
+    add_svg_barcode_page(doc)
+
+    page_idx += 1
+    layout_page = page_idx
+
+    # Page 10: LayoutDocument Demo
+    doc.new_page()
+    add_layout_document_page(doc)
+
+    page_idx += 1
+
+    # Page 11: Text Box Overflow Modes
+    doc.new_page()
+    add_text_box_overflow_page(doc)
+
+    page_idx += 1
+    layout_advanced_page = page_idx
+
+    # Page 12: Text Layout Features
+    doc.new_page()
+    add_text_layout_page(doc)
+
+    page_idx += 1
+    table_page = page_idx
+
+    # Page 13: Table Demo
+    doc.new_page()
+    add_table_page(doc)
+
+    page_idx += 1
+    grid_page = page_idx
+
+    # Page 14: Grid System
+    doc.new_page()
+    add_grid_page(doc)
+
+    # Build document outline (bookmarks)
     doc.outline([
         OutlineItem("Drawing & Graphics", page=drawing_page, children=[
             OutlineItem("Strokes & Fills", page=drawing_page),

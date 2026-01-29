@@ -38,7 +38,8 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header band
     doc.fill(|ctx| {
-        ctx.gray(0.95).rectangle([0.0, 842.0], 595.0, 82.0);
+        ctx.color(0.95, 0.95, 0.95)
+            .rectangle([0.0, 842.0], 595.0, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -52,38 +53,48 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     doc.text_at("Fills", [320.0, 720.0]);
 
     // === Stroke-only shapes ===
+    // Blue rectangle
     doc.stroke(|ctx| {
-        // Blue rectangle
         ctx.color(0.15, 0.45, 0.85)
             .line_width(2.0)
             .rectangle([60.0, 700.0], 180.0, 90.0);
-        // Red rounded rectangle
+    });
+    // Red rounded rectangle
+    doc.stroke(|ctx| {
         ctx.color(0.9, 0.3, 0.2).line_width(3.0).rounded_rectangle(
             [60.0, 580.0],
             180.0,
             90.0,
             14.0,
         );
-        // Green circle
+    });
+    // Green circle
+    doc.stroke(|ctx| {
         ctx.color(0.2, 0.7, 0.4)
             .line_width(2.5)
             .circle([150.0, 420.0], 40.0);
-        // Dashed line
+    });
+    // Dashed line (matches Ruby's inherited 2.5pt line width)
+    doc.stroke(|ctx| {
         ctx.color(0.2, 0.2, 0.2)
+            .line_width(2.5)
             .dash(&[6.0, 4.0])
-            .line([60.0, 360.0], [240.0, 360.0])
-            .undash();
+            .line([60.0, 360.0], [240.0, 360.0]);
     });
 
     // === Filled shapes ===
+    // Yellow rounded rectangle
     doc.fill(|ctx| {
-        // Yellow rounded rectangle
         ctx.color(0.98, 0.85, 0.25)
             .rounded_rectangle([320.0, 700.0], 220.0, 90.0, 18.0);
-        // Blue ellipse
+    });
+    // Blue ellipse
+    doc.fill(|ctx| {
         ctx.color(0.2, 0.62, 0.95)
             .ellipse([430.0, 520.0], 90.0, 45.0);
-        // Pink circle
+    });
+    // Pink circle
+    doc.fill(|ctx| {
         ctx.color(0.9, 0.5, 0.6).circle([430.0, 420.0], 45.0);
     });
 

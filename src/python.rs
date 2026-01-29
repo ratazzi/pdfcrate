@@ -1854,9 +1854,8 @@ impl Document {
                             ctx.dash_with_phase(pattern, phase);
                         }
                         ctx.line([start.0, start.1], [end.0, end.1]);
-                        if dash.is_some() {
-                            ctx.undash();
-                        }
+                        // Note: undash() must NOT be called here - stroke happens on drop,
+                        // so undash would clear the dash pattern before the stroke executes
                     });
                 };
                 if fill_alpha < 1.0 || stroke_alpha < 1.0 {
@@ -1873,9 +1872,8 @@ impl Document {
                             ctx.dash_with_phase(pattern, phase);
                         }
                         ctx.line([start.0, start.1], [end.0, end.1]);
-                        if dash.is_some() {
-                            ctx.undash();
-                        }
+                        // Note: undash() must NOT be called here - stroke happens on drop,
+                        // so undash would clear the dash pattern before the stroke executes
                     });
                 };
                 if fill_alpha < 1.0 || stroke_alpha < 1.0 {
