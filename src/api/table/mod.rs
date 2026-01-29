@@ -1083,7 +1083,8 @@ impl Table {
             if needs_page_break && current_row >= header_rows {
                 // Start a new page
                 doc.start_new_page();
-                current_y = doc.cursor();
+                // cursor() returns relative to bounds.bottom, convert to absolute Y
+                current_y = doc.bounds().absolute_bottom() + doc.cursor();
                 current_page_height = 0.0; // Reset for new page
 
                 // Redraw header rows on new page
@@ -1104,7 +1105,8 @@ impl Table {
         }
 
         // Update document cursor to the end of the table
-        doc.set_cursor(current_y);
+        // set_cursor expects relative Y (from bounds.bottom), convert from absolute
+        doc.set_cursor(current_y - doc.bounds().absolute_bottom());
         current_page_height
     }
 

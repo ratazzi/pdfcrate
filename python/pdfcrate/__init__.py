@@ -42,6 +42,7 @@ from .pdfcrate import (
     PageContext,
     # Table
     Table,
+    TableOptions,
     # Rich text
     TextFragment,
     SpanBuilder,
@@ -68,6 +69,7 @@ __all__ = [
     "BoundingBoxContext",
     "PageContext",
     "Table",
+    "TableOptions",
     "TextFragment",
     "SpanBuilder",
     "OutlineItem",

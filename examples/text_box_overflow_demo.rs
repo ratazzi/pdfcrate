@@ -63,16 +63,20 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Draw border and text in the same bounding_box
     let mut truncate_result = None;
+    let y = layout.cursor();
+    let outer_height = box_height + padding * 2.0;
     layout.bounding_box(
-        [0.0, 0.0],
+        [0.0, y],
         box_width + padding * 2.0,
-        Some(box_height + padding * 2.0),
+        Some(outer_height),
         |l| {
             l.stroke_bounds();
             l.font("Helvetica").size(9.0);
+            // Prawn-style: point[1] is Y from bounds.bottom
+            // To place text_box at top with padding: y = outer_height - padding
             truncate_result = Some(l.text_box(
                 long_text,
-                [padding, padding],
+                [padding, outer_height - padding],
                 box_width,
                 box_height,
                 Overflow::Truncate,
@@ -100,16 +104,18 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     layout.move_down(10.0);
 
     let mut shrink_result = None;
+    let y = layout.cursor();
+    let outer_height = box_height + padding * 2.0;
     layout.bounding_box(
-        [0.0, 0.0],
+        [0.0, y],
         box_width + padding * 2.0,
-        Some(box_height + padding * 2.0),
+        Some(outer_height),
         |l| {
             l.stroke_bounds();
             l.font("Helvetica").size(9.0);
             shrink_result = Some(l.text_box(
                 long_text,
-                [padding, padding],
+                [padding, outer_height - padding],
                 box_width,
                 box_height,
                 Overflow::ShrinkToFit(6.0),
@@ -139,9 +145,11 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     // For Expand, render text first, then draw border with actual height
     let cursor_before = layout.cursor();
     layout.font("Helvetica").size(9.0);
+    // Prawn-style: point[1] is Y from bounds.bottom
+    // Subtract padding from y to create top padding (text starts below border top)
     let result = layout.text_box(
         long_text,
-        [padding, padding],
+        [padding, cursor_before - padding],
         box_width,
         box_height,
         Overflow::Expand,
@@ -151,7 +159,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     layout.float(|l| {
         l.set_cursor(cursor_before);
         l.bounding_box(
-            [0.0, 0.0],
+            [0.0, cursor_before],
             box_width + padding * 2.0,
             Some(result.height + padding * 2.0),
             |l| {
@@ -189,12 +197,13 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     let row_top = layout.cursor();
 
     // Box 1: Truncate
-    layout.bounding_box([0.0, 0.0], compare_width, Some(compare_height), |l| {
+    layout.bounding_box([0.0, row_top], compare_width, Some(compare_height), |l| {
         l.stroke_bounds();
         l.font("Helvetica").size(9.0);
+        // Prawn-style: point[1] is Y from bounds.bottom, place at top with padding
         l.text_box(
             compare_text,
-            [small_padding, small_padding],
+            [small_padding, compare_height - small_padding],
             compare_width - small_padding * 2.0,
             compare_height - small_padding * 2.0,
             Overflow::Truncate,
@@ -204,7 +213,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     // Box 2: ShrinkToFit
     layout.set_cursor(row_top);
     layout.bounding_box(
-        [compare_width + gap, 0.0],
+        [compare_width + gap, row_top],
         compare_width,
         Some(compare_height),
         |l| {
@@ -212,7 +221,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
             l.font("Helvetica").size(9.0);
             l.text_box(
                 compare_text,
-                [small_padding, small_padding],
+                [small_padding, compare_height - small_padding],
                 compare_width - small_padding * 2.0,
                 compare_height - small_padding * 2.0,
                 Overflow::ShrinkToFit(5.0),
@@ -223,9 +232,14 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     // Box 3: Expand - render text first, then draw border
     layout.set_cursor(row_top);
     layout.font("Helvetica").size(9.0);
+    // Prawn-style: point[1] is Y from bounds.bottom
+    // Subtract small_padding from y to create top padding
     let result = layout.text_box(
         compare_text,
-        [(compare_width + gap) * 2.0 + small_padding, small_padding],
+        [
+            (compare_width + gap) * 2.0 + small_padding,
+            row_top - small_padding,
+        ],
         compare_width - small_padding * 2.0,
         compare_height - small_padding * 2.0,
         Overflow::Expand,
@@ -235,7 +249,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     layout.float(|l| {
         l.set_cursor(row_top);
         l.bounding_box(
-            [(compare_width + gap) * 2.0, 0.0],
+            [(compare_width + gap) * 2.0, row_top],
             compare_width,
             Some(result.height + small_padding * 2.0),
             |l| {
@@ -248,9 +262,9 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     let max_box_height = compare_height.max(result.height + small_padding * 2.0);
     layout.set_cursor(row_top - max_box_height - 5.0);
 
-    // Use absolute coordinates for labels (add left margin of 48.0)
+    // Convert relative cursor to absolute Y for text_at
     let left_margin = 48.0;
-    let label_y = layout.cursor();
+    let label_y = layout.bounds().absolute_bottom() + layout.cursor();
     layout.font("Helvetica").size(7.0);
     layout
         .inner_mut()

@@ -18,6 +18,7 @@ from pdfcrate import (
     TextFragment,
     OutlineItem,
     Overflow,
+    TableOptions,
 )
 
 # Page dimensions (A4)
@@ -37,6 +38,9 @@ def create_showcase():
     drawing_page = page_idx
 
     # Drawing Primitives, Polygons & Transparency
+
+    # Draw coordinate axes for visual reference (gray)
+    doc.stroke_axis(at=(20, 20), color=(0.6, 0.6, 0.6), step=100)
 
     # Header band (top-left: 0, 842)
     doc.fill(Color.gray(0.95))
@@ -734,14 +738,17 @@ def create_showcase():
     doc.move_down(10)
 
     # Outer box (fixed height)
-    with doc.bounding_box(220, height=90):
+    # Prawn-style: y is position from bounds.bottom, pass cursor() to place at current position
+    y = doc.cursor()
+    with doc.bounding_box(220, height=90, y=y):
         doc.stroke_bounds()
         doc.font("Helvetica", 10)
         doc.text("Outer box (220x90)")
         doc.move_down(5)
 
         # Inner box (nested)
-        with doc.bounding_box(160, x=15):
+        inner_y = doc.cursor()
+        with doc.bounding_box(160, x=15, y=inner_y):
             doc.stroke_bounds()
             doc.font("Helvetica", 9)
             doc.text("Inner nested box")
@@ -753,17 +760,18 @@ def create_showcase():
     doc.text("2. Side-by-Side Layout:")
     doc.move_down(10)
 
+    box_top = doc.cursor()
+
     # Left box
-    with doc.bounding_box(140, height=60):
+    with doc.bounding_box(140, height=60, y=box_top):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
         doc.text("Left Box")
         doc.text("Width: 140pt")
 
-    doc.move_down(-60)  # Go back up to same level
-
-    # Right box
-    with doc.bounding_box(140, height=60, x=160):
+    # Right box (same y level)
+    doc.set_cursor(box_top)
+    with doc.bounding_box(140, height=60, x=160, y=box_top):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
         doc.text("Right Box")
@@ -845,7 +853,8 @@ def create_showcase():
     doc.text("7. Bounds Visualization:")
     doc.move_down(8)
 
-    with doc.bounding_box(200, height=50):
+    y = doc.cursor()
+    with doc.bounding_box(200, height=50, y=y):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
         doc.text("stroke_bounds() draws")
@@ -877,6 +886,9 @@ def create_showcase():
     # Match Rust: top_margin = 136, left margin = 48
     doc.move_down(100)  # 136 - 36 = 100 (account for existing margin)
 
+    # Indent to match Rust's 48pt left margin (our margin is 36pt, so indent 12pt)
+    doc.indent_push(12, 0)
+
     box_width = 220.0
     box_height = 50.0
     padding = 4.0
@@ -891,10 +903,13 @@ def create_showcase():
     doc.move_down(10)
 
     # Draw border and text in the same bounding_box
-    with doc.bounding_box(box_width + padding * 2, height=box_height + padding * 2):
+    y = doc.cursor()
+    outer_height = box_height + padding * 2
+    with doc.bounding_box(box_width + padding * 2, height=outer_height, y=y):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
-        truncate_result = doc.text_box(long_text, (padding, padding), box_width, box_height, Overflow.Truncate)
+        # Prawn-style: point[1] is Y from bounds.bottom, place at top with padding
+        truncate_result = doc.text_box(long_text, (padding, outer_height - padding), box_width, box_height, Overflow.Truncate)
 
     doc.move_down(10)
     doc.font("Helvetica", 8)
@@ -911,10 +926,12 @@ def create_showcase():
     doc.text("Font size is reduced until text fits (minimum 6pt):")
     doc.move_down(10)
 
-    with doc.bounding_box(box_width + padding * 2, height=box_height + padding * 2):
+    y = doc.cursor()
+    outer_height = box_height + padding * 2
+    with doc.bounding_box(box_width + padding * 2, height=outer_height, y=y):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
-        shrink_result = doc.text_box(long_text, (padding, padding), box_width, box_height, shrink_to_fit=6.0)
+        shrink_result = doc.text_box(long_text, (padding, outer_height - padding), box_width, box_height, shrink_to_fit=6.0)
 
     doc.move_down(10)
     doc.font("Helvetica", 8)
@@ -934,12 +951,14 @@ def create_showcase():
     # For Expand, render text first, then draw border with actual height
     cursor_before = doc.cursor()
     doc.font("Helvetica", 9)
-    expand_result = doc.text_box(long_text, (padding, padding), box_width, box_height, Overflow.Expand)
+    # Prawn-style: point[1] is Y from bounds.bottom
+    # Subtract padding from y to create top padding (text starts below border top)
+    expand_result = doc.text_box(long_text, (padding, cursor_before - padding), box_width, box_height, Overflow.Expand)
 
     # Draw border around the expanded content using float
     with doc.float():
         doc.set_cursor(cursor_before)
-        with doc.bounding_box(box_width + padding * 2, height=expand_result.height + padding * 2):
+        with doc.bounding_box(box_width + padding * 2, height=expand_result.height + padding * 2, y=cursor_before):
             doc.stroke_bounds()
 
     doc.move_down(10)
@@ -966,45 +985,52 @@ def create_showcase():
     row_top = doc.cursor()
 
     # Box 1: Truncate
-    with doc.bounding_box(compare_width, height=compare_height):
+    with doc.bounding_box(compare_width, height=compare_height, y=row_top):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
-        doc.text_box(compare_text, (small_padding, small_padding),
+        # Prawn-style: point[1] is Y from bounds.bottom
+        doc.text_box(compare_text, (small_padding, compare_height - small_padding),
                      compare_width - small_padding * 2, compare_height - small_padding * 2,
                      Overflow.Truncate)
 
     # Box 2: ShrinkToFit
     doc.set_cursor(row_top)
-    with doc.bounding_box(compare_width, height=compare_height, x=compare_width + gap):
+    with doc.bounding_box(compare_width, height=compare_height, x=compare_width + gap, y=row_top):
         doc.stroke_bounds()
         doc.font("Helvetica", 9)
-        doc.text_box(compare_text, (small_padding, small_padding),
+        doc.text_box(compare_text, (small_padding, compare_height - small_padding),
                      compare_width - small_padding * 2, compare_height - small_padding * 2,
                      shrink_to_fit=5.0)
 
     # Box 3: Expand
     doc.set_cursor(row_top)
     doc.font("Helvetica", 9)
-    expand_cmp_result = doc.text_box(compare_text, ((compare_width + gap) * 2 + small_padding, small_padding),
+    # Prawn-style: point[1] is Y from bounds.bottom
+    # Subtract small_padding from y to create top padding
+    expand_cmp_result = doc.text_box(compare_text, ((compare_width + gap) * 2 + small_padding, row_top - small_padding),
                                       compare_width - small_padding * 2, compare_height - small_padding * 2,
                                       Overflow.Expand)
 
     # Draw border for expanded box
     with doc.float():
         doc.set_cursor(row_top)
-        with doc.bounding_box(compare_width, height=expand_cmp_result.height + small_padding * 2, x=(compare_width + gap) * 2):
+        with doc.bounding_box(compare_width, height=expand_cmp_result.height + small_padding * 2, x=(compare_width + gap) * 2, y=row_top):
             doc.stroke_bounds()
 
     # Labels below the boxes
     max_box_height = max(compare_height, expand_cmp_result.height + small_padding * 2)
     doc.set_cursor(row_top - max_box_height - 5)
 
+    # Convert relative cursor to absolute Y for text_at (same as Rust version)
     left_margin = 48.0
-    label_y = doc.cursor()
+    label_y = doc.bounds_bottom() + doc.cursor()
     doc.font("Helvetica", 7)
     doc.text_at("Truncate", (left_margin + small_padding, label_y))
     doc.text_at("ShrinkToFit(5.0)", (left_margin + compare_width + gap + small_padding, label_y))
     doc.text_at(f"Expand (h={expand_cmp_result.height + small_padding * 2:.0f})", (left_margin + (compare_width + gap) * 2 + small_padding, label_y))
+
+    # Pop the indent we added at the start of this page
+    doc.indent_pop(12, 0)
 
     page_idx += 1
     layout_advanced_page = page_idx
@@ -1144,6 +1170,68 @@ def create_showcase():
     doc.text_at("All text layout features work seamlessly with LayoutDocument", (130, y))
 
     page_idx += 1
+    table_page = page_idx
+
+    # Table Demo
+
+    doc.new_page()
+
+    # Header band
+    doc.fill(Color.gray(0.95))
+    doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
+
+    doc.font("Helvetica", 24)
+    doc.text_at("Table Demo", (48, 804))
+
+    doc.font("Helvetica", 11)
+    doc.text_at("Data tables with headers, row colors, and styling", (48, 784))
+
+    # Reset for layout mode
+    doc.move_down(100)
+
+    # Basic table
+    doc.font("Helvetica-Bold", 14)
+    doc.text("1. Basic Table")
+    doc.move_down(10)
+
+    doc.font("Helvetica", 10)
+    doc.table([
+        ["Name", "Age", "City"],
+        ["Alice", "30", "New York"],
+        ["Bob", "25", "Los Angeles"],
+        ["Charlie", "35", "Chicago"],
+    ])
+    doc.move_down(20)
+
+    # Table with fixed column widths
+    doc.font("Helvetica-Bold", 14)
+    doc.text("2. Fixed Column Widths")
+    doc.move_down(10)
+
+    doc.font("Helvetica", 10)
+    doc.table([
+        ["Product", "Quantity", "Price", "Total"],
+        ["Widget A", "10", "$5.00", "$50.00"],
+        ["Widget B", "5", "$12.00", "$60.00"],
+        ["Widget C", "20", "$2.50", "$50.00"],
+    ], TableOptions(column_widths=[150, 80, 80, 80]))
+    doc.move_down(20)
+
+    # Table with header and row colors
+    doc.font("Helvetica-Bold", 14)
+    doc.text("3. Table with Row Colors")
+    doc.move_down(10)
+
+    doc.font("Helvetica", 10)
+    doc.table([
+        ["ID", "Status", "Description"],
+        ["001", "Active", "First item"],
+        ["002", "Pending", "Second item"],
+        ["003", "Active", "Third item"],
+        ["004", "Inactive", "Fourth item"],
+    ], TableOptions(header=1, row_colors=[Color.white(), Color.gray(0.95)]))
+
+    page_idx += 1
     grid_page = page_idx
 
     # Grid System
@@ -1227,6 +1315,7 @@ def create_showcase():
         OutlineItem("Layout System", page=layout_page, children=[
             OutlineItem("LayoutDocument Basics", page=layout_page),
             OutlineItem("Text Layout Features", page=layout_advanced_page),
+            OutlineItem("Table Demo", page=table_page),
             OutlineItem("Grid System", page=grid_page),
         ]),
     ])

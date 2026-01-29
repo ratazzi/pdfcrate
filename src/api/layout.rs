@@ -1236,9 +1236,13 @@ impl LayoutDocument {
 
     // === Cursor methods ===
 
-    /// Returns the current cursor y position (absolute page coordinates)
+    /// Returns the current cursor y position relative to the bottom of the bounding box.
+    ///
+    /// Follows PDF/Prawn coordinate convention where Y increases upward.
+    /// Initial value equals bounds height (cursor starts at top).
+    /// Value decreases as cursor moves down toward bottom.
     pub fn cursor(&self) -> f64 {
-        self.state.cursor_y
+        self.state.cursor_y - self.state.bounds().absolute_bottom()
     }
 
     /// Moves the cursor down by the specified amount
@@ -1257,12 +1261,15 @@ impl LayoutDocument {
         self
     }
 
-    /// Moves the cursor to the specified y position (relative to bounds top)
+    /// Moves the cursor to the specified y position relative to the bottom of the bounding box.
+    ///
+    /// Follows PDF/Prawn coordinate convention where Y increases upward.
+    /// `move_cursor_to(bounds.height)` moves to top, `move_cursor_to(0)` moves to bottom.
     ///
     /// Accepts any measurement unit: `f64` (points), `Mm`, `Cm`, `Inch`, `Pt`
     pub fn move_cursor_to(&mut self, y: impl Measurement) -> &mut Self {
-        let top = self.state.bounds().absolute_top();
-        self.state.cursor_y = top - y.to_pt();
+        let bottom = self.state.bounds().absolute_bottom();
+        self.state.cursor_y = bottom + y.to_pt();
         self
     }
 
@@ -2310,6 +2317,9 @@ impl LayoutDocument {
         let total_lines = lines.len();
         let lines_to_render = lines.len().min(max_lines);
 
+        // Prawn-style: point is relative to bounds (same as bounding_box)
+        // point[0] is x offset from bounds.left
+        // point[1] is y position from bounds.bottom (Y increases upward)
         self.bounding_box(point, width, Some(height), |doc| {
             for line in lines.iter().take(lines_to_render) {
                 doc.text(line);
@@ -2400,6 +2410,7 @@ impl LayoutDocument {
         let total_lines = lines.len();
         let lines_to_render = lines.len().min(max_lines);
 
+        // Prawn-style: point is relative to bounds (same as bounding_box)
         self.bounding_box(point, width, Some(height), |doc| {
             for line in lines.iter().take(lines_to_render) {
                 doc.text(line);
@@ -2441,6 +2452,7 @@ impl LayoutDocument {
         };
         let actual_height = required_height.max(min_height);
 
+        // Prawn-style: point is relative to bounds (same as bounding_box)
         self.bounding_box(point, width, Some(actual_height), |doc| {
             for line in &lines {
                 doc.text(line);
@@ -3039,12 +3051,18 @@ impl LayoutDocument {
     /// Executes a block without affecting the cursor position
     ///
     /// After the block executes, the cursor returns to its original position.
+    /// If the block creates new pages, float will return to the original page.
+    /// This matches Prawn's float() behavior.
     pub fn float<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut Self),
     {
+        let original_page = self.inner.page_number();
         let saved_cursor = self.state.cursor_y;
         f(self);
+        if self.inner.page_number() != original_page {
+            self.inner.go_to_page(original_page - 1); // go_to_page uses 0-based index
+        }
         self.state.cursor_y = saved_cursor;
         self
     }
@@ -3108,15 +3126,14 @@ impl LayoutDocument {
 
     /// Creates a nested bounding box for layout
     ///
-    /// Content inside the bounding box uses coordinates relative to the box.
-    /// After the closure executes, the cursor moves below the bounding box.
+    /// Follows Prawn coordinate convention: point specifies the top-left corner
+    /// position relative to the current bounding box, with Y increasing upward.
     ///
     /// # Arguments
     ///
     /// * `point` - Position of the box's top-left corner:
     ///   - `point[0]`: x offset from current bounds left edge
-    ///   - `point[1]`: y offset downward from current cursor position
-    ///     (e.g., `[0.0, 0.0]` = at cursor, `[50.0, 20.0]` = 50pt right, 20pt below cursor)
+    ///   - `point[1]`: y position from current bounds bottom (Y increases upward)
     /// * `width` - Width of the bounding box
     /// * `height` - Fixed height, or `None` for stretchy box that grows with content
     /// * `f` - Closure to execute within the bounding box
@@ -3127,19 +3144,12 @@ impl LayoutDocument {
     /// use pdfcrate::api::{Document, LayoutDocument};
     ///
     /// let mut layout = LayoutDocument::new(Document::new());
-    ///
-    /// layout.text("Before box");
+    /// let cursor_y = layout.cursor();  // Get current position
     ///
     /// // Box at current cursor position
-    /// layout.bounding_box([0.0, 0.0], 200.0, Some(100.0), |doc| {
+    /// layout.bounding_box([0.0, cursor_y], 200.0, Some(100.0), |doc| {
     ///     doc.text("Inside the box");
     ///     doc.stroke_bounds();
-    /// });
-    ///
-    /// // Stretchy box (height determined by content)
-    /// layout.bounding_box([0.0, 0.0], 200.0, None, |doc| {
-    ///     doc.text("Line 1");
-    ///     doc.text("Line 2");
     /// });
     /// ```
     pub fn bounding_box<F>(
@@ -3152,13 +3162,13 @@ impl LayoutDocument {
     where
         F: FnOnce(&mut Self),
     {
-        let parent = self.state.bounds();
+        let bounds = self.state.bounds();
 
-        // Calculate absolute coordinates
-        // point[0] is x offset from parent's left edge
-        // point[1] is y offset downward from cursor
-        let abs_x = parent.absolute_left() + point[0];
-        let abs_y = self.state.cursor_y - point[1]; // Always relative to cursor
+        // Prawn-style: point is relative to current bounds
+        // point[0] is x offset from bounds.left
+        // point[1] is y position from bounds.bottom (Y increases upward)
+        let abs_x = bounds.absolute_left() + point[0];
+        let abs_y = bounds.absolute_bottom() + point[1];
 
         let bbox = BoundingBox::new(abs_x, abs_y, width, height);
 
@@ -3181,17 +3191,19 @@ impl LayoutDocument {
         // Pop and get the finished bbox
         let finished_bbox = self.state.bounds_stack.pop().unwrap();
 
-        // Update parent cursor position
-        if let Some(h) = height {
+        // Prawn behavior: if user didn't modify cursor, restore original position
+        // (i.e., the bounding box was not used for flowing content)
+        if (self.state.cursor_y - abs_y).abs() < 0.01 {
+            self.state.cursor_y = old_cursor;
+        } else if height.is_some() {
             // Fixed height: cursor moves to below the fixed-height box
-            self.state.cursor_y = abs_y - h;
+            self.state.cursor_y = abs_y - height.unwrap();
         } else {
             // Stretchy: cursor is at the bottom of content
             self.state.cursor_y = abs_y - finished_bbox.height();
         }
 
-        // If cursor moved below old cursor, keep the new position
-        // Otherwise, restore to maintain flow from before the box
+        // Additional check: if cursor would move up, restore original position
         if self.state.cursor_y > old_cursor {
             self.state.cursor_y = old_cursor;
         }
@@ -3502,9 +3514,13 @@ impl LayoutDocument {
         self
     }
 
-    /// Sets the cursor to a specific absolute y position
+    /// Sets the cursor to a specific y position (relative to bounds.bottom, Prawn-style)
+    ///
+    /// This is an alias for `move_cursor_to`. The y value is measured from the
+    /// bottom of the current bounds, with Y increasing upward (same as `cursor()`).
     pub fn set_cursor(&mut self, y: f64) -> &mut Self {
-        self.state.cursor_y = y;
+        let bottom = self.state.bounds().absolute_bottom();
+        self.state.cursor_y = bottom + y;
         self
     }
 
@@ -3923,11 +3939,13 @@ impl LayoutDocument {
     /// For normal Rust usage, prefer the closure-based `bounding_box()` method.
     #[doc(hidden)]
     pub fn push_bounding_box(&mut self, point: [f64; 2], width: f64, height: Option<f64>) -> f64 {
-        let parent = self.state.bounds();
+        let bounds = self.state.bounds();
 
-        // Calculate absolute coordinates
-        let abs_x = parent.absolute_left() + point[0];
-        let abs_y = self.state.cursor_y - point[1];
+        // Prawn-style: point is relative to current bounds
+        // point[0] is x offset from bounds.left
+        // point[1] is y position from bounds.bottom (Y increases upward)
+        let abs_x = bounds.absolute_left() + point[0];
+        let abs_y = bounds.absolute_bottom() + point[1];
 
         let bbox = BoundingBox::new(abs_x, abs_y, width, height);
 
@@ -4091,23 +4109,34 @@ mod tests {
         let doc = Document::new();
         let mut layout = LayoutDocument::new(doc);
 
-        // Cursor should start at top of margin box
+        // Prawn-style: cursor() returns position relative to bounds.bottom
         // A4 size: 595.28 x 841.89, margin 36pt
-        // Top of margin box = 841.89 - 36 = 805.89
+        // bounds_top = 805.89, bounds_bottom = 36, bounds_height = 769.89
+        // Initial cursor_y (absolute) = 805.89
+        // cursor() = cursor_y - bounds_bottom = 805.89 - 36 = 769.89
         let initial_cursor = layout.cursor();
-        assert!((initial_cursor - 805.89).abs() < 0.01);
+        assert!(
+            (initial_cursor - 769.89).abs() < 0.01,
+            "expected 769.89, got {}",
+            initial_cursor
+        );
 
-        // Move down
+        // Move down: cursor_y -= 100, cursor() decreases
         layout.move_down(100.0);
-        assert!((layout.cursor() - 705.89).abs() < 0.01);
+        assert!((layout.cursor() - 669.89).abs() < 0.01);
 
-        // Move up
+        // Move up: cursor_y += 50, cursor() increases
         layout.move_up(50.0);
-        assert!((layout.cursor() - 755.89).abs() < 0.01);
+        assert!((layout.cursor() - 719.89).abs() < 0.01);
 
-        // Move to specific position (relative to bounds top)
+        // move_cursor_to(y): cursor_y = bounds_bottom + y
+        // move_cursor_to(200) = cursor at 200pt from bottom
         layout.move_cursor_to(200.0);
-        assert!((layout.cursor() - 605.89).abs() < 0.01); // 805.89 - 200
+        assert!(
+            (layout.cursor() - 200.0).abs() < 0.01,
+            "expected 200, got {}",
+            layout.cursor()
+        );
     }
 
     #[test]
@@ -4241,8 +4270,9 @@ mod tests {
 
         let initial_cursor = layout.cursor();
 
-        // Create a fixed-height bounding box at cursor position
-        layout.bounding_box([50.0, 0.0], 200.0, Some(150.0), |doc| {
+        // Prawn-style: point[1] is Y position from parent's bottom (same as cursor())
+        // To create a box at cursor position, pass cursor() as point[1]
+        layout.bounding_box([50.0, initial_cursor], 200.0, Some(150.0), |doc| {
             // Inside the box, bounds should reflect the new box
             let inner_bounds = doc.bounds();
             assert_eq!(inner_bounds.absolute_left(), 36.0 + 50.0); // margin + offset
@@ -4253,8 +4283,8 @@ mod tests {
         });
 
         // After the box, cursor should be below the box
-        // Box top was at cursor (initial_cursor - 0 offset)
-        // Box bottom is at: initial_cursor - 150 (fixed height)
+        // Box top was at initial_cursor, box height is 150
+        // New cursor = initial_cursor - 150
         let expected_cursor = initial_cursor - 150.0;
         assert!((layout.cursor() - expected_cursor).abs() < 0.01);
     }
@@ -4268,8 +4298,8 @@ mod tests {
         let line_height = layout.line_height();
         let initial_cursor = layout.cursor();
 
-        // Create a stretchy bounding box at cursor position
-        layout.bounding_box([0.0, 0.0], 200.0, None, |doc| {
+        // Prawn-style: pass cursor() as point[1] to create box at cursor position
+        layout.bounding_box([0.0, initial_cursor], 200.0, None, |doc| {
             doc.text("Line 1");
             doc.text("Line 2");
             doc.text("Line 3");
@@ -4287,14 +4317,16 @@ mod tests {
         let mut layout = LayoutDocument::new(doc);
 
         let outer_left = layout.bounds().absolute_left();
+        let outer_cursor = layout.cursor();
 
-        // Outer box at cursor position
-        layout.bounding_box([20.0, 0.0], 300.0, Some(200.0), |doc| {
+        // Prawn-style: pass cursor() as point[1] to create box at cursor position
+        layout.bounding_box([20.0, outer_cursor], 300.0, Some(200.0), |doc| {
             let inner_bounds = doc.bounds();
             assert_eq!(inner_bounds.absolute_left(), outer_left + 20.0);
 
-            // Nested bounding box (offset from inner cursor)
-            doc.bounding_box([30.0, 0.0], 150.0, Some(100.0), |doc| {
+            let inner_cursor = doc.cursor();
+            // Nested bounding box at inner cursor position
+            doc.bounding_box([30.0, inner_cursor], 150.0, Some(100.0), |doc| {
                 let nested_bounds = doc.bounds();
                 assert_eq!(nested_bounds.absolute_left(), outer_left + 20.0 + 30.0);
                 assert!((nested_bounds.width() - 150.0).abs() < 0.01);

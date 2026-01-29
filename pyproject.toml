@@ -29,7 +29,7 @@ Homepage = "https://github.com/ratazzi/pdfcrate"
 Repository = "https://github.com/ratazzi/pdfcrate"
 
 [project.optional-dependencies]
-test = ["pytest>=7.0.0", "pytest-cov"]
+test = ["pytest>=7.0.0", "pytest-cov", "pymupdf>=1.24.0"]
 
 [build-system]
 requires = ["maturin>=1.4,<2.0"]

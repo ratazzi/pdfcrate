@@ -847,6 +847,7 @@ impl IndentContext {
 pub struct FloatContext {
     doc: Py<Document>,
     saved_cursor: f64,
+    saved_page: usize,
 }
 
 #[pymethods]
@@ -863,10 +864,14 @@ impl FloatContext {
         _exc_val: Option<&Bound<'_, pyo3::types::PyAny>>,
         _exc_tb: Option<&Bound<'_, pyo3::types::PyAny>>,
     ) -> PyResult<bool> {
-        // Restore saved cursor position
+        // Restore saved cursor position and page (matches Rust float behavior)
         let borrowed = self.doc.borrow(py);
         let mut guard = borrowed.inner.lock().unwrap();
         if let DocumentInner::Layout(layout) = &mut *guard {
+            // Restore page if changed
+            if layout.inner().page_number() != self.saved_page {
+                layout.inner_mut().go_to_page(self.saved_page - 1); // go_to_page uses 0-based index
+            }
             layout.set_cursor(self.saved_cursor);
         }
         Ok(false)
@@ -1312,15 +1317,16 @@ impl Document {
         slf
     }
 
-    /// Float context - executes block without affecting cursor position
+    /// Float context - executes block without affecting cursor position or page
     ///
     /// After the block executes, the cursor returns to its original position.
-    /// Useful for drawing content that shouldn't affect the main flow.
+    /// If the block creates new pages, float will return to the original page.
+    /// This matches Prawn/Rust float() behavior.
     fn float(slf: Py<Self>, py: Python<'_>) -> PyResult<FloatContext> {
         let borrowed = slf.borrow(py);
         let guard = borrowed.inner.lock().unwrap();
-        let saved_cursor = match &*guard {
-            DocumentInner::Layout(layout) => layout.cursor(),
+        let (saved_cursor, saved_page) = match &*guard {
+            DocumentInner::Layout(layout) => (layout.cursor(), layout.inner().page_number()),
             _ => {
                 return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                     "float() requires margin (LayoutDocument)",
@@ -1333,6 +1339,7 @@ impl Document {
         Ok(FloatContext {
             doc: slf,
             saved_cursor,
+            saved_page,
         })
     }
 
@@ -1886,6 +1893,44 @@ impl Document {
         slf
     }
 
+    /// Draw coordinate axes with tick marks and labels (debug helper)
+    ///
+    /// Args:
+    ///     at: Origin point (x, y) for the axes (default: (20, 20))
+    ///     color: RGB color tuple (default: (0.6, 0.6, 0.6) gray)
+    ///     step: Distance between tick marks (default: 100)
+    #[pyo3(signature = (at=(20.0, 20.0), color=(0.6, 0.6, 0.6), step=100.0))]
+    fn stroke_axis(
+        slf: Py<Self>,
+        py: Python<'_>,
+        at: (f64, f64),
+        color: (f64, f64, f64),
+        step: f64,
+    ) -> Py<Self> {
+        let borrowed = slf.borrow(py);
+        let mut guard = borrowed.inner.lock().unwrap();
+        let doc = match &mut *guard {
+            DocumentInner::Basic(doc) => doc,
+            DocumentInner::Layout(layout) => layout.inner_mut(),
+            DocumentInner::Consumed => {
+                drop(guard);
+                drop(borrowed);
+                return slf;
+            }
+        };
+
+        doc.stroke_axis(
+            crate::api::AxisOptions::new()
+                .at(at.0, at.1)
+                .color(color.0, color.1, color.2)
+                .step_length(step),
+        );
+
+        drop(guard);
+        drop(borrowed);
+        slf
+    }
+
     /// Draw text at absolute position
     fn text_at(slf: Py<Self>, py: Python<'_>, text: &str, pos: (f64, f64)) -> Py<Self> {
         let borrowed = slf.borrow(py);
@@ -2065,7 +2110,7 @@ impl Document {
         Ok(slf)
     }
 
-    /// Move cursor to position relative to bounds top
+    /// Move cursor to position (y from bounds bottom, Prawn-style)
     fn move_cursor_to(slf: Py<Self>, py: Python<'_>, y: f64) -> PyResult<Py<Self>> {
         let borrowed = slf.borrow(py);
         let mut guard = borrowed.inner.lock().unwrap();
@@ -2085,7 +2130,7 @@ impl Document {
         Ok(slf)
     }
 
-    /// Get cursor position
+    /// Get cursor position (Y relative to bounds.bottom, Prawn-style)
     fn cursor(&self) -> PyResult<f64> {
         let guard = self.inner.lock().unwrap();
         match &*guard {
@@ -2097,7 +2142,58 @@ impl Document {
         }
     }
 
-    /// Set cursor position (requires margin)
+    /// Get bounds absolute bottom (for converting cursor to absolute coordinates)
+    fn bounds_bottom(&self) -> PyResult<f64> {
+        let guard = self.inner.lock().unwrap();
+        match &*guard {
+            DocumentInner::Basic(_) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "bounds_bottom() requires margin.",
+            )),
+            DocumentInner::Layout(layout) => Ok(layout.bounds().absolute_bottom()),
+            DocumentInner::Consumed => Ok(0.0),
+        }
+    }
+
+    /// Get bounds absolute left
+    fn bounds_left(&self) -> PyResult<f64> {
+        let guard = self.inner.lock().unwrap();
+        match &*guard {
+            DocumentInner::Basic(_) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "bounds_left() requires margin.",
+            )),
+            DocumentInner::Layout(layout) => Ok(layout.bounds().absolute_left()),
+            DocumentInner::Consumed => Ok(0.0),
+        }
+    }
+
+    /// Get bounds width
+    fn bounds_width(&self) -> PyResult<f64> {
+        let guard = self.inner.lock().unwrap();
+        match &*guard {
+            DocumentInner::Basic(_) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "bounds_width() requires margin.",
+            )),
+            DocumentInner::Layout(layout) => Ok(layout.bounds().width()),
+            DocumentInner::Consumed => Ok(0.0),
+        }
+    }
+
+    /// Get bounds height
+    fn bounds_height(&self) -> PyResult<f64> {
+        let guard = self.inner.lock().unwrap();
+        match &*guard {
+            DocumentInner::Basic(_) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "bounds_height() requires margin.",
+            )),
+            DocumentInner::Layout(layout) => Ok(layout.bounds().height()),
+            DocumentInner::Consumed => Ok(0.0),
+        }
+    }
+
+    /// Set cursor position (y relative to bounds.bottom, Prawn-style)
+    ///
+    /// The y value is measured from the bottom of the current bounds,
+    /// with Y increasing upward (same coordinate system as cursor()).
     fn set_cursor(slf: Py<Self>, py: Python<'_>, y: f64) -> PyResult<Py<Self>> {
         let borrowed = slf.borrow(py);
         let mut guard = borrowed.inner.lock().unwrap();
@@ -2538,14 +2634,15 @@ impl Document {
                 ));
             }
             DocumentInner::Layout(layout) => {
-                // Get cursor position and bounds
-                let cursor_y = layout.cursor();
+                // Get absolute cursor position and bounds
+                // cursor() returns relative to bounds.bottom, need absolute for image_with
                 let bounds = layout.bounds();
+                let abs_cursor_y = bounds.absolute_bottom() + layout.cursor();
                 let x = bounds.absolute_left();
 
-                // Create options with position at cursor
+                // Create options with absolute position at cursor
                 let mut opts = crate::api::image::ImageOptions::default();
-                opts.at = Some([x, cursor_y]);
+                opts.at = Some([x, abs_cursor_y]);
 
                 // Handle fit vs explicit dimensions
                 if let Some((max_w, max_h)) = fit {

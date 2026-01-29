@@ -62,14 +62,17 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     layout.move_down(10.0);
 
     // Outer box (fixed height)
-    layout.bounding_box([0.0, 0.0], 220.0, Some(90.0), |doc| {
+    // Prawn-style: pass cursor() as Y position
+    let y = layout.cursor();
+    layout.bounding_box([0.0, y], 220.0, Some(90.0), |doc| {
         doc.stroke_bounds();
         doc.font("Helvetica").size(10.0);
         doc.text("Outer box (220x90)");
         doc.move_down(5.0);
 
         // Inner box (nested, stretchy)
-        doc.bounding_box([15.0, 0.0], 160.0, None, |doc| {
+        let inner_y = doc.cursor();
+        doc.bounding_box([15.0, inner_y], 160.0, None, |doc| {
             doc.stroke_bounds();
             doc.font("Helvetica").size(9.0);
             doc.text("Inner nested box");
@@ -86,16 +89,16 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     let box_top = layout.cursor();
 
     // Left box
-    layout.bounding_box([0.0, 0.0], 140.0, Some(60.0), |doc| {
+    layout.bounding_box([0.0, box_top], 140.0, Some(60.0), |doc| {
         doc.stroke_bounds();
         doc.font("Helvetica").size(9.0);
         doc.text("Left Box");
         doc.text("Width: 140pt");
     });
 
-    // Right box (use float to position at same y level)
-    layout.set_cursor(box_top);
-    layout.bounding_box([160.0, 0.0], 140.0, Some(60.0), |doc| {
+    // Right box (use move_cursor_to to position at same y level)
+    layout.move_cursor_to(box_top);
+    layout.bounding_box([160.0, box_top], 140.0, Some(60.0), |doc| {
         doc.stroke_bounds();
         doc.font("Helvetica").size(9.0);
         doc.text("Right Box");
@@ -185,7 +188,8 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     layout.text("7. Bounds Visualization:");
     layout.move_down(8.0);
 
-    layout.bounding_box([0.0, 0.0], 200.0, Some(50.0), |doc| {
+    let y = layout.cursor();
+    layout.bounding_box([0.0, y], 200.0, Some(50.0), |doc| {
         doc.stroke_bounds();
         doc.font("Helvetica").size(9.0);
         doc.text("stroke_bounds() draws");
