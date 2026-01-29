@@ -30,7 +30,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
+        ctx.gray(0.95).rectangle([0.0, 842.0], page_width, 82.0);
     });
     doc.font("Helvetica").size(24.0);
     doc.text_at("Text Layout Features", [48.0, 804.0]);
@@ -133,8 +133,8 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     doc.stroke(|ctx| {
         ctx.gray(0.6)
             .line_width(0.5)
-            .rect_tl([box1_x, box_top], box_width, box_height)
-            .rect_tl([box2_x, box_top], box_width, box_height);
+            .rectangle([box1_x, box_top], box_width, box_height)
+            .rectangle([box2_x, box_top], box_width, box_height);
     });
 
     // Text inside boxes

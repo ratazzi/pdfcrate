@@ -36,7 +36,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
+        ctx.gray(0.95).rectangle([0.0, 842.0], page_width, 82.0);
     });
 
     let font_name = doc.embed_font(fs::read(MAPLE_FONT_PATH)?)?;

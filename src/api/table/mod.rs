@@ -1016,7 +1016,7 @@ impl Table {
 
                 doc.inner_mut().fill(|ctx| {
                     ctx.color(bg.r, bg.g, bg.b);
-                    ctx.rect_tl([cell_x, cell_y], cell.width, cell.height);
+                    ctx.rectangle([cell_x, cell_y], cell.width, cell.height);
                 });
             }
         }
@@ -1128,7 +1128,7 @@ impl Table {
 
                 doc.inner_mut().fill(|ctx| {
                     ctx.color(bg.r, bg.g, bg.b);
-                    ctx.rect_tl([cell_x, cell_y], cell.width, cell.height);
+                    ctx.rectangle([cell_x, cell_y], cell.width, cell.height);
                 });
             }
         }

@@ -29,7 +29,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
+        ctx.gray(0.95).rectangle([0.0, 842.0], page_width, 82.0);
     });
     doc.font("Helvetica").size(24.0);
     doc.text_at("Text Box Overflow Modes", [48.0, 804.0]);

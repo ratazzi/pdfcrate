@@ -1637,37 +1637,39 @@ impl Document {
 
     /// Sets up a stroke context for drawing
     ///
-    /// Shape methods (e.g. `rectangle`, `circle`) automatically stroke the path.
-    /// For manual path building with `move_to`/`line_to`, call `stroke_path()`
-    /// explicitly to paint the path.
+    /// Paths are accumulated and stroked when the closure returns (Prawn-style).
+    /// For manual control, call `ctx.stroke()` to stroke immediately.
     pub fn stroke<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut StrokeContext),
     {
         let mut ctx = StrokeContext {
             content: &mut self.pages[self.current_page].content,
+            has_path: false,
         };
         ctx.content.save_state();
         f(&mut ctx);
-        ctx.content.restore_state();
+        drop(ctx); // Explicitly drop to stroke before restore_state
+        self.pages[self.current_page].content.restore_state();
         self
     }
 
     /// Sets up a fill context for drawing
     ///
-    /// Shape methods (e.g. `rectangle`, `circle`) automatically fill the path.
-    /// For manual path building with `move_to`/`line_to`, call `fill_path()`
-    /// explicitly to paint the path.
+    /// Paths are accumulated and filled when the closure returns (Prawn-style).
+    /// For manual control, call `ctx.fill()` to fill immediately.
     pub fn fill<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut FillContext),
     {
         let mut ctx = FillContext {
             content: &mut self.pages[self.current_page].content,
+            has_path: false,
         };
         ctx.content.save_state();
         f(&mut ctx);
-        ctx.content.restore_state();
+        drop(ctx); // Explicitly drop to fill before restore_state
+        self.pages[self.current_page].content.restore_state();
         self
     }
 
@@ -1695,10 +1697,12 @@ impl Document {
     {
         let mut ctx = FillAndStrokeContext {
             content: &mut self.pages[self.current_page].content,
+            has_path: false,
         };
         ctx.content.save_state();
         f(&mut ctx);
-        ctx.content.restore_state();
+        drop(ctx); // Explicitly drop to fill_and_stroke before restore_state
+        self.pages[self.current_page].content.restore_state();
         self
     }
 
@@ -2796,8 +2800,12 @@ impl<'a> FontBuilder<'a> {
 }
 
 /// Context for stroke operations
+///
+/// Paths are accumulated and stroked when the context is dropped.
+/// This matches Prawn's behavior where `stroke { }` executes stroke at block end.
 pub struct StrokeContext<'a> {
     content: &'a mut ContentBuilder,
+    has_path: bool,
 }
 
 impl<'a> StrokeContext<'a> {
@@ -2855,26 +2863,17 @@ impl<'a> StrokeContext<'a> {
         self
     }
 
-    /// Draws and strokes a line
+    /// Adds a line to the current path
     pub fn line(&mut self, from: [f64; 2], to: [f64; 2]) -> &mut Self {
         self.content.move_to(from[0], from[1]).line_to(to[0], to[1]);
-        self.content.stroke();
+        self.has_path = true;
         self
     }
 
-    /// Draws and strokes a rectangle
+    /// Adds a rectangle to the current path (Prawn-compatible)
     ///
-    /// The origin is the bottom-left corner (PDF native coordinates).
-    pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
-        self.content.rect(origin[0], origin[1], width, height);
-        self.content.stroke();
-        self
-    }
-
-    /// Draws and strokes a rectangle with top-left origin (Prawn-style)
-    ///
-    /// This is an alias for `rectangle` that accepts the top-left corner
-    /// as the origin point, matching Prawn's coordinate convention.
+    /// The point specifies the **top-left corner** of the rectangle,
+    /// matching Prawn's coordinate convention.
     ///
     /// # Example
     ///
@@ -2882,21 +2881,58 @@ impl<'a> StrokeContext<'a> {
     /// use pdfcrate::api::Document;
     ///
     /// let mut doc = Document::new();
-    /// // Draw a rectangle with top-left at (100, 500)
+    /// // Draw a rectangle with top-left at (100, 500), width 200, height 100
     /// doc.stroke(|ctx| {
-    ///     ctx.rect_tl([100.0, 500.0], 200.0, 100.0);
+    ///     ctx.rectangle([100.0, 500.0], 200.0, 100.0);
     /// });
     /// ```
-    pub fn rect_tl(&mut self, top_left: [f64; 2], width: f64, height: f64) -> &mut Self {
-        // Convert top-left to bottom-left (PDF native)
-        let bottom_left = [top_left[0], top_left[1] - height];
-        self.rectangle(bottom_left, width, height)
+    pub fn rectangle(&mut self, point: [f64; 2], width: f64, height: f64) -> &mut Self {
+        self.content.rect(point[0], point[1], width, height);
+        self.has_path = true;
+        self
     }
 
-    /// Draws and strokes a rounded rectangle
+    /// Adds a rectangle with bottom-left origin to the current path (PDF native coordinates)
     ///
-    /// The origin is the bottom-left corner (PDF native coordinates).
+    /// This is a lower-level method that uses PDF's native coordinate system
+    /// where the point specifies the **bottom-left corner** of the rectangle.
+    pub fn rectangle_bl(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
+        self.content.rect_bl(origin[0], origin[1], width, height);
+        self.has_path = true;
+        self
+    }
+
+    /// Adds a rounded rectangle to the current path (Prawn-compatible)
+    ///
+    /// The point specifies the **top-left corner** of the rectangle,
+    /// matching Prawn's coordinate convention.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// // Draw a rounded rectangle with top-left at (100, 500)
+    /// doc.stroke(|ctx| {
+    ///     ctx.rounded_rectangle([100.0, 500.0], 200.0, 100.0, 10.0);
+    /// });
+    /// ```
     pub fn rounded_rectangle(
+        &mut self,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        self.content
+            .rounded_rect(point[0], point[1], width, height, radius);
+        self.has_path = true;
+        self
+    }
+
+    /// Adds a rounded rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rounded_rectangle_bl(
         &mut self,
         origin: [f64; 2],
         width: f64,
@@ -2904,73 +2940,66 @@ impl<'a> StrokeContext<'a> {
         radius: f64,
     ) -> &mut Self {
         self.content
-            .rounded_rect(origin[0], origin[1], width, height, radius);
-        self.content.stroke();
+            .rounded_rect_bl(origin[0], origin[1], width, height, radius);
+        self.has_path = true;
         self
     }
 
-    /// Draws and strokes a rounded rectangle with top-left origin (Prawn-style)
-    ///
-    /// This is an alias for `rounded_rectangle` that accepts the top-left corner
-    /// as the origin point, matching Prawn's coordinate convention.
-    pub fn rounded_rect_tl(
-        &mut self,
-        top_left: [f64; 2],
-        width: f64,
-        height: f64,
-        radius: f64,
-    ) -> &mut Self {
-        // Convert top-left to bottom-left (PDF native)
-        let bottom_left = [top_left[0], top_left[1] - height];
-        self.rounded_rectangle(bottom_left, width, height, radius)
-    }
-
-    /// Draws and strokes a circle
+    /// Adds a circle to the current path
     pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
         self.content.circle(center[0], center[1], radius);
-        self.content.stroke();
+        self.has_path = true;
         self
     }
 
-    /// Draws and strokes an ellipse
+    /// Adds an ellipse to the current path
     pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
         self.content.ellipse(center[0], center[1], rx, ry);
-        self.content.stroke();
+        self.has_path = true;
         self
     }
 
-    /// Moves to a point (for path building)
+    /// Moves to a point (starts a new subpath)
     pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.move_to(x, y);
+        self.has_path = true;
         self
     }
 
-    /// Draws a line to a point (for path building)
+    /// Adds a line to a point
     pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.line_to(x, y);
+        self.has_path = true;
         self
     }
 
-    /// Draws a cubic Bezier curve (for path building)
+    /// Adds a cubic Bezier curve
     pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
         self.content
             .curve_to(cp1[0], cp1[1], cp2[0], cp2[1], end[0], end[1]);
+        self.has_path = true;
         self
     }
 
-    /// Closes the current path (for path building)
+    /// Closes the current subpath
     pub fn close_path(&mut self) -> &mut Self {
         self.content.close_path();
         self
     }
 
-    /// Strokes the current path (for path building)
-    pub fn stroke_path(&mut self) -> &mut Self {
-        self.content.stroke();
+    /// Strokes the current path immediately and resets path state
+    ///
+    /// Use this to stroke the path before adding more shapes.
+    /// Normally you don't need this - paths are stroked when the context drops.
+    pub fn stroke(&mut self) -> &mut Self {
+        if self.has_path {
+            self.content.stroke();
+            self.has_path = false;
+        }
         self
     }
 
-    /// Draws and strokes a polygon by connecting the given points
+    /// Adds a polygon to the current path
     ///
     /// # Example
     ///
@@ -2995,16 +3024,28 @@ impl<'a> StrokeContext<'a> {
             self.content.line_to(point[0], point[1]);
         }
 
-        // Close and stroke the path
+        // Close the path (stroke happens on drop)
         self.content.close_path();
-        self.content.stroke();
+        self.has_path = true;
         self
     }
 }
 
+impl Drop for StrokeContext<'_> {
+    fn drop(&mut self) {
+        if self.has_path {
+            self.content.stroke();
+        }
+    }
+}
+
 /// Context for fill operations
+///
+/// Paths are accumulated and filled when the context is dropped.
+/// This matches Prawn's behavior where `fill { }` executes fill at block end.
 pub struct FillContext<'a> {
     content: &'a mut ContentBuilder,
+    has_path: bool,
 }
 
 impl<'a> FillContext<'a> {
@@ -3026,19 +3067,10 @@ impl<'a> FillContext<'a> {
         self
     }
 
-    /// Draws and fills a rectangle
+    /// Adds a rectangle to the current path (Prawn-compatible)
     ///
-    /// The origin is the bottom-left corner (PDF native coordinates).
-    pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
-        self.content.rect(origin[0], origin[1], width, height);
-        self.content.fill();
-        self
-    }
-
-    /// Draws and fills a rectangle with top-left origin (Prawn-style)
-    ///
-    /// This is an alias for `rectangle` that accepts the top-left corner
-    /// as the origin point, matching Prawn's coordinate convention.
+    /// The point specifies the **top-left corner** of the rectangle,
+    /// matching Prawn's coordinate convention.
     ///
     /// # Example
     ///
@@ -3048,19 +3080,53 @@ impl<'a> FillContext<'a> {
     /// let mut doc = Document::new();
     /// // Draw a filled rectangle with top-left at (100, 500)
     /// doc.fill(|ctx| {
-    ///     ctx.rect_tl([100.0, 500.0], 200.0, 100.0);
+    ///     ctx.rectangle([100.0, 500.0], 200.0, 100.0);
     /// });
     /// ```
-    pub fn rect_tl(&mut self, top_left: [f64; 2], width: f64, height: f64) -> &mut Self {
-        // Convert top-left to bottom-left (PDF native)
-        let bottom_left = [top_left[0], top_left[1] - height];
-        self.rectangle(bottom_left, width, height)
+    pub fn rectangle(&mut self, point: [f64; 2], width: f64, height: f64) -> &mut Self {
+        self.content.rect(point[0], point[1], width, height);
+        self.has_path = true;
+        self
     }
 
-    /// Draws and fills a rounded rectangle
+    /// Adds a rectangle with bottom-left origin to the current path (PDF native coordinates)
+    pub fn rectangle_bl(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
+        self.content.rect_bl(origin[0], origin[1], width, height);
+        self.has_path = true;
+        self
+    }
+
+    /// Adds a rounded rectangle to the current path (Prawn-compatible)
     ///
-    /// The origin is the bottom-left corner (PDF native coordinates).
+    /// The point specifies the **top-left corner** of the rectangle,
+    /// matching Prawn's coordinate convention.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// // Draw a filled rounded rectangle with top-left at (100, 500)
+    /// doc.fill(|ctx| {
+    ///     ctx.rounded_rectangle([100.0, 500.0], 200.0, 100.0, 10.0);
+    /// });
+    /// ```
     pub fn rounded_rectangle(
+        &mut self,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        self.content
+            .rounded_rect(point[0], point[1], width, height, radius);
+        self.has_path = true;
+        self
+    }
+
+    /// Adds a rounded rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rounded_rectangle_bl(
         &mut self,
         origin: [f64; 2],
         width: f64,
@@ -3068,66 +3134,58 @@ impl<'a> FillContext<'a> {
         radius: f64,
     ) -> &mut Self {
         self.content
-            .rounded_rect(origin[0], origin[1], width, height, radius);
-        self.content.fill();
+            .rounded_rect_bl(origin[0], origin[1], width, height, radius);
+        self.has_path = true;
         self
     }
 
-    /// Draws and fills a rounded rectangle with top-left origin (Prawn-style)
-    ///
-    /// This is an alias for `rounded_rectangle` that accepts the top-left corner
-    /// as the origin point, matching Prawn's coordinate convention.
-    pub fn rounded_rect_tl(
-        &mut self,
-        top_left: [f64; 2],
-        width: f64,
-        height: f64,
-        radius: f64,
-    ) -> &mut Self {
-        // Convert top-left to bottom-left (PDF native)
-        let bottom_left = [top_left[0], top_left[1] - height];
-        self.rounded_rectangle(bottom_left, width, height, radius)
-    }
-
-    /// Draws and fills a circle
+    /// Adds a circle to the current path
     pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
         self.content.circle(center[0], center[1], radius);
-        self.content.fill();
+        self.has_path = true;
         self
     }
 
-    /// Draws and fills an ellipse
+    /// Adds an ellipse to the current path
     pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
         self.content.ellipse(center[0], center[1], rx, ry);
-        self.content.fill();
+        self.has_path = true;
         self
     }
 
-    /// Moves to a point (for path building)
+    /// Moves to a point (starts a new subpath)
     pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.move_to(x, y);
+        self.has_path = true;
         self
     }
 
-    /// Draws a line to a point (for path building)
+    /// Adds a line to a point
     pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.line_to(x, y);
+        self.has_path = true;
         self
     }
 
-    /// Closes the current path (for path building)
+    /// Closes the current subpath
     pub fn close_path(&mut self) -> &mut Self {
         self.content.close_path();
         self
     }
 
-    /// Fills the current path (for path building)
-    pub fn fill_path(&mut self) -> &mut Self {
-        self.content.fill();
+    /// Fills the current path immediately and resets path state
+    ///
+    /// Use this to fill the path before adding more shapes.
+    /// Normally you don't need this - paths are filled when the context drops.
+    pub fn fill(&mut self) -> &mut Self {
+        if self.has_path {
+            self.content.fill();
+            self.has_path = false;
+        }
         self
     }
 
-    /// Draws and fills a polygon by connecting the given points
+    /// Adds a polygon to the current path
     ///
     /// # Example
     ///
@@ -3152,19 +3210,28 @@ impl<'a> FillContext<'a> {
             self.content.line_to(point[0], point[1]);
         }
 
-        // Close and fill the path
+        // Close the path (fill happens on drop)
         self.content.close_path();
-        self.content.fill();
+        self.has_path = true;
         self
+    }
+}
+
+impl Drop for FillContext<'_> {
+    fn drop(&mut self) {
+        if self.has_path {
+            self.content.fill();
+        }
     }
 }
 
 /// Context for fill-and-stroke operations
 ///
-/// Provides methods for drawing shapes that are both filled and stroked
-/// using the PDF `B` operator, matching Prawn's `fill_and_stroke` behavior.
+/// Paths are accumulated and filled+stroked when the context is dropped.
+/// This matches Prawn's behavior where `fill_and_stroke { }` executes at block end.
 pub struct FillAndStrokeContext<'a> {
     content: &'a mut ContentBuilder,
+    has_path: bool,
 }
 
 impl<'a> FillAndStrokeContext<'a> {
@@ -3240,25 +3307,42 @@ impl<'a> FillAndStrokeContext<'a> {
         self
     }
 
-    /// Draws, fills, and strokes a rectangle
+    /// Adds a rectangle to the current path (Prawn-compatible)
     ///
-    /// The origin is the bottom-left corner (PDF native coordinates).
-    pub fn rectangle(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
-        self.content.rect(origin[0], origin[1], width, height);
-        self.content.fill_and_stroke();
+    /// The point specifies the **top-left corner** of the rectangle,
+    /// matching Prawn's coordinate convention.
+    pub fn rectangle(&mut self, point: [f64; 2], width: f64, height: f64) -> &mut Self {
+        self.content.rect(point[0], point[1], width, height);
+        self.has_path = true;
         self
     }
 
-    /// Draws, fills, and strokes a rectangle with top-left origin (Prawn-style)
-    pub fn rect_tl(&mut self, top_left: [f64; 2], width: f64, height: f64) -> &mut Self {
-        let bottom_left = [top_left[0], top_left[1] - height];
-        self.rectangle(bottom_left, width, height)
+    /// Adds a rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rectangle_bl(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
+        self.content.rect_bl(origin[0], origin[1], width, height);
+        self.has_path = true;
+        self
     }
 
-    /// Draws, fills, and strokes a rounded rectangle
+    /// Adds a rounded rectangle to the current path (Prawn-compatible)
     ///
-    /// The origin is the bottom-left corner (PDF native coordinates).
+    /// The point specifies the **top-left corner** of the rectangle,
+    /// matching Prawn's coordinate convention.
     pub fn rounded_rectangle(
+        &mut self,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        self.content
+            .rounded_rect(point[0], point[1], width, height, radius);
+        self.has_path = true;
+        self
+    }
+
+    /// Adds a rounded rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rounded_rectangle_bl(
         &mut self,
         origin: [f64; 2],
         width: f64,
@@ -3266,69 +3350,66 @@ impl<'a> FillAndStrokeContext<'a> {
         radius: f64,
     ) -> &mut Self {
         self.content
-            .rounded_rect(origin[0], origin[1], width, height, radius);
-        self.content.fill_and_stroke();
+            .rounded_rect_bl(origin[0], origin[1], width, height, radius);
+        self.has_path = true;
         self
     }
 
-    /// Draws, fills, and strokes a rounded rectangle with top-left origin (Prawn-style)
-    pub fn rounded_rect_tl(
-        &mut self,
-        top_left: [f64; 2],
-        width: f64,
-        height: f64,
-        radius: f64,
-    ) -> &mut Self {
-        let bottom_left = [top_left[0], top_left[1] - height];
-        self.rounded_rectangle(bottom_left, width, height, radius)
-    }
-
-    /// Draws, fills, and strokes a circle
+    /// Adds a circle to the current path
     pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
         self.content.circle(center[0], center[1], radius);
-        self.content.fill_and_stroke();
+        self.has_path = true;
         self
     }
 
-    /// Draws, fills, and strokes an ellipse
+    /// Adds an ellipse to the current path
     pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
         self.content.ellipse(center[0], center[1], rx, ry);
-        self.content.fill_and_stroke();
+        self.has_path = true;
         self
     }
 
-    /// Moves to a point (for path building)
+    /// Moves to a point (starts a new subpath)
     pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.move_to(x, y);
+        self.has_path = true;
         self
     }
 
-    /// Draws a line to a point (for path building)
+    /// Adds a line to a point
     pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.line_to(x, y);
+        self.has_path = true;
         self
     }
 
-    /// Draws a cubic Bezier curve (for path building)
+    /// Adds a cubic Bezier curve
     pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
         self.content
             .curve_to(cp1[0], cp1[1], cp2[0], cp2[1], end[0], end[1]);
+        self.has_path = true;
         self
     }
 
-    /// Closes the current path (for path building)
+    /// Closes the current subpath
     pub fn close_path(&mut self) -> &mut Self {
         self.content.close_path();
         self
     }
 
-    /// Fills and strokes the current path (for path building)
-    pub fn fill_and_stroke_path(&mut self) -> &mut Self {
-        self.content.fill_and_stroke();
+    /// Fills and strokes the current path immediately and resets path state
+    ///
+    /// Use this to fill+stroke the path before adding more shapes.
+    /// Normally you don't need this - paths are filled+stroked when the context drops.
+    pub fn fill_and_stroke(&mut self) -> &mut Self {
+        if self.has_path {
+            self.content.fill_and_stroke();
+            self.has_path = false;
+        }
         self
     }
 
-    /// Draws, fills, and strokes a polygon by connecting the given points
+    /// Adds a polygon to the current path
     pub fn polygon(&mut self, points: &[[f64; 2]]) -> &mut Self {
         if points.is_empty() {
             return self;
@@ -3339,8 +3420,16 @@ impl<'a> FillAndStrokeContext<'a> {
             self.content.line_to(point[0], point[1]);
         }
         self.content.close_path();
-        self.content.fill_and_stroke();
+        self.has_path = true;
         self
+    }
+}
+
+impl Drop for FillAndStrokeContext<'_> {
+    fn drop(&mut self) {
+        if self.has_path {
+            self.content.fill_and_stroke();
+        }
     }
 }
 

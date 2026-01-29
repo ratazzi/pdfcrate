@@ -27,7 +27,7 @@ fn generate_text_appearance(field: &FormField, font_ref: Option<PdfRef>) -> PdfS
     if let Some(ref bg) = field.background_color {
         content
             .set_fill_color_rgb(bg[0], bg[1], bg[2])
-            .rect(0.0, 0.0, width, height)
+            .rect_bl(0.0, 0.0, width, height)
             .fill();
     }
 
@@ -36,7 +36,7 @@ fn generate_text_appearance(field: &FormField, font_ref: Option<PdfRef>) -> PdfS
         content
             .set_stroke_color_rgb(bc[0], bc[1], bc[2])
             .set_line_width(1.0)
-            .rect(0.5, 0.5, width - 1.0, height - 1.0)
+            .rect_bl(0.5, 0.5, width - 1.0, height - 1.0)
             .stroke();
     }
 
@@ -79,7 +79,7 @@ fn generate_checkbox_appearance(field: &FormField, font_ref: Option<PdfRef>) -> 
     if let Some(ref bg) = field.background_color {
         content
             .set_fill_color_rgb(bg[0], bg[1], bg[2])
-            .rect(0.0, 0.0, width, height)
+            .rect_bl(0.0, 0.0, width, height)
             .fill();
     }
 
@@ -88,7 +88,7 @@ fn generate_checkbox_appearance(field: &FormField, font_ref: Option<PdfRef>) -> 
         content
             .set_stroke_color_rgb(bc[0], bc[1], bc[2])
             .set_line_width(1.0)
-            .rect(0.5, 0.5, width - 1.0, height - 1.0)
+            .rect_bl(0.5, 0.5, width - 1.0, height - 1.0)
             .stroke();
     }
 
@@ -122,7 +122,7 @@ fn generate_choice_appearance(field: &FormField, font_ref: Option<PdfRef>) -> Pd
     if let Some(ref bg) = field.background_color {
         content
             .set_fill_color_rgb(bg[0], bg[1], bg[2])
-            .rect(0.0, 0.0, width, height)
+            .rect_bl(0.0, 0.0, width, height)
             .fill();
     }
 
@@ -131,7 +131,7 @@ fn generate_choice_appearance(field: &FormField, font_ref: Option<PdfRef>) -> Pd
         content
             .set_stroke_color_rgb(bc[0], bc[1], bc[2])
             .set_line_width(1.0)
-            .rect(0.5, 0.5, width - 1.0, height - 1.0)
+            .rect_bl(0.5, 0.5, width - 1.0, height - 1.0)
             .stroke();
     }
 
@@ -168,7 +168,7 @@ fn generate_choice_appearance(field: &FormField, font_ref: Option<PdfRef>) -> Pd
         // Draw dropdown button area
         content
             .set_fill_color_rgb(0.9, 0.9, 0.9)
-            .rect(width - height, 0.0, height, height)
+            .rect_bl(width - height, 0.0, height, height)
             .fill();
 
         // Draw arrow
@@ -196,7 +196,7 @@ fn generate_empty_appearance(field: &FormField) -> PdfStream {
         content
             .set_stroke_color_rgb(bc[0], bc[1], bc[2])
             .set_line_width(1.0)
-            .rect(0.5, 0.5, width - 1.0, height - 1.0)
+            .rect_bl(0.5, 0.5, width - 1.0, height - 1.0)
             .stroke();
     }
 

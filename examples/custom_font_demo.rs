@@ -37,7 +37,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header band (light gray, top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
+        ctx.gray(0.95).rectangle([0.0, 842.0], page_width, 82.0);
     });
 
     // Embed fonts
@@ -134,7 +134,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Draw a box with mixed font content (using top-left origin)
     doc.stroke(|ctx| {
-        ctx.gray(0.7).line_width(1.0).rounded_rect_tl(
+        ctx.gray(0.7).line_width(1.0).rounded_rectangle(
             [margin, y + 10.0],
             page_width - margin * 2.0,
             90.0,

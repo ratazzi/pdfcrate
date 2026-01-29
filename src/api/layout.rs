@@ -1284,7 +1284,7 @@ impl LayoutDocument {
     pub fn stroke_bounds(&mut self) -> &mut Self {
         let bounds = self.state.bounds();
         let x = bounds.absolute_left();
-        let y = bounds.absolute_bottom();
+        let y = bounds.absolute_top(); // top-left origin for rectangle
         let w = bounds.width();
         let h = bounds.height();
 
@@ -1298,7 +1298,7 @@ impl LayoutDocument {
     pub fn stroke_bounds_color(&mut self, color: Color) -> &mut Self {
         let bounds = self.state.bounds();
         let x = bounds.absolute_left();
-        let y = bounds.absolute_bottom();
+        let y = bounds.absolute_top(); // top-left origin for rectangle
         let w = bounds.width();
         let h = bounds.height();
 

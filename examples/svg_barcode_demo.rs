@@ -30,7 +30,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
+        ctx.gray(0.95).rectangle([0.0, 842.0], page_width, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -85,14 +85,14 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     // Background rectangles (using top-left origin)
     let rect_top_y = y + target_height + 8.0;
     doc.fill(|ctx| {
-        ctx.gray(0.97).rect_tl(
+        ctx.gray(0.97).rectangle(
             [x - 8.0, rect_top_y],
             target_width + 16.0,
             target_height + 16.0,
         );
     });
     doc.stroke(|ctx| {
-        ctx.gray(0.85).line_width(0.5).rect_tl(
+        ctx.gray(0.85).line_width(0.5).rectangle(
             [x - 8.0, rect_top_y],
             target_width + 16.0,
             target_height + 16.0,

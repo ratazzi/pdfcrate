@@ -174,8 +174,36 @@ impl ContentBuilder {
         self.line("h")
     }
 
-    /// Rectangle (re)
+    /// Rectangle (re) - Prawn-compatible, top-left origin
+    ///
+    /// Draws a rectangle where (x, y) is the **top-left corner**, matching Prawn's convention.
+    /// Internally converts to PDF's native format (bottom-left origin).
+    ///
+    /// # Parameters
+    ///
+    /// * `width` and `height` must be positive values.
+    ///
+    /// For PDF-native coordinates (bottom-left origin), use [`rect_bl`](Self::rect_bl).
     pub fn rect(&mut self, x: f64, y: f64, width: f64, height: f64) -> &mut Self {
+        // PDF's `re` operator uses bottom-left origin, so convert from top-left
+        self.line(&format!(
+            "{} {} {} {} re",
+            format_number(x),
+            format_number(y - height), // Convert top-left y to bottom-left y
+            format_number(width),
+            format_number(height)
+        ))
+    }
+
+    /// Rectangle with bottom-left origin (PDF native coordinates)
+    ///
+    /// This method directly uses PDF's native coordinate system
+    /// where (x, y) specifies the **bottom-left corner** of the rectangle.
+    ///
+    /// # Parameters
+    ///
+    /// * `width` and `height` must be positive values.
+    pub fn rect_bl(&mut self, x: f64, y: f64, width: f64, height: f64) -> &mut Self {
         self.line(&format!(
             "{} {} {} {} re",
             format_number(x),
@@ -195,7 +223,10 @@ impl ContentBuilder {
     /// Ellipse (approximated with Bezier curves)
     ///
     /// Draws an ellipse centered at (cx, cy) with horizontal radius rx
-    /// and vertical radius ry.
+    /// and vertical radius ry. Drawing direction is counter-clockwise,
+    /// matching Prawn's behavior.
+    ///
+    /// After drawing, the current point is moved to the center of the ellipse.
     pub fn ellipse(&mut self, cx: f64, cy: f64, rx: f64, ry: f64) -> &mut Self {
         // Magic number for approximating a quarter circle with a Bezier curve
         // kappa = 4 * (sqrt(2) - 1) / 3 ≈ 0.5522847498
@@ -204,27 +235,37 @@ impl ContentBuilder {
         let ox = rx * KAPPA; // Control point offset horizontal
         let oy = ry * KAPPA; // Control point offset vertical
 
-        // Start at the right-most point
+        // Start at the right-most point (3 o'clock position)
         self.move_to(cx + rx, cy);
 
-        // Top-right quadrant
+        // Upper right quadrant (3 o'clock to 12 o'clock) - counter-clockwise
         self.curve_to(cx + rx, cy + oy, cx + ox, cy + ry, cx, cy + ry);
 
-        // Top-left quadrant
+        // Upper left quadrant (12 o'clock to 9 o'clock)
         self.curve_to(cx - ox, cy + ry, cx - rx, cy + oy, cx - rx, cy);
 
-        // Bottom-left quadrant
+        // Lower left quadrant (9 o'clock to 6 o'clock)
         self.curve_to(cx - rx, cy - oy, cx - ox, cy - ry, cx, cy - ry);
 
-        // Bottom-right quadrant
+        // Lower right quadrant (6 o'clock to 3 o'clock)
         self.curve_to(cx + ox, cy - ry, cx + rx, cy - oy, cx + rx, cy);
 
-        self.close_path()
+        // Move to center (Prawn behavior - does NOT close path)
+        self.move_to(cx, cy)
     }
 
-    /// Rounded rectangle
+    /// Rounded rectangle - Prawn-compatible, top-left origin
     ///
-    /// Draws a rectangle with rounded corners.
+    /// Draws a rectangle with rounded corners. The point (x, y) specifies the
+    /// **top-left corner** of the rectangle, matching Prawn's convention.
+    ///
+    /// The vertices are drawn clockwise: top-left → top-right → bottom-right → bottom-left.
+    ///
+    /// # Parameters
+    ///
+    /// * `width`, `height`, and `radius` must be positive values.
+    ///
+    /// For PDF-native coordinates (bottom-left origin), use [`rounded_rect_bl`](Self::rounded_rect_bl).
     pub fn rounded_rect(
         &mut self,
         x: f64,
@@ -240,48 +281,72 @@ impl ContentBuilder {
         const KAPPA: f64 = 0.5522847498;
         let k = r * KAPPA;
 
-        // Start at top-left, just after the corner
+        // Prawn draws clockwise from top-left:
+        // top-left corner → top-right corner → bottom-right corner → bottom-left corner
+        // Note: In PDF coordinates, y increases upward, so "down" means y decreases
+
+        // Start at top-left, just after the corner arc (on the top edge)
         self.move_to(x + r, y);
 
-        // Top edge
+        // Top edge (left to right)
         self.line_to(x + width - r, y);
 
-        // Top-right corner
-        self.curve_to(x + width - r + k, y, x + width, y + r - k, x + width, y + r);
+        // Top-right corner (curve down-right)
+        self.curve_to(x + width - r + k, y, x + width, y - r + k, x + width, y - r);
 
-        // Right edge
-        self.line_to(x + width, y + height - r);
+        // Right edge (top to bottom, i.e., y decreasing)
+        self.line_to(x + width, y - height + r);
 
-        // Bottom-right corner
+        // Bottom-right corner (curve down-left)
         self.curve_to(
             x + width,
-            y + height - r + k,
+            y - height + r - k,
             x + width - r + k,
-            y + height,
+            y - height,
             x + width - r,
-            y + height,
+            y - height,
         );
 
-        // Bottom edge
-        self.line_to(x + r, y + height);
+        // Bottom edge (right to left)
+        self.line_to(x + r, y - height);
 
-        // Bottom-left corner
+        // Bottom-left corner (curve up-left)
         self.curve_to(
             x + r - k,
-            y + height,
+            y - height,
             x,
-            y + height - r + k,
+            y - height + r - k,
             x,
-            y + height - r,
+            y - height + r,
         );
 
-        // Left edge
-        self.line_to(x, y + r);
+        // Left edge (bottom to top, i.e., y increasing)
+        self.line_to(x, y - r);
 
-        // Top-left corner
-        self.curve_to(x, y + r - k, x + r - k, y, x + r, y);
+        // Top-left corner (curve up-right)
+        self.curve_to(x, y - r + k, x + r - k, y, x + r, y);
 
         self.close_path()
+    }
+
+    /// Rounded rectangle with bottom-left origin (PDF native coordinates)
+    ///
+    /// This method uses PDF's native coordinate system where (x, y) specifies
+    /// the **bottom-left corner** of the rectangle.
+    ///
+    /// # Parameters
+    ///
+    /// * `width`, `height`, and `radius` must be positive values.
+    pub fn rounded_rect_bl(
+        &mut self,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        // Convert bottom-left to top-left for Prawn-compatible method
+        self.rounded_rect(x, y + height, width, height, radius)
     }
 
     // Path painting operators

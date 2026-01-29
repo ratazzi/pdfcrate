@@ -31,7 +31,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header band (top-left: 0, 842)
     doc.fill(|ctx| {
-        ctx.gray(0.95).rect_tl([0.0, 842.0], page_width, 82.0);
+        ctx.gray(0.95).rectangle([0.0, 842.0], page_width, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -70,7 +70,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     for (i, page) in embedded_pages.iter().enumerate() {
         // Draw a border around the thumbnail (using top-left origin)
         doc.stroke(|ctx| {
-            ctx.gray(0.7).line_width(1.0).rect_tl(
+            ctx.gray(0.7).line_width(1.0).rectangle(
                 [x - 2.0, y + 2.0],
                 thumbnail_width + 4.0,
                 thumbnail_height + 4.0,
@@ -126,7 +126,8 @@ fn create_sample_source_pdf() -> PdfResult<Vec<u8>> {
 
     // Page 1: Title page (using top-left coordinates)
     source.fill(|ctx| {
-        ctx.color(0.2, 0.4, 0.8).rect_tl([0.0, 842.0], 595.0, 142.0);
+        ctx.color(0.2, 0.4, 0.8)
+            .rectangle([0.0, 842.0], 595.0, 142.0);
     });
     source.font("Helvetica").size(28.0);
     source.text_at("Sample Source PDF", [150.0, 750.0]);
@@ -148,7 +149,7 @@ fn create_sample_source_pdf() -> PdfResult<Vec<u8>> {
         ctx.color(0.9, 0.3, 0.3).circle([150.0, 500.0], 80.0);
         // Green square (using top-left coordinates)
         ctx.color(0.3, 0.9, 0.3)
-            .rect_tl([280.0, 580.0], 160.0, 160.0);
+            .rectangle([280.0, 580.0], 160.0, 160.0);
         ctx.color(0.3, 0.3, 0.9)
             .ellipse([150.0, 300.0], 100.0, 50.0);
     });

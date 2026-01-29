@@ -38,7 +38,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header band
     doc.fill(|ctx| {
-        ctx.gray(0.95).rect_tl([0.0, 842.0], 595.0, 82.0);
+        ctx.gray(0.95).rectangle([0.0, 842.0], 595.0, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -56,11 +56,14 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         // Blue rectangle
         ctx.color(0.15, 0.45, 0.85)
             .line_width(2.0)
-            .rect_tl([60.0, 700.0], 180.0, 90.0);
+            .rectangle([60.0, 700.0], 180.0, 90.0);
         // Red rounded rectangle
-        ctx.color(0.9, 0.3, 0.2)
-            .line_width(3.0)
-            .rounded_rect_tl([60.0, 580.0], 180.0, 90.0, 14.0);
+        ctx.color(0.9, 0.3, 0.2).line_width(3.0).rounded_rectangle(
+            [60.0, 580.0],
+            180.0,
+            90.0,
+            14.0,
+        );
         // Green circle
         ctx.color(0.2, 0.7, 0.4)
             .line_width(2.5)
@@ -76,7 +79,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     doc.fill(|ctx| {
         // Yellow rounded rectangle
         ctx.color(0.98, 0.85, 0.25)
-            .rounded_rect_tl([320.0, 700.0], 220.0, 90.0, 18.0);
+            .rounded_rectangle([320.0, 700.0], 220.0, 90.0, 18.0);
         // Blue ellipse
         ctx.color(0.2, 0.62, 0.95)
             .ellipse([430.0, 520.0], 90.0, 45.0);
@@ -180,20 +183,20 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     // Red rect (100%)
     doc.fill(|ctx| {
         ctx.color(0.85, 0.2, 0.3)
-            .rect_tl([rect_x, rect_top_y], 80.0, 55.0);
+            .rectangle([rect_x, rect_top_y], 80.0, 55.0);
     });
     // Blue rect (65%)
     doc.transparent(0.65, 0.65, |d| {
         d.fill(|ctx| {
             ctx.color(0.2, 0.6, 0.9)
-                .rect_tl([rect_x + 45.0, rect_top_y], 80.0, 55.0);
+                .rectangle([rect_x + 45.0, rect_top_y], 80.0, 55.0);
         });
     });
     // Green rect (35%)
     doc.transparent(0.35, 0.35, |d| {
         d.fill(|ctx| {
             ctx.color(0.3, 0.85, 0.3)
-                .rect_tl([rect_x + 22.0, rect_top_y + 30.0], 80.0, 55.0);
+                .rectangle([rect_x + 22.0, rect_top_y + 30.0], 80.0, 55.0);
         });
     });
 
