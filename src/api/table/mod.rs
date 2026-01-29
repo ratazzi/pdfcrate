@@ -1015,7 +1015,7 @@ impl Table {
                 let cell_y = table_y - cell.y; // y decreases downward
 
                 doc.inner_mut().fill(|ctx| {
-                    ctx.color(bg.r, bg.g, bg.b);
+                    ctx.color(bg);
                     ctx.rectangle([cell_x, cell_y], cell.width, cell.height);
                 });
             }
@@ -1127,7 +1127,7 @@ impl Table {
                 let cell_y = row_y - cell_y_in_row;
 
                 doc.inner_mut().fill(|ctx| {
-                    ctx.color(bg.r, bg.g, bg.b);
+                    ctx.color(bg);
                     ctx.rectangle([cell_x, cell_y], cell.width, cell.height);
                 });
             }
@@ -1162,11 +1162,7 @@ impl Table {
             // Top border
             if style.borders[0] {
                 ctx.line_width(style.border_widths[0]);
-                ctx.color(
-                    style.border_colors[0].r,
-                    style.border_colors[0].g,
-                    style.border_colors[0].b,
-                );
+                ctx.color(style.border_colors[0]);
                 Self::apply_border_line(ctx, style.border_lines[0]);
                 ctx.line([x, y], [x + w, y]);
             }
@@ -1174,11 +1170,7 @@ impl Table {
             // Right border
             if style.borders[1] {
                 ctx.line_width(style.border_widths[1]);
-                ctx.color(
-                    style.border_colors[1].r,
-                    style.border_colors[1].g,
-                    style.border_colors[1].b,
-                );
+                ctx.color(style.border_colors[1]);
                 Self::apply_border_line(ctx, style.border_lines[1]);
                 ctx.line([x + w, y], [x + w, y - h]);
             }
@@ -1186,11 +1178,7 @@ impl Table {
             // Bottom border
             if style.borders[2] {
                 ctx.line_width(style.border_widths[2]);
-                ctx.color(
-                    style.border_colors[2].r,
-                    style.border_colors[2].g,
-                    style.border_colors[2].b,
-                );
+                ctx.color(style.border_colors[2]);
                 Self::apply_border_line(ctx, style.border_lines[2]);
                 ctx.line([x, y - h], [x + w, y - h]);
             }
@@ -1198,11 +1186,7 @@ impl Table {
             // Left border
             if style.borders[3] {
                 ctx.line_width(style.border_widths[3]);
-                ctx.color(
-                    style.border_colors[3].r,
-                    style.border_colors[3].g,
-                    style.border_colors[3].b,
-                );
+                ctx.color(style.border_colors[3]);
                 Self::apply_border_line(ctx, style.border_lines[3]);
                 ctx.line([x, y], [x, y - h]);
             }

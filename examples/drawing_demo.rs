@@ -32,14 +32,13 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     doc.stroke_axis(
         AxisOptions::new()
             .at(20.0, 20.0)
-            .color(0.6, 0.6, 0.6)
+            .color("999999")
             .step_length(100.0),
     );
 
     // Header band
     doc.fill(|ctx| {
-        ctx.color(0.95, 0.95, 0.95)
-            .rectangle([0.0, 842.0], 595.0, 82.0);
+        ctx.color("F2F2F2").rectangle([0.0, 842.0], 595.0, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
@@ -55,28 +54,25 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     // === Stroke-only shapes ===
     // Blue rectangle
     doc.stroke(|ctx| {
-        ctx.color(0.15, 0.45, 0.85)
+        ctx.color("2673D9")
             .line_width(2.0)
             .rectangle([60.0, 700.0], 180.0, 90.0);
     });
     // Red rounded rectangle
     doc.stroke(|ctx| {
-        ctx.color(0.9, 0.3, 0.2).line_width(3.0).rounded_rectangle(
-            [60.0, 580.0],
-            180.0,
-            90.0,
-            14.0,
-        );
+        ctx.color("E64D33")
+            .line_width(3.0)
+            .rounded_rectangle([60.0, 580.0], 180.0, 90.0, 14.0);
     });
     // Green circle
     doc.stroke(|ctx| {
-        ctx.color(0.2, 0.7, 0.4)
+        ctx.color("33B366")
             .line_width(2.5)
             .circle([150.0, 420.0], 40.0);
     });
     // Dashed line (matches Ruby's inherited 2.5pt line width)
     doc.stroke(|ctx| {
-        ctx.color(0.2, 0.2, 0.2)
+        ctx.color("333333")
             .line_width(2.5)
             .dash(&[6.0, 4.0])
             .line([60.0, 360.0], [240.0, 360.0]);
@@ -85,17 +81,16 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     // === Filled shapes ===
     // Yellow rounded rectangle
     doc.fill(|ctx| {
-        ctx.color(0.98, 0.85, 0.25)
+        ctx.color("FAD940")
             .rounded_rectangle([320.0, 700.0], 220.0, 90.0, 18.0);
     });
     // Blue ellipse
     doc.fill(|ctx| {
-        ctx.color(0.2, 0.62, 0.95)
-            .ellipse([430.0, 520.0], 90.0, 45.0);
+        ctx.color("339EF2").ellipse([430.0, 520.0], 90.0, 45.0);
     });
     // Pink circle
     doc.fill(|ctx| {
-        ctx.color(0.9, 0.5, 0.6).circle([430.0, 420.0], 45.0);
+        ctx.color("E68099").circle([430.0, 420.0], 45.0);
     });
 
     // === Polygons section ===
@@ -104,7 +99,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Triangle (stroke)
     doc.stroke(|ctx| {
-        ctx.color(0.8, 0.2, 0.2).line_width(2.5).polygon(&[
+        ctx.color("CC3333").line_width(2.5).polygon(&[
             [100.0, 280.0],
             [140.0, 280.0],
             [120.0, 240.0],
@@ -113,7 +108,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Pentagon (fill)
     doc.fill(|ctx| {
-        ctx.color(0.2, 0.6, 0.8).polygon(&[
+        ctx.color("3399CC").polygon(&[
             [200.0, 280.0],
             [220.0, 270.0],
             [215.0, 245.0],
@@ -124,7 +119,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Star (fill)
     doc.fill(|ctx| {
-        ctx.color(0.9, 0.8, 0.2).polygon(&[
+        ctx.color("E6CC33").polygon(&[
             [310.0, 280.0],
             [315.0, 265.0],
             [330.0, 265.0],
@@ -141,7 +136,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     // Hexagon (stroke + fill with transparency)
     doc.transparent(0.6, 0.6, |doc| {
         doc.fill(|ctx| {
-            ctx.color(0.5, 0.3, 0.8).polygon(&[
+            ctx.color("804DCC").polygon(&[
                 [430.0, 280.0],
                 [450.0, 270.0],
                 [450.0, 250.0],
@@ -152,7 +147,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         });
     });
     doc.stroke(|ctx| {
-        ctx.color(0.3, 0.1, 0.5).line_width(2.0).polygon(&[
+        ctx.color("4D1A80").line_width(2.0).polygon(&[
             [430.0, 280.0],
             [450.0, 270.0],
             [450.0, 250.0],
@@ -171,18 +166,17 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     let circle_cy = 130.0;
 
     doc.fill(|ctx| {
-        ctx.color(1.0, 0.0, 0.0)
-            .circle([circle_cx, circle_cy], 35.0);
+        ctx.color("FF0000").circle([circle_cx, circle_cy], 35.0);
     });
     doc.transparent(0.7, 0.7, |d| {
         d.fill(|ctx| {
-            ctx.color(0.0, 1.0, 0.0)
+            ctx.color("00FF00")
                 .circle([circle_cx + 40.0, circle_cy], 35.0);
         });
     });
     doc.transparent(0.4, 0.4, |d| {
         d.fill(|ctx| {
-            ctx.color(0.0, 0.0, 1.0)
+            ctx.color("0000FF")
                 .circle([circle_cx + 20.0, circle_cy - 35.0], 35.0);
         });
     });
@@ -193,20 +187,20 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Red rect (100%)
     doc.fill(|ctx| {
-        ctx.color(0.85, 0.2, 0.3)
+        ctx.color("D93352")
             .rectangle([rect_x, rect_top_y], 80.0, 55.0);
     });
     // Blue rect (65%)
     doc.transparent(0.65, 0.65, |d| {
         d.fill(|ctx| {
-            ctx.color(0.2, 0.6, 0.9)
+            ctx.color("3399E6")
                 .rectangle([rect_x + 45.0, rect_top_y], 80.0, 55.0);
         });
     });
     // Green rect (35%)
     doc.transparent(0.35, 0.35, |d| {
         d.fill(|ctx| {
-            ctx.color(0.3, 0.85, 0.3)
+            ctx.color("4DD94D")
                 .rectangle([rect_x + 22.0, rect_top_y + 30.0], 80.0, 55.0);
         });
     });

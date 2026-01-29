@@ -1459,18 +1459,16 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2).rectangle(
-                                [pos.0, pos.1],
-                                width,
-                                height,
-                            );
+                            ctx.color(fill_c).rectangle([pos.0, pos.1], width, height);
                         });
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
-                                .line_width(lw)
-                                .rectangle([pos.0, pos.1], width, height);
+                            ctx.color(stroke_c).line_width(lw).rectangle(
+                                [pos.0, pos.1],
+                                width,
+                                height,
+                            );
                         });
                     }
                 };
@@ -1484,18 +1482,16 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2).rectangle(
-                                [pos.0, pos.1],
-                                width,
-                                height,
-                            );
+                            ctx.color(fill_c).rectangle([pos.0, pos.1], width, height);
                         });
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
-                                .line_width(lw)
-                                .rectangle([pos.0, pos.1], width, height);
+                            ctx.color(stroke_c).line_width(lw).rectangle(
+                                [pos.0, pos.1],
+                                width,
+                                height,
+                            );
                         });
                     }
                 };
@@ -1537,13 +1533,12 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2)
-                                .circle([center.0, center.1], radius);
+                            ctx.color(fill_c).circle([center.0, center.1], radius);
                         });
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
+                            ctx.color(stroke_c)
                                 .line_width(lw)
                                 .circle([center.0, center.1], radius);
                         });
@@ -1559,13 +1554,12 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2)
-                                .circle([center.0, center.1], radius);
+                            ctx.color(fill_c).circle([center.0, center.1], radius);
                         });
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
+                            ctx.color(stroke_c)
                                 .line_width(lw)
                                 .circle([center.0, center.1], radius);
                         });
@@ -1610,18 +1604,16 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2).ellipse(
-                                [center.0, center.1],
-                                rx,
-                                ry,
-                            );
+                            ctx.color(fill_c).ellipse([center.0, center.1], rx, ry);
                         });
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
-                                .line_width(lw)
-                                .ellipse([center.0, center.1], rx, ry);
+                            ctx.color(stroke_c).line_width(lw).ellipse(
+                                [center.0, center.1],
+                                rx,
+                                ry,
+                            );
                         });
                     }
                 };
@@ -1635,18 +1627,16 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2).ellipse(
-                                [center.0, center.1],
-                                rx,
-                                ry,
-                            );
+                            ctx.color(fill_c).ellipse([center.0, center.1], rx, ry);
                         });
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
-                                .line_width(lw)
-                                .ellipse([center.0, center.1], rx, ry);
+                            ctx.color(stroke_c).line_width(lw).ellipse(
+                                [center.0, center.1],
+                                rx,
+                                ry,
+                            );
                         });
                     }
                 };
@@ -1690,7 +1680,7 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2).rounded_rectangle(
+                            ctx.color(fill_c).rounded_rectangle(
                                 [pos.0, pos.1],
                                 width,
                                 height,
@@ -1700,9 +1690,12 @@ impl Document {
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
-                                .line_width(lw)
-                                .rounded_rectangle([pos.0, pos.1], width, height, radius);
+                            ctx.color(stroke_c).line_width(lw).rounded_rectangle(
+                                [pos.0, pos.1],
+                                width,
+                                height,
+                                radius,
+                            );
                         });
                     }
                 };
@@ -1716,7 +1709,7 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2).rounded_rectangle(
+                            ctx.color(fill_c).rounded_rectangle(
                                 [pos.0, pos.1],
                                 width,
                                 height,
@@ -1726,9 +1719,12 @@ impl Document {
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
-                                .line_width(lw)
-                                .rounded_rectangle([pos.0, pos.1], width, height, radius);
+                            ctx.color(stroke_c).line_width(lw).rounded_rectangle(
+                                [pos.0, pos.1],
+                                width,
+                                height,
+                                radius,
+                            );
                         });
                     }
                 };
@@ -1771,14 +1767,12 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2).polygon(&pts);
+                            ctx.color(fill_c).polygon(&pts);
                         });
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
-                                .line_width(lw)
-                                .polygon(&pts);
+                            ctx.color(stroke_c).line_width(lw).polygon(&pts);
                         });
                     }
                 };
@@ -1792,14 +1786,12 @@ impl Document {
                 let draw = |doc: &mut RustDocument| {
                     if do_fill {
                         doc.fill(|ctx| {
-                            ctx.color(fill_c.0, fill_c.1, fill_c.2).polygon(&pts);
+                            ctx.color(fill_c).polygon(&pts);
                         });
                     }
                     if do_stroke {
                         doc.stroke(|ctx| {
-                            ctx.color(stroke_c.0, stroke_c.1, stroke_c.2)
-                                .line_width(lw)
-                                .polygon(&pts);
+                            ctx.color(stroke_c).line_width(lw).polygon(&pts);
                         });
                     }
                 };
@@ -1849,7 +1841,7 @@ impl Document {
             DocumentInner::Basic(doc) => {
                 let draw = |doc: &mut RustDocument| {
                     doc.stroke(|ctx| {
-                        ctx.color(stroke_c.0, stroke_c.1, stroke_c.2).line_width(lw);
+                        ctx.color(stroke_c).line_width(lw);
                         if let Some((ref pattern, phase)) = dash {
                             ctx.dash_with_phase(pattern, phase);
                         }
@@ -1867,7 +1859,7 @@ impl Document {
             DocumentInner::Layout(layout) => {
                 let draw = |doc: &mut RustDocument| {
                     doc.stroke(|ctx| {
-                        ctx.color(stroke_c.0, stroke_c.1, stroke_c.2).line_width(lw);
+                        ctx.color(stroke_c).line_width(lw);
                         if let Some((ref pattern, phase)) = dash {
                             ctx.dash_with_phase(pattern, phase);
                         }
@@ -1920,7 +1912,7 @@ impl Document {
         doc.stroke_axis(
             crate::api::AxisOptions::new()
                 .at(at.0, at.1)
-                .color(color.0, color.1, color.2)
+                .color(color)
                 .step_length(step),
         );
 

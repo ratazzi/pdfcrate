@@ -18,13 +18,13 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
         // Draw some shapes
         doc.stroke(|ctx| {
-            ctx.color(1.0, 0.0, 0.0); // Red
+            ctx.color("FF0000"); // Red
             ctx.line_width(2.0);
             ctx.rectangle([72.0, 500.0], 100.0, 50.0);
         });
 
         doc.fill(|ctx| {
-            ctx.color(0.0, 0.0, 1.0); // Blue
+            ctx.color("0000FF"); // Blue
             ctx.rectangle([200.0, 500.0], 100.0, 50.0);
         });
 

@@ -32,7 +32,7 @@ def add_drawing_primitives_page(doc):
     doc.stroke_axis(at=(20, 20), color=(0.6, 0.6, 0.6), step=100)
 
     # Header band (top-left: 0, 842)
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     doc.font("Helvetica", 24)
@@ -48,19 +48,19 @@ def add_drawing_primitives_page(doc):
     # Stroke-only shapes
 
     # Blue rectangle stroke (top-left: 60, 700), 180x90
-    doc.stroke(Color(0.15, 0.45, 0.85), 2.0)
+    doc.stroke(Color.hex("2673D9"), 2.0)
     doc.rect((60, 700), 180, 90, do_fill=False, do_stroke=True)
 
     # Red rounded rectangle stroke (top-left: 60, 580), 180x90, corner 14
-    doc.stroke(Color(0.9, 0.3, 0.2), 3.0)
+    doc.stroke(Color.hex("E64D33"), 3.0)
     doc.rounded_rect((60, 580), 180, 90, 14, do_fill=False, do_stroke=True)
 
     # Green circle stroke (center: 150, 420), radius 40
-    doc.stroke(Color(0.2, 0.7, 0.4), 2.5)
+    doc.stroke(Color.hex("33B366"), 2.5)
     doc.circle((150, 420), 40, do_fill=False, do_stroke=True)
 
     # Dashed line (matches Ruby's inherited 2.5pt line width)
-    doc.stroke(Color(0.2, 0.2, 0.2), 2.5)
+    doc.stroke(Color.hex("333333"), 2.5)
     doc.dash([6.0, 4.0])
     doc.line((60, 360), (240, 360))
     doc.undash()
@@ -68,15 +68,15 @@ def add_drawing_primitives_page(doc):
     # Filled shapes
 
     # Yellow rounded rectangle fill (top-left: 320, 700), 220x90, corner 18
-    doc.fill(Color(0.98, 0.85, 0.25))
+    doc.fill(Color.hex("FAD940"))
     doc.rounded_rect((320, 700), 220, 90, 18)
 
     # Blue ellipse fill (center: 430, 520), rx=90, ry=45
-    doc.fill(Color(0.2, 0.62, 0.95))
+    doc.fill(Color.hex("339EF2"))
     doc.ellipse((430, 520), 90, 45)
 
     # Pink circle fill (center: 430, 420), radius 45
-    doc.fill(Color(0.9, 0.5, 0.6))
+    doc.fill(Color.hex("E68099"))
     doc.circle((430, 420), 45)
 
     # Polygons
@@ -84,15 +84,15 @@ def add_drawing_primitives_page(doc):
     doc.text_at("Polygons", (60, 320))
 
     # Triangle (stroke)
-    doc.stroke(Color(0.8, 0.2, 0.2), 2.5)
+    doc.stroke(Color.hex("CC3333"), 2.5)
     doc.polygon([(100, 280), (140, 280), (120, 240)], do_fill=False, do_stroke=True)
 
     # Pentagon (fill)
-    doc.fill(Color(0.2, 0.6, 0.8))
+    doc.fill(Color.hex("3399CC"))
     doc.polygon([(200, 280), (220, 270), (215, 245), (185, 245), (180, 270)])
 
     # Star (fill)
-    doc.fill(Color(0.9, 0.8, 0.2))
+    doc.fill(Color.hex("E6CC33"))
     doc.polygon([
         (310, 280), (315, 265), (330, 265), (320, 255), (325, 240),
         (310, 248), (295, 240), (300, 255), (290, 265), (305, 265)
@@ -100,10 +100,10 @@ def add_drawing_primitives_page(doc):
 
     # Hexagon (transparent fill + stroke)
     with doc.transparent(0.6):
-        doc.fill(Color(0.5, 0.3, 0.8))
+        doc.fill(Color.hex("804DCC"))
         doc.polygon([(430, 280), (450, 270), (450, 250), (430, 240), (410, 250), (410, 270)])
 
-    doc.stroke(Color(0.3, 0.1, 0.5), 2.0)
+    doc.stroke(Color.hex("4D1A80"), 2.0)
     doc.polygon([(430, 280), (450, 270), (450, 250), (430, 240), (410, 250), (410, 270)],
                 do_fill=False, do_stroke=True)
 
@@ -116,17 +116,17 @@ def add_drawing_primitives_page(doc):
     circle_cy = 130.0
 
     # Red circle (100%)
-    doc.fill(Color(1.0, 0.0, 0.0))
+    doc.fill(Color.hex("FF0000"))
     doc.circle((circle_cx, circle_cy), 35)
 
     # Green circle (70%)
     with doc.transparent(0.7):
-        doc.fill(Color(0.0, 1.0, 0.0))
+        doc.fill(Color.hex("00FF00"))
         doc.circle((circle_cx + 40, circle_cy), 35)
 
     # Blue circle (40%)
     with doc.transparent(0.4):
-        doc.fill(Color(0.0, 0.0, 1.0))
+        doc.fill(Color.hex("0000FF"))
         doc.circle((circle_cx + 20, circle_cy - 35), 35)
 
     # Overlapping rectangles with transparency
@@ -134,17 +134,17 @@ def add_drawing_primitives_page(doc):
     rect_top_y = 155.0
 
     # Red rect (100%)
-    doc.fill(Color(0.85, 0.2, 0.3))
+    doc.fill(Color.hex("D93352"))
     doc.rect((rect_x, rect_top_y), 80, 55)
 
     # Blue rect (65%)
     with doc.transparent(0.65):
-        doc.fill(Color(0.2, 0.6, 0.9))
+        doc.fill(Color.hex("3399E6"))
         doc.rect((rect_x + 45, rect_top_y), 80, 55)
 
     # Green rect (35%)
     with doc.transparent(0.35):
-        doc.fill(Color(0.3, 0.85, 0.3))
+        doc.fill(Color.hex("4DD94D"))
         doc.rect((rect_x + 22, rect_top_y + 30), 80, 55)
 
     # Labels
@@ -220,7 +220,7 @@ def add_custom_font_page(doc):
     font_margin = 48.0
 
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     FONT_PATH = "examples/fonts/Roboto-Regular.ttf"
@@ -280,7 +280,7 @@ def add_custom_font_page(doc):
 
         doc.text_at(sample_text, (font_margin, y))
 
-        doc.stroke(Color(0.9, 0.2, 0.2), 2.0)
+        doc.stroke(Color.hex("E63333"), 2.0)
         doc.line((font_margin, y - 5), (font_margin + text_width, y - 5))
 
         doc.font(font_regular.name, 11)
@@ -314,7 +314,7 @@ def add_ligatures_page(doc):
     lig_margin = 48.0
 
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     MAPLE_FONT_PATH = "examples/fonts/MapleMono-NF-CN-Regular.ttf"
@@ -402,7 +402,7 @@ def add_cjk_page(doc):
     cjk_margin = 48.0
 
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     CJK_FONT_LIGHT = "examples/fonts/LXGWWenKai-Light.ttf"
@@ -503,7 +503,7 @@ def add_forms_page(doc):
     form_margin = 48.0
 
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     doc.font("Helvetica", 24)
@@ -577,7 +577,7 @@ def add_svg_barcode_page(doc):
     svg_margin = 48.0
 
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     doc.font("Helvetica", 24)
@@ -641,7 +641,7 @@ def add_svg_barcode_page(doc):
 def add_layout_document_page(doc):
     """Page 10: LayoutDocument Demo"""
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     doc.font("Helvetica", 24)
@@ -706,7 +706,7 @@ def add_layout_document_page(doc):
         TextFragment(", "),
         TextFragment("italic", italic=True),
         TextFragment(", and "),
-        TextFragment("red", color=Color(1.0, 0.0, 0.0)),
+        TextFragment("red", color=Color.hex("FF0000")),
         TextFragment(" text in one line."),
     ])
     doc.formatted_text([
@@ -779,7 +779,7 @@ def add_layout_document_page(doc):
 def add_text_box_overflow_page(doc):
     """Page 11: Text Box Overflow Modes"""
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     doc.font("Helvetica", 24)
@@ -927,7 +927,7 @@ def add_text_box_overflow_page(doc):
 def add_text_layout_page(doc):
     """Page 12: Text Layout Features"""
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     doc.font("Helvetica", 24)
@@ -1051,7 +1051,7 @@ def add_text_layout_page(doc):
 def add_table_page(doc):
     """Page 13: Table Demo"""
     # Header band
-    doc.fill(Color.gray(0.95))
+    doc.fill(Color.hex("F2F2F2"))
     doc.rect((0, PAGE_HEIGHT), PAGE_WIDTH, 82)
 
     doc.font("Helvetica", 24)

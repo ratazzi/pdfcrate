@@ -126,8 +126,7 @@ fn create_sample_source_pdf() -> PdfResult<Vec<u8>> {
 
     // Page 1: Title page (using top-left coordinates)
     source.fill(|ctx| {
-        ctx.color(0.2, 0.4, 0.8)
-            .rectangle([0.0, 842.0], 595.0, 142.0);
+        ctx.color("3366CC").rectangle([0.0, 842.0], 595.0, 142.0);
     });
     source.font("Helvetica").size(28.0);
     source.text_at("Sample Source PDF", [150.0, 750.0]);
@@ -146,12 +145,10 @@ fn create_sample_source_pdf() -> PdfResult<Vec<u8>> {
     source.text_at("Page 2 of 3", [260.0, 760.0]);
 
     source.fill(|ctx| {
-        ctx.color(0.9, 0.3, 0.3).circle([150.0, 500.0], 80.0);
+        ctx.color("E64D4D").circle([150.0, 500.0], 80.0);
         // Green square (using top-left coordinates)
-        ctx.color(0.3, 0.9, 0.3)
-            .rectangle([280.0, 580.0], 160.0, 160.0);
-        ctx.color(0.3, 0.3, 0.9)
-            .ellipse([150.0, 300.0], 100.0, 50.0);
+        ctx.color("4DE64D").rectangle([280.0, 580.0], 160.0, 160.0);
+        ctx.color("4D4DE6").ellipse([150.0, 300.0], 100.0, 50.0);
     });
 
     // Page 3: Text content

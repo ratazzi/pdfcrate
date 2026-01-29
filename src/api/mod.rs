@@ -2,6 +2,7 @@
 //!
 //! This module provides the user-facing API for creating and manipulating PDFs.
 
+pub mod color;
 pub mod image;
 pub mod layout;
 pub mod link;
@@ -29,12 +30,12 @@ use crate::font::StandardFont;
 use crate::forms::{AcroForm, FormField};
 use crate::objects::{PdfArray, PdfDict, PdfName, PdfObject, PdfRef, PdfStream, PdfString};
 
+pub use color::{Color, ColorInput};
 pub use image::{EmbeddedImage, ImageOptions, ImageSource, Position};
 pub use layout::{
-    BoundingBox, Color, FontStyle, Grid, GridBox, GridOptions, LayoutDocument, Margin, MultiBox,
-    Overflow, PageNumberConfig, PageNumberPosition, RelativeFillAndStrokeContext,
-    RelativeFillContext, RelativeStrokeContext, RepeaterPages, TextAlign, TextBoxResult,
-    TextFragment, TextOptions,
+    BoundingBox, FontStyle, Grid, GridBox, GridOptions, LayoutDocument, Margin, MultiBox, Overflow,
+    PageNumberConfig, PageNumberPosition, RelativeFillAndStrokeContext, RelativeFillContext,
+    RelativeStrokeContext, RepeaterPages, TextAlign, TextBoxResult, TextFragment, TextOptions,
 };
 pub use link::{DestinationFit, HighlightMode, LinkAction, LinkAnnotation, LinkDestination};
 pub use outline::{Outline, OutlineBuilder, OutlineDestination, OutlineItem};
@@ -230,24 +231,10 @@ impl AxisOptions {
         self
     }
 
-    /// Sets the color for axes and labels (RGB, 0.0-1.0)
-    pub fn color(mut self, r: f64, g: f64, b: f64) -> Self {
-        self.color = [r, g, b];
-        self
-    }
-
-    /// Sets the color for axes and labels from hex string (e.g., "ff0000" for red)
-    pub fn color_hex(mut self, hex: &str) -> Self {
-        let hex = hex.trim_start_matches('#');
-        if hex.len() >= 6 {
-            if let (Ok(r), Ok(g), Ok(b)) = (
-                u8::from_str_radix(&hex[0..2], 16),
-                u8::from_str_radix(&hex[2..4], 16),
-                u8::from_str_radix(&hex[4..6], 16),
-            ) {
-                self.color = [r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0];
-            }
-        }
+    /// Sets the color for axes and labels
+    pub fn color(mut self, color: impl Into<color::ColorInput>) -> Self {
+        let c = color.into().to_color();
+        self.color = [c.r, c.g, c.b];
         self
     }
 }
@@ -1750,8 +1737,8 @@ impl Document {
     ///
     /// let mut doc = Document::new();
     /// doc.fill_and_stroke(|ctx| {
-    ///     ctx.fill_color(1.0, 0.0, 0.0);
-    ///     ctx.stroke_color(0.0, 0.0, 0.0);
+    ///     ctx.fill_color("FF0000");
+    ///     ctx.stroke_color((0.0, 0.0, 0.0));
     ///     ctx.line_width(2.0);
     ///     ctx.rectangle([100.0, 100.0], 200.0, 100.0);
     /// });
@@ -1790,7 +1777,7 @@ impl Document {
     /// // Both fill and stroke at 50% opacity
     /// doc.transparent(0.5, 0.5, |doc| {
     ///     doc.fill(|ctx| {
-    ///         ctx.color(1.0, 0.0, 0.0);
+    ///         ctx.color("FF0000");
     ///         ctx.rectangle([100.0, 100.0], 200.0, 100.0);
     ///     });
     /// });
@@ -1798,8 +1785,8 @@ impl Document {
     /// // Fill at 50% opacity, stroke at 75% opacity
     /// doc.transparent(0.5, 0.75, |doc| {
     ///     doc.fill_and_stroke(|ctx| {
-    ///         ctx.fill_color(1.0, 0.0, 0.0);
-    ///         ctx.stroke_color(0.0, 0.0, 0.0);
+    ///         ctx.fill_color("FF0000");
+    ///         ctx.stroke_color((0.0, 0.0, 0.0));
     ///         ctx.rectangle([100.0, 100.0], 200.0, 100.0);
     ///     });
     /// });
@@ -1867,7 +1854,7 @@ impl Document {
     ///     AxisOptions::new()
     ///         .at(50.0, 50.0)
     ///         .step_length(50.0)
-    ///         .color(0.5, 0.5, 0.5)
+    ///         .color("808080")
     /// );
     /// ```
     pub fn stroke_axis(&mut self, options: AxisOptions) -> &mut Self {
@@ -2880,9 +2867,15 @@ impl<'a> StrokeContext<'a> {
         self
     }
 
-    /// Sets stroke color (RGB)
-    pub fn color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
-        self.content.set_stroke_color_rgb(r, g, b);
+    /// Sets stroke color from various input types
+    ///
+    /// Accepts hex string, RGB tuple, array, or Color object:
+    /// - `"FF0000"` or `"#FF0000"`
+    /// - `(0.5, 0.5, 0.5)` or `[0.5, 0.5, 0.5]`
+    /// - `Color::rgb(0.5, 0.5, 0.5)`
+    pub fn color(&mut self, color: impl Into<crate::api::color::ColorInput>) -> &mut Self {
+        let c = color.into().to_color();
+        self.content.set_stroke_color_rgb(c.r, c.g, c.b);
         self
     }
 
@@ -3114,9 +3107,15 @@ pub struct FillContext<'a> {
 }
 
 impl<'a> FillContext<'a> {
-    /// Sets fill color (RGB)
-    pub fn color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
-        self.content.set_fill_color_rgb(r, g, b);
+    /// Sets fill color from various input types
+    ///
+    /// Accepts hex string, RGB tuple, array, or Color object:
+    /// - `"FF0000"` or `"#FF0000"`
+    /// - `(0.5, 0.5, 0.5)` or `[0.5, 0.5, 0.5]`
+    /// - `Color::rgb(0.5, 0.5, 0.5)`
+    pub fn color(&mut self, color: impl Into<crate::api::color::ColorInput>) -> &mut Self {
+        let c = color.into().to_color();
+        self.content.set_fill_color_rgb(c.r, c.g, c.b);
         self
     }
 
@@ -3308,9 +3307,10 @@ pub struct FillAndStrokeContext<'a> {
 }
 
 impl<'a> FillAndStrokeContext<'a> {
-    /// Sets fill color (RGB)
-    pub fn fill_color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
-        self.content.set_fill_color_rgb(r, g, b);
+    /// Sets fill color from various input types
+    pub fn fill_color(&mut self, color: impl Into<crate::api::color::ColorInput>) -> &mut Self {
+        let c = color.into().to_color();
+        self.content.set_fill_color_rgb(c.r, c.g, c.b);
         self
     }
 
@@ -3326,9 +3326,10 @@ impl<'a> FillAndStrokeContext<'a> {
         self
     }
 
-    /// Sets stroke color (RGB)
-    pub fn stroke_color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
-        self.content.set_stroke_color_rgb(r, g, b);
+    /// Sets stroke color from various input types
+    pub fn stroke_color(&mut self, color: impl Into<crate::api::color::ColorInput>) -> &mut Self {
+        let c = color.into().to_color();
+        self.content.set_stroke_color_rgb(c.r, c.g, c.b);
         self
     }
 
@@ -4114,10 +4115,10 @@ mod tests {
         let mut doc = Document::new();
 
         doc.stroke(|ctx| {
-            ctx.color(1.0, 0.0, 0.0); // Red
+            ctx.color("FF0000"); // Red
             ctx.rectangle([100.0, 100.0], 50.0, 50.0);
 
-            ctx.color(0.0, 1.0, 0.0); // Green
+            ctx.color("00FF00"); // Green
             ctx.circle([250.0, 125.0], 25.0);
         });
 
@@ -4134,10 +4135,10 @@ mod tests {
         let mut doc = Document::new();
 
         doc.fill(|ctx| {
-            ctx.color(1.0, 0.0, 0.0); // Red
+            ctx.color("FF0000"); // Red
             ctx.rectangle([100.0, 100.0], 50.0, 50.0);
 
-            ctx.color(0.0, 1.0, 0.0); // Green
+            ctx.color("00FF00"); // Green
             ctx.circle([250.0, 125.0], 25.0);
         });
 
@@ -4194,8 +4195,8 @@ mod tests {
         let mut doc = Document::new();
 
         doc.fill_and_stroke(|ctx| {
-            ctx.fill_color(1.0, 0.0, 0.0);
-            ctx.stroke_color(0.0, 0.0, 1.0);
+            ctx.fill_color("FF0000");
+            ctx.stroke_color("0000FF");
             ctx.line_width(2.0);
             ctx.rectangle([100.0, 100.0], 200.0, 100.0);
             ctx.circle([300.0, 300.0], 50.0);
@@ -4214,8 +4215,8 @@ mod tests {
         // Fill at 50%, stroke at 80%
         doc.transparent(0.5, 0.8, |doc| {
             doc.fill_and_stroke(|ctx| {
-                ctx.fill_color(1.0, 0.0, 0.0);
-                ctx.stroke_color(0.0, 0.0, 0.0);
+                ctx.fill_color("FF0000");
+                ctx.stroke_color("000000");
                 ctx.rectangle([100.0, 100.0], 200.0, 100.0);
             });
         });
@@ -4242,7 +4243,7 @@ mod tests {
 
         doc.transparent(0.5, 0.5, |doc| {
             doc.fill(|ctx| {
-                ctx.color(1.0, 0.0, 0.0);
+                ctx.color("FF0000");
                 ctx.rectangle([100.0, 100.0], 200.0, 100.0);
             });
         });
@@ -4267,13 +4268,13 @@ mod tests {
         // Call transparent twice with the same opacity values
         doc.transparent(0.5, 0.8, |doc| {
             doc.fill(|ctx| {
-                ctx.color(1.0, 0.0, 0.0);
+                ctx.color("FF0000");
                 ctx.rectangle([100.0, 100.0], 50.0, 50.0);
             });
         });
         doc.transparent(0.5, 0.8, |doc| {
             doc.fill(|ctx| {
-                ctx.color(0.0, 1.0, 0.0);
+                ctx.color("00FF00");
                 ctx.rectangle([200.0, 100.0], 50.0, 50.0);
             });
         });
@@ -4289,7 +4290,7 @@ mod tests {
         // Different opacity should create a new entry
         doc.transparent(0.3, 0.3, |doc| {
             doc.fill(|ctx| {
-                ctx.color(0.0, 0.0, 1.0);
+                ctx.color("0000FF");
                 ctx.rectangle([300.0, 100.0], 50.0, 50.0);
             });
         });

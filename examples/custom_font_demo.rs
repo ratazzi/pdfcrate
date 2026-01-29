@@ -115,7 +115,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Draw a line under it showing the measured width
     doc.stroke(|ctx| {
-        ctx.color(0.9, 0.2, 0.2)
+        ctx.color("E63333")
             .line_width(2.0)
             .line([margin, y - 5.0], [margin + text_width, y - 5.0]);
     });
