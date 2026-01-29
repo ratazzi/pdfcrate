@@ -67,6 +67,8 @@ pub struct EmbeddedFont {
     pub(crate) used_chars: HashSet<char>,
     /// Cached glyph IDs for character lookup
     pub(crate) glyph_cache: Arc<RwLock<HashMap<char, u16>>>,
+    /// OpenType features to apply when shaping (e.g., "liga", "kern", "smcp")
+    pub features: Vec<String>,
 }
 
 /// Shaped glyph placement (gid + advances/offsets in 1/1000 em units).
@@ -195,7 +197,17 @@ impl EmbeddedFont {
             glyph_set: BTreeMap::new(),
             used_chars: HashSet::new(),
             glyph_cache: Arc::new(RwLock::new(HashMap::new())),
+            features: Vec::new(),
         })
+    }
+
+    /// Sets OpenType features for this font
+    ///
+    /// Features are specified as strings like "liga", "kern", "smcp".
+    /// Prefix with "-" to disable (e.g., "-liga" disables ligatures).
+    pub fn with_features(mut self, features: &[&str]) -> Self {
+        self.features = features.iter().map(|s| s.to_string()).collect();
+        self
     }
 
     /// Checks if the font contains a glyph for the given character
@@ -360,20 +372,52 @@ impl EmbeddedFont {
 
     /// Shapes text into glyphs with advances/offsets.
     ///
+    /// Uses the font's configured features. For additional features, use `shape_text_with_features`.
     /// When shaping is unavailable, falls back to simple glyph lookup with kerning.
     pub fn shape_text(&self, text: &str) -> Vec<ShapedGlyph> {
+        self.shape_text_with_features(text, &[])
+    }
+
+    /// Shapes text into glyphs with additional OpenType features.
+    ///
+    /// Features are combined in order: font-level features first, then `extra_features`.
+    /// Later features override earlier ones when there's a conflict (e.g., if font has
+    /// "liga" enabled and extra_features has "-liga", ligatures will be disabled).
+    ///
+    /// Features are strings like "liga", "kern", "smcp", or "-liga" to disable.
+    /// Invalid feature strings are ignored (logged at debug level).
+    pub fn shape_text_with_features(
+        &self,
+        text: &str,
+        extra_features: &[&str],
+    ) -> Vec<ShapedGlyph> {
         #[cfg(feature = "text-shaping")]
         {
-            use rustybuzz::{Face as BuzzFace, UnicodeBuffer};
+            use rustybuzz::{Face as BuzzFace, Feature, UnicodeBuffer};
 
             let face = match BuzzFace::from_slice(&self.data, 0) {
                 Some(face) => face,
                 None => return self.shape_text_fallback(text),
             };
 
+            // Combine font-level features with extra features
+            let mut features: Vec<Feature> = Vec::new();
+            for f in &self.features {
+                match f.parse() {
+                    Ok(feature) => features.push(feature),
+                    Err(_) => log::debug!("Invalid OpenType feature ignored: {:?}", f),
+                }
+            }
+            for f in extra_features {
+                match f.parse() {
+                    Ok(feature) => features.push(feature),
+                    Err(_) => log::debug!("Invalid OpenType feature ignored: {:?}", f),
+                }
+            }
+
             let mut buffer = UnicodeBuffer::new();
             buffer.push_str(text);
-            let glyph_buffer = rustybuzz::shape(&face, &[], buffer);
+            let glyph_buffer = rustybuzz::shape(&face, &features, buffer);
             let infos = glyph_buffer.glyph_infos();
             let positions = glyph_buffer.glyph_positions();
 
@@ -964,6 +1008,7 @@ mod tests {
             glyph_set: BTreeMap::new(),
             used_chars: HashSet::new(),
             glyph_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            features: Vec::new(),
         };
 
         let widths = font.create_widths_array();
@@ -993,6 +1038,7 @@ mod tests {
             glyph_set: BTreeMap::new(),
             used_chars: HashSet::new(),
             glyph_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            features: Vec::new(),
         };
 
         assert_eq!(font.used_char_count(), 0);
@@ -1002,5 +1048,34 @@ mod tests {
         assert_eq!(font.used_char_count(), 3);
         font.mark_chars_used("D");
         assert_eq!(font.used_char_count(), 4);
+    }
+
+    #[test]
+    fn test_with_features() {
+        let font = EmbeddedFont {
+            name: "Test".to_string(),
+            postscript_name: "Test".to_string(),
+            subset_tag: "ABCDEF".to_string(),
+            flags: 4,
+            italic_angle: 0.0,
+            ascender: 800,
+            descender: -200,
+            cap_height: 700,
+            x_height: 0,
+            stem_v: 80,
+            bbox: [0, -200, 1000, 800],
+            units_per_em: 1000,
+            widths: vec![],
+            max_gid: 0,
+            data: vec![],
+            glyph_set: BTreeMap::new(),
+            used_chars: HashSet::new(),
+            glyph_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            features: Vec::new(),
+        };
+
+        // Test with_features builder
+        let font_with_features = font.with_features(&["liga", "kern", "-calt"]);
+        assert_eq!(font_with_features.features, vec!["liga", "kern", "-calt"]);
     }
 }

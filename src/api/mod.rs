@@ -105,6 +105,9 @@ pub struct Document {
     outline: outline::Outline,
     /// Whether to compress content streams (default: true)
     compress_streams: bool,
+    /// Document-level OpenType font features (e.g., "liga", "kern", "smcp")
+    #[cfg(feature = "fonts")]
+    font_features: Vec<String>,
 }
 
 /// Internal page data
@@ -357,6 +360,8 @@ impl Document {
             destinations: std::collections::HashMap::new(),
             outline: outline::Outline::new(),
             compress_streams: true,
+            #[cfg(feature = "fonts")]
+            font_features: Vec::new(),
         };
 
         // Start with one page
@@ -515,6 +520,55 @@ impl Document {
             self.current_font_embedded = false;
         }
         FontBuilder { doc: self }
+    }
+
+    /// Sets document-level OpenType font features
+    ///
+    /// These features are applied when shaping text with embedded fonts.
+    /// Common features: "liga" (ligatures), "kern" (kerning), "smcp" (small caps),
+    /// "onum" (old-style numerals), "tnum" (tabular numerals).
+    ///
+    /// Document-level features are applied after font-level features (set via
+    /// `EmbeddedFont::with_features`), so document-level takes precedence on conflict.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdfcrate::prelude::*;
+    ///
+    /// let mut doc = Document::new();
+    /// doc.font_features(&["liga", "kern"]);
+    /// ```
+    #[cfg(feature = "fonts")]
+    pub fn font_features(&mut self, features: &[&str]) -> &mut Self {
+        self.font_features = features.iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// Adds OpenType font features to the document-level settings
+    ///
+    /// Duplicate features are ignored.
+    #[cfg(feature = "fonts")]
+    pub fn add_font_features(&mut self, features: &[&str]) -> &mut Self {
+        for f in features {
+            if !self.font_features.iter().any(|existing| existing == *f) {
+                self.font_features.push((*f).to_string());
+            }
+        }
+        self
+    }
+
+    /// Clears all document-level font features
+    #[cfg(feature = "fonts")]
+    pub fn clear_font_features(&mut self) -> &mut Self {
+        self.font_features.clear();
+        self
+    }
+
+    /// Returns an iterator over the current document-level font features
+    #[cfg(feature = "fonts")]
+    pub fn get_font_features(&self) -> impl Iterator<Item = &str> {
+        self.font_features.iter().map(|s| s.as_str())
     }
 
     /// Draws text at a specific position
@@ -878,12 +932,20 @@ impl Document {
         self.embedded_fonts.get(name).map(|f| f.as_ref())
     }
 
+    /// Returns font features as Vec<&str> for passing to shaping functions.
+    /// Centralized here for easier future optimization (e.g., caching).
+    #[cfg(feature = "fonts")]
+    fn font_features_as_slice(&self) -> Vec<&str> {
+        self.font_features.iter().map(|s| s.as_str()).collect()
+    }
+
     /// Measures the width of text with the current font
     #[cfg(feature = "fonts")]
     pub fn measure_text(&self, text: &str) -> f64 {
         if self.current_font_embedded {
             if let Some(font) = self.embedded_fonts.get(&self.current_font) {
-                let glyphs = font.shape_text(text);
+                let features = self.font_features_as_slice();
+                let glyphs = font.shape_text_with_features(text, &features);
                 let total_advance: i32 = glyphs.iter().map(|g| g.x_advance).sum();
                 return total_advance as f64 * self.current_font_size / 1000.0;
             }
@@ -925,7 +987,8 @@ impl Document {
             }
         };
 
-        let glyphs = font.shape_text(text);
+        let features = self.font_features_as_slice();
+        let glyphs = font.shape_text_with_features(text, &features);
         if glyphs.is_empty() {
             return;
         }
@@ -986,7 +1049,8 @@ impl Document {
             }
         };
 
-        let glyphs = font.shape_text(text);
+        let features = self.font_features_as_slice();
+        let glyphs = font.shape_text_with_features(text, &features);
         if glyphs.is_empty() {
             return;
         }
@@ -4743,5 +4807,53 @@ mod tests {
             pdf_str.contains("/Dest (chapter1)"),
             "Should reference named destination"
         );
+    }
+
+    #[cfg(feature = "fonts")]
+    #[test]
+    fn test_font_features_set_and_get() {
+        let mut doc = Document::new();
+
+        // Initially empty
+        assert_eq!(doc.get_font_features().count(), 0);
+
+        // Set features
+        doc.font_features(&["liga", "kern"]);
+        let features: Vec<&str> = doc.get_font_features().collect();
+        assert_eq!(features, vec!["liga", "kern"]);
+
+        // Replace features
+        doc.font_features(&["smcp"]);
+        let features: Vec<&str> = doc.get_font_features().collect();
+        assert_eq!(features, vec!["smcp"]);
+    }
+
+    #[cfg(feature = "fonts")]
+    #[test]
+    fn test_font_features_add() {
+        let mut doc = Document::new();
+
+        doc.font_features(&["liga"]);
+        doc.add_font_features(&["kern", "smcp"]);
+
+        let features: Vec<&str> = doc.get_font_features().collect();
+        assert_eq!(features, vec!["liga", "kern", "smcp"]);
+
+        // Adding duplicates should be ignored
+        doc.add_font_features(&["liga", "kern"]);
+        let features: Vec<&str> = doc.get_font_features().collect();
+        assert_eq!(features, vec!["liga", "kern", "smcp"]);
+    }
+
+    #[cfg(feature = "fonts")]
+    #[test]
+    fn test_font_features_clear() {
+        let mut doc = Document::new();
+
+        doc.font_features(&["liga", "kern"]);
+        assert_eq!(doc.get_font_features().count(), 2);
+
+        doc.clear_font_features();
+        assert_eq!(doc.get_font_features().count(), 0);
     }
 }
