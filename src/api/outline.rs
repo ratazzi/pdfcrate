@@ -122,6 +122,7 @@ impl OutlineItem {
 ///     });
 /// });
 /// ```
+#[derive(Default)]
 pub struct OutlineBuilder {
     items: Vec<OutlineItem>,
 }
@@ -129,7 +130,7 @@ pub struct OutlineBuilder {
 impl OutlineBuilder {
     /// Create a new outline builder
     pub fn new() -> Self {
-        Self { items: Vec::new() }
+        Self::default()
     }
 
     /// Add a section with children
@@ -216,12 +217,6 @@ impl OutlineBuilder {
     /// Get the built items
     pub fn build(self) -> Vec<OutlineItem> {
         self.items
-    }
-}
-
-impl Default for OutlineBuilder {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
