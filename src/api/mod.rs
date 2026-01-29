@@ -32,7 +32,8 @@ use crate::objects::{PdfArray, PdfDict, PdfName, PdfObject, PdfRef, PdfStream, P
 pub use image::{EmbeddedImage, ImageOptions, ImageSource, Position};
 pub use layout::{
     BoundingBox, Color, FontStyle, Grid, GridBox, GridOptions, LayoutDocument, Margin, MultiBox,
-    Overflow, PageNumberConfig, PageNumberPosition, RepeaterPages, TextAlign, TextBoxResult,
+    Overflow, PageNumberConfig, PageNumberPosition, RelativeFillAndStrokeContext,
+    RelativeFillContext, RelativeStrokeContext, RepeaterPages, TextAlign, TextBoxResult,
     TextFragment, TextOptions,
 };
 pub use link::{DestinationFit, HighlightMode, LinkAction, LinkAnnotation, LinkDestination};
@@ -3163,6 +3164,14 @@ impl<'a> FillContext<'a> {
     /// Adds a line to a point
     pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
         self.content.line_to(x, y);
+        self.has_path = true;
+        self
+    }
+
+    /// Adds a cubic Bezier curve
+    pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
+        self.content
+            .curve_to(cp1[0], cp1[1], cp2[0], cp2[1], end[0], end[1]);
         self.has_path = true;
         self
     }

@@ -21,7 +21,7 @@
 use std::ops::{Deref, DerefMut};
 
 use super::measurements::Measurement;
-use super::Document;
+use super::{Document, FillAndStrokeContext, FillContext, StrokeContext};
 
 /// Text alignment options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -4024,6 +4024,611 @@ impl LayoutDocument {
         self.state.cursor_y = abs_y;
 
         old_cursor
+    }
+}
+
+// Relative coordinate drawing (Prawn-style)
+
+impl LayoutDocument {
+    fn relative_origin(&self) -> (f64, f64) {
+        let bounds = self.state.bounds();
+        (bounds.absolute_left(), bounds.absolute_bottom())
+    }
+
+    /// Sets up a relative stroke context for drawing
+    ///
+    /// Coordinates are relative to the current bounding box origin (bottom-left),
+    /// matching Prawn's behavior for graphics primitives.
+    pub fn stroke_relative<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut RelativeStrokeContext),
+    {
+        let (origin_x, origin_y) = self.relative_origin();
+        self.inner.stroke(|ctx| {
+            let mut rel = RelativeStrokeContext::new(ctx, origin_x, origin_y);
+            f(&mut rel);
+        });
+        self
+    }
+
+    /// Sets up a relative fill context for drawing
+    ///
+    /// Coordinates are relative to the current bounding box origin (bottom-left),
+    /// matching Prawn's behavior for graphics primitives.
+    pub fn fill_relative<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut RelativeFillContext),
+    {
+        let (origin_x, origin_y) = self.relative_origin();
+        self.inner.fill(|ctx| {
+            let mut rel = RelativeFillContext::new(ctx, origin_x, origin_y);
+            f(&mut rel);
+        });
+        self
+    }
+
+    /// Sets up a relative fill-and-stroke context for drawing
+    ///
+    /// Coordinates are relative to the current bounding box origin (bottom-left),
+    /// matching Prawn's behavior for graphics primitives.
+    pub fn fill_and_stroke_relative<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut RelativeFillAndStrokeContext),
+    {
+        let (origin_x, origin_y) = self.relative_origin();
+        self.inner.fill_and_stroke(|ctx| {
+            let mut rel = RelativeFillAndStrokeContext::new(ctx, origin_x, origin_y);
+            f(&mut rel);
+        });
+        self
+    }
+}
+
+/// Relative stroke context
+///
+/// Provides Prawn-style relative coordinates within the current bounding box.
+pub struct RelativeStrokeContext<'a, 'ctx> {
+    inner: &'a mut StrokeContext<'ctx>,
+    origin_x: f64,
+    origin_y: f64,
+}
+
+impl<'a, 'ctx> RelativeStrokeContext<'a, 'ctx> {
+    fn new(inner: &'a mut StrokeContext<'ctx>, origin_x: f64, origin_y: f64) -> Self {
+        Self {
+            inner,
+            origin_x,
+            origin_y,
+        }
+    }
+
+    fn map_point(&self, point: [f64; 2]) -> [f64; 2] {
+        [self.origin_x + point[0], self.origin_y + point[1]]
+    }
+
+    fn map_xy(&self, x: f64, y: f64) -> (f64, f64) {
+        (self.origin_x + x, self.origin_y + y)
+    }
+
+    /// Sets line width
+    pub fn line_width(&mut self, width: f64) -> &mut Self {
+        self.inner.line_width(width);
+        self
+    }
+
+    /// Sets stroke color (RGB)
+    pub fn color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
+        self.inner.color(r, g, b);
+        self
+    }
+
+    /// Sets stroke color (grayscale)
+    pub fn gray(&mut self, gray: f64) -> &mut Self {
+        self.inner.gray(gray);
+        self
+    }
+
+    /// Sets stroke color (CMYK)
+    pub fn cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.inner.cmyk(c, m, y, k);
+        self
+    }
+
+    /// Sets dash pattern
+    pub fn dash(&mut self, pattern: &[f64]) -> &mut Self {
+        self.inner.dash(pattern);
+        self
+    }
+
+    /// Sets dash pattern with phase
+    pub fn dash_with_phase(&mut self, pattern: &[f64], phase: f64) -> &mut Self {
+        self.inner.dash_with_phase(pattern, phase);
+        self
+    }
+
+    /// Clears dash pattern (solid line)
+    pub fn undash(&mut self) -> &mut Self {
+        self.inner.undash();
+        self
+    }
+
+    /// Sets line cap style
+    pub fn cap(&mut self, cap: crate::content::LineCap) -> &mut Self {
+        self.inner.cap(cap);
+        self
+    }
+
+    /// Sets line join style
+    pub fn join(&mut self, join: crate::content::LineJoin) -> &mut Self {
+        self.inner.join(join);
+        self
+    }
+
+    /// Adds a line to the current path
+    pub fn line(&mut self, from: [f64; 2], to: [f64; 2]) -> &mut Self {
+        let from = self.map_point(from);
+        let to = self.map_point(to);
+        self.inner.line(from, to);
+        self
+    }
+
+    /// Adds a rectangle to the current path (Prawn-compatible)
+    pub fn rectangle(&mut self, point: [f64; 2], width: f64, height: f64) -> &mut Self {
+        let point = self.map_point(point);
+        self.inner.rectangle(point, width, height);
+        self
+    }
+
+    /// Adds a rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rectangle_bl(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
+        let origin = self.map_point(origin);
+        self.inner.rectangle_bl(origin, width, height);
+        self
+    }
+
+    /// Adds a rounded rectangle to the current path (Prawn-compatible)
+    pub fn rounded_rectangle(
+        &mut self,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        let point = self.map_point(point);
+        self.inner.rounded_rectangle(point, width, height, radius);
+        self
+    }
+
+    /// Adds a rounded rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rounded_rectangle_bl(
+        &mut self,
+        origin: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        let origin = self.map_point(origin);
+        self.inner
+            .rounded_rectangle_bl(origin, width, height, radius);
+        self
+    }
+
+    /// Adds a circle to the current path
+    pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
+        let center = self.map_point(center);
+        self.inner.circle(center, radius);
+        self
+    }
+
+    /// Adds an ellipse to the current path
+    pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
+        let center = self.map_point(center);
+        self.inner.ellipse(center, rx, ry);
+        self
+    }
+
+    /// Moves to a point (starts a new subpath)
+    pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
+        let (x, y) = self.map_xy(x, y);
+        self.inner.move_to(x, y);
+        self
+    }
+
+    /// Adds a line to a point
+    pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
+        let (x, y) = self.map_xy(x, y);
+        self.inner.line_to(x, y);
+        self
+    }
+
+    /// Adds a cubic Bezier curve
+    pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
+        let cp1 = self.map_point(cp1);
+        let cp2 = self.map_point(cp2);
+        let end = self.map_point(end);
+        self.inner.curve_to(cp1, cp2, end);
+        self
+    }
+
+    /// Closes the current subpath
+    pub fn close_path(&mut self) -> &mut Self {
+        self.inner.close_path();
+        self
+    }
+
+    /// Strokes the current path immediately and resets path state
+    pub fn stroke(&mut self) -> &mut Self {
+        self.inner.stroke();
+        self
+    }
+
+    /// Adds a polygon to the current path
+    pub fn polygon(&mut self, points: &[[f64; 2]]) -> &mut Self {
+        if points.is_empty() {
+            return self;
+        }
+        let mapped: Vec<[f64; 2]> = points.iter().copied().map(|p| self.map_point(p)).collect();
+        self.inner.polygon(&mapped);
+        self
+    }
+
+    /// Accesses the underlying absolute coordinate context
+    pub fn absolute(&mut self) -> &mut StrokeContext<'ctx> {
+        self.inner
+    }
+}
+
+/// Relative fill context
+///
+/// Provides Prawn-style relative coordinates within the current bounding box.
+pub struct RelativeFillContext<'a, 'ctx> {
+    inner: &'a mut FillContext<'ctx>,
+    origin_x: f64,
+    origin_y: f64,
+}
+
+impl<'a, 'ctx> RelativeFillContext<'a, 'ctx> {
+    fn new(inner: &'a mut FillContext<'ctx>, origin_x: f64, origin_y: f64) -> Self {
+        Self {
+            inner,
+            origin_x,
+            origin_y,
+        }
+    }
+
+    fn map_point(&self, point: [f64; 2]) -> [f64; 2] {
+        [self.origin_x + point[0], self.origin_y + point[1]]
+    }
+
+    fn map_xy(&self, x: f64, y: f64) -> (f64, f64) {
+        (self.origin_x + x, self.origin_y + y)
+    }
+
+    /// Sets fill color (RGB)
+    pub fn color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
+        self.inner.color(r, g, b);
+        self
+    }
+
+    /// Sets fill color (grayscale)
+    pub fn gray(&mut self, gray: f64) -> &mut Self {
+        self.inner.gray(gray);
+        self
+    }
+
+    /// Sets fill color (CMYK)
+    pub fn cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.inner.cmyk(c, m, y, k);
+        self
+    }
+
+    /// Adds a rectangle to the current path (Prawn-compatible)
+    pub fn rectangle(&mut self, point: [f64; 2], width: f64, height: f64) -> &mut Self {
+        let point = self.map_point(point);
+        self.inner.rectangle(point, width, height);
+        self
+    }
+
+    /// Adds a rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rectangle_bl(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
+        let origin = self.map_point(origin);
+        self.inner.rectangle_bl(origin, width, height);
+        self
+    }
+
+    /// Adds a rounded rectangle to the current path (Prawn-compatible)
+    pub fn rounded_rectangle(
+        &mut self,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        let point = self.map_point(point);
+        self.inner.rounded_rectangle(point, width, height, radius);
+        self
+    }
+
+    /// Adds a rounded rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rounded_rectangle_bl(
+        &mut self,
+        origin: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        let origin = self.map_point(origin);
+        self.inner
+            .rounded_rectangle_bl(origin, width, height, radius);
+        self
+    }
+
+    /// Adds a circle to the current path
+    pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
+        let center = self.map_point(center);
+        self.inner.circle(center, radius);
+        self
+    }
+
+    /// Adds an ellipse to the current path
+    pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
+        let center = self.map_point(center);
+        self.inner.ellipse(center, rx, ry);
+        self
+    }
+
+    /// Moves to a point (starts a new subpath)
+    pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
+        let (x, y) = self.map_xy(x, y);
+        self.inner.move_to(x, y);
+        self
+    }
+
+    /// Adds a line to a point
+    pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
+        let (x, y) = self.map_xy(x, y);
+        self.inner.line_to(x, y);
+        self
+    }
+
+    /// Adds a cubic Bezier curve
+    pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
+        let cp1 = self.map_point(cp1);
+        let cp2 = self.map_point(cp2);
+        let end = self.map_point(end);
+        self.inner.curve_to(cp1, cp2, end);
+        self
+    }
+
+    /// Closes the current subpath
+    pub fn close_path(&mut self) -> &mut Self {
+        self.inner.close_path();
+        self
+    }
+
+    /// Fills the current path immediately and resets path state
+    pub fn fill(&mut self) -> &mut Self {
+        self.inner.fill();
+        self
+    }
+
+    /// Adds a polygon to the current path
+    pub fn polygon(&mut self, points: &[[f64; 2]]) -> &mut Self {
+        if points.is_empty() {
+            return self;
+        }
+        let mapped: Vec<[f64; 2]> = points.iter().copied().map(|p| self.map_point(p)).collect();
+        self.inner.polygon(&mapped);
+        self
+    }
+
+    /// Accesses the underlying absolute coordinate context
+    pub fn absolute(&mut self) -> &mut FillContext<'ctx> {
+        self.inner
+    }
+}
+
+/// Relative fill-and-stroke context
+///
+/// Provides Prawn-style relative coordinates within the current bounding box.
+pub struct RelativeFillAndStrokeContext<'a, 'ctx> {
+    inner: &'a mut FillAndStrokeContext<'ctx>,
+    origin_x: f64,
+    origin_y: f64,
+}
+
+impl<'a, 'ctx> RelativeFillAndStrokeContext<'a, 'ctx> {
+    fn new(inner: &'a mut FillAndStrokeContext<'ctx>, origin_x: f64, origin_y: f64) -> Self {
+        Self {
+            inner,
+            origin_x,
+            origin_y,
+        }
+    }
+
+    fn map_point(&self, point: [f64; 2]) -> [f64; 2] {
+        [self.origin_x + point[0], self.origin_y + point[1]]
+    }
+
+    fn map_xy(&self, x: f64, y: f64) -> (f64, f64) {
+        (self.origin_x + x, self.origin_y + y)
+    }
+
+    /// Sets fill color (RGB)
+    pub fn fill_color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
+        self.inner.fill_color(r, g, b);
+        self
+    }
+
+    /// Sets fill color (grayscale)
+    pub fn fill_gray(&mut self, gray: f64) -> &mut Self {
+        self.inner.fill_gray(gray);
+        self
+    }
+
+    /// Sets fill color (CMYK)
+    pub fn fill_cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.inner.fill_cmyk(c, m, y, k);
+        self
+    }
+
+    /// Sets stroke color (RGB)
+    pub fn stroke_color(&mut self, r: f64, g: f64, b: f64) -> &mut Self {
+        self.inner.stroke_color(r, g, b);
+        self
+    }
+
+    /// Sets stroke color (grayscale)
+    pub fn stroke_gray(&mut self, gray: f64) -> &mut Self {
+        self.inner.stroke_gray(gray);
+        self
+    }
+
+    /// Sets stroke color (CMYK)
+    pub fn stroke_cmyk(&mut self, c: f64, m: f64, y: f64, k: f64) -> &mut Self {
+        self.inner.stroke_cmyk(c, m, y, k);
+        self
+    }
+
+    /// Sets line width
+    pub fn line_width(&mut self, width: f64) -> &mut Self {
+        self.inner.line_width(width);
+        self
+    }
+
+    /// Sets dash pattern
+    pub fn dash(&mut self, pattern: &[f64]) -> &mut Self {
+        self.inner.dash(pattern);
+        self
+    }
+
+    /// Sets dash pattern with phase
+    pub fn dash_with_phase(&mut self, pattern: &[f64], phase: f64) -> &mut Self {
+        self.inner.dash_with_phase(pattern, phase);
+        self
+    }
+
+    /// Clears dash pattern (solid line)
+    pub fn undash(&mut self) -> &mut Self {
+        self.inner.undash();
+        self
+    }
+
+    /// Sets line cap style
+    pub fn cap(&mut self, cap: crate::content::LineCap) -> &mut Self {
+        self.inner.cap(cap);
+        self
+    }
+
+    /// Sets line join style
+    pub fn join(&mut self, join: crate::content::LineJoin) -> &mut Self {
+        self.inner.join(join);
+        self
+    }
+
+    /// Adds a rectangle to the current path (Prawn-compatible)
+    pub fn rectangle(&mut self, point: [f64; 2], width: f64, height: f64) -> &mut Self {
+        let point = self.map_point(point);
+        self.inner.rectangle(point, width, height);
+        self
+    }
+
+    /// Adds a rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rectangle_bl(&mut self, origin: [f64; 2], width: f64, height: f64) -> &mut Self {
+        let origin = self.map_point(origin);
+        self.inner.rectangle_bl(origin, width, height);
+        self
+    }
+
+    /// Adds a rounded rectangle to the current path (Prawn-compatible)
+    pub fn rounded_rectangle(
+        &mut self,
+        point: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        let point = self.map_point(point);
+        self.inner.rounded_rectangle(point, width, height, radius);
+        self
+    }
+
+    /// Adds a rounded rectangle with bottom-left origin to the current path (PDF native)
+    pub fn rounded_rectangle_bl(
+        &mut self,
+        origin: [f64; 2],
+        width: f64,
+        height: f64,
+        radius: f64,
+    ) -> &mut Self {
+        let origin = self.map_point(origin);
+        self.inner
+            .rounded_rectangle_bl(origin, width, height, radius);
+        self
+    }
+
+    /// Adds a circle to the current path
+    pub fn circle(&mut self, center: [f64; 2], radius: f64) -> &mut Self {
+        let center = self.map_point(center);
+        self.inner.circle(center, radius);
+        self
+    }
+
+    /// Adds an ellipse to the current path
+    pub fn ellipse(&mut self, center: [f64; 2], rx: f64, ry: f64) -> &mut Self {
+        let center = self.map_point(center);
+        self.inner.ellipse(center, rx, ry);
+        self
+    }
+
+    /// Moves to a point (starts a new subpath)
+    pub fn move_to(&mut self, x: f64, y: f64) -> &mut Self {
+        let (x, y) = self.map_xy(x, y);
+        self.inner.move_to(x, y);
+        self
+    }
+
+    /// Adds a line to a point
+    pub fn line_to(&mut self, x: f64, y: f64) -> &mut Self {
+        let (x, y) = self.map_xy(x, y);
+        self.inner.line_to(x, y);
+        self
+    }
+
+    /// Adds a cubic Bezier curve
+    pub fn curve_to(&mut self, cp1: [f64; 2], cp2: [f64; 2], end: [f64; 2]) -> &mut Self {
+        let cp1 = self.map_point(cp1);
+        let cp2 = self.map_point(cp2);
+        let end = self.map_point(end);
+        self.inner.curve_to(cp1, cp2, end);
+        self
+    }
+
+    /// Closes the current subpath
+    pub fn close_path(&mut self) -> &mut Self {
+        self.inner.close_path();
+        self
+    }
+
+    /// Fills and strokes the current path immediately and resets path state
+    pub fn fill_and_stroke(&mut self) -> &mut Self {
+        self.inner.fill_and_stroke();
+        self
+    }
+
+    /// Adds a polygon to the current path
+    pub fn polygon(&mut self, points: &[[f64; 2]]) -> &mut Self {
+        if points.is_empty() {
+            return self;
+        }
+        let mapped: Vec<[f64; 2]> = points.iter().copied().map(|p| self.map_point(p)).collect();
+        self.inner.polygon(&mapped);
+        self
+    }
+
+    /// Accesses the underlying absolute coordinate context
+    pub fn absolute(&mut self) -> &mut FillAndStrokeContext<'ctx> {
+        self.inner
     }
 }
 
