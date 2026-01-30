@@ -11,3 +11,8 @@ __pycache__/
 *.pyd
 dist/
 .venv/
+
+# Secrets / environment
+.env
+.env.*
+.envrc
