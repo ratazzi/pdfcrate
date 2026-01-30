@@ -34,9 +34,10 @@ use crate::objects::{PdfArray, PdfDict, PdfName, PdfObject, PdfRef, PdfStream, P
 pub use color::{Color, ColorInput};
 pub use image::{EmbeddedImage, ImageOptions, ImageSource, Position};
 pub use layout::{
-    BoundingBox, FontStyle, Grid, GridBox, GridOptions, LayoutDocument, Margin, MultiBox, Overflow,
-    PageNumberConfig, PageNumberPosition, RelativeFillAndStrokeContext, RelativeFillContext,
-    RelativeStrokeContext, RepeaterPages, TextAlign, TextBoxResult, TextFragment, TextOptions,
+    BoundingBox, ColumnBoxOptions, FontStyle, Grid, GridBox, GridOptions, LayoutDocument, Margin,
+    MultiBox, Overflow, PageNumberConfig, PageNumberPosition, RelativeFillAndStrokeContext,
+    RelativeFillContext, RelativeStrokeContext, RepeaterPages, TextAlign, TextBoxResult,
+    TextFragment, TextOptions,
 };
 pub use link::{DestinationFit, HighlightMode, LinkAction, LinkAnnotation, LinkDestination};
 pub use outline::{Outline, OutlineBuilder, OutlineDestination, OutlineItem};

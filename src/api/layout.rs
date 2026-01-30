@@ -936,6 +936,68 @@ impl BoundingBox {
     }
 }
 
+/// Options for multi-column layout
+#[derive(Debug, Clone)]
+pub struct ColumnBoxOptions {
+    /// Number of columns (default: 3)
+    pub columns: usize,
+    /// Space between columns in points (default: current font_size)
+    pub spacer: Option<f64>,
+    /// Whether to reflow margins when entering column mode
+    pub reflow_margins: bool,
+}
+
+impl Default for ColumnBoxOptions {
+    fn default() -> Self {
+        Self {
+            columns: 3,
+            spacer: None,
+            reflow_margins: false,
+        }
+    }
+}
+
+impl ColumnBoxOptions {
+    /// Create column options with the given number of columns
+    pub fn new(columns: usize) -> Self {
+        Self {
+            columns,
+            ..Default::default()
+        }
+    }
+
+    /// Set the spacer (gap between columns) in points
+    pub fn spacer(mut self, spacer: f64) -> Self {
+        self.spacer = Some(spacer);
+        self
+    }
+
+    /// Set whether to reflow margins
+    pub fn reflow_margins(mut self, reflow: bool) -> Self {
+        self.reflow_margins = reflow;
+        self
+    }
+}
+
+/// Internal state for multi-column layout
+#[derive(Debug, Clone)]
+struct ColumnState {
+    /// Number of columns
+    columns: usize,
+    /// Space between columns in points
+    spacer: f64,
+    /// Current column index (0-based)
+    current_column: usize,
+    /// Width of each column
+    column_width: f64,
+    /// X origin (left edge of the first column)
+    origin_x: f64,
+    /// Y origin (top of the column area)
+    origin_y: f64,
+    /// Bottom boundary for column overflow detection
+    bottom_y: f64,
+}
+
 /// Internal layout state
 struct LayoutState {
     /// Current y position (cursor)
@@ -955,6 +1017,8 @@ struct LayoutState {
     word_spacing: f64,
     /// Fallback fonts list (in priority order)
     fallback_fonts: Vec<String>,
+    /// Active column layout state (None when not in column mode)
+    column_state: Option<ColumnState>,
 }
 
 impl LayoutState {
@@ -978,6 +1042,7 @@ impl LayoutState {
             character_spacing: 0.0,
             word_spacing: 0.0,
             fallback_fonts: Vec::new(),
+            column_state: None,
         }
     }
 
@@ -1583,6 +1648,9 @@ impl LayoutDocument {
         let cursor_y = self.state.cursor_y;
         self.state.bounds_mut().update_stretched_height(cursor_y);
 
+        // Column overflow check
+        self.check_column_overflow();
+
         self
     }
 
@@ -1914,6 +1982,9 @@ impl LayoutDocument {
         // Update stretched height if in stretchy box
         let cursor_y = self.state.cursor_y;
         self.state.bounds_mut().update_stretched_height(cursor_y);
+
+        // Column overflow check
+        self.check_column_overflow();
 
         self
     }
@@ -2428,6 +2499,9 @@ impl LayoutDocument {
 
         let cursor_y = self.state.cursor_y;
         self.state.bounds_mut().update_stretched_height(cursor_y);
+
+        // Column overflow check
+        self.check_column_overflow();
     }
 
     /// Internal: draws a single line with justified alignment
@@ -2443,6 +2517,9 @@ impl LayoutDocument {
 
         let cursor_y = self.state.cursor_y;
         self.state.bounds_mut().update_stretched_height(cursor_y);
+
+        // Column overflow check
+        self.check_column_overflow();
     }
 
     /// Draws text in a bounding box with automatic wrapping
@@ -3431,6 +3508,140 @@ impl LayoutDocument {
         }
 
         self
+    }
+
+    // === Column layout methods ===
+
+    /// Creates a multi-column layout region
+    ///
+    /// Content rendered inside the closure flows within columns. When the
+    /// cursor reaches the bottom of a column, it moves to the next column.
+    /// When the last column overflows, a new page is created and columns
+    /// restart from the first column.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument, ColumnBoxOptions};
+    ///
+    /// let mut layout = LayoutDocument::new(Document::new());
+    /// layout.column_box(ColumnBoxOptions::new(3).spacer(12.0), |doc| {
+    ///     for i in 0..20 {
+    ///         doc.text(&format!("Item {}", i + 1));
+    ///     }
+    /// });
+    /// ```
+    pub fn column_box<F>(&mut self, options: ColumnBoxOptions, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Self),
+    {
+        let bounds = self.state.bounds();
+        let total_width = bounds.width();
+        let origin_x = bounds.absolute_left();
+        let origin_y = self.state.cursor_y;
+        let bottom_y = bounds.absolute_bottom();
+
+        let spacer = options.spacer.unwrap_or(self.inner.current_font_size);
+        let columns = options.columns.max(1);
+        let column_width = (total_width - spacer * (columns as f64 - 1.0)) / columns as f64;
+
+        // Set up column state
+        self.state.column_state = Some(ColumnState {
+            columns,
+            spacer,
+            current_column: 0,
+            column_width,
+            origin_x,
+            origin_y,
+            bottom_y,
+        });
+
+        // Push a bounding box for the first column
+        let bbox = BoundingBox::new(origin_x, origin_y, column_width, Some(origin_y - bottom_y));
+        self.state.bounds_stack.push(bbox);
+        self.state.cursor_y = origin_y;
+
+        // Execute user content
+        f(self);
+
+        // Pop the column bounding box
+        self.state.bounds_stack.pop();
+
+        // Move cursor below the column area
+        self.state.cursor_y = bottom_y;
+
+        // Clear column state
+        self.state.column_state = None;
+
+        self
+    }
+
+    /// Checks if cursor has overflowed the current column and handles it
+    ///
+    /// Called internally after each text rendering operation when column_state
+    /// is active. If cursor is below the column bottom:
+    /// - Advances to next column if available
+    /// - Creates a new page and restarts at first column if at last column
+    fn check_column_overflow(&mut self) {
+        let col = match self.state.column_state.as_ref() {
+            Some(c) => c.clone(),
+            None => return,
+        };
+
+        // Check if cursor has gone below the column bottom
+        if self.state.cursor_y >= col.bottom_y {
+            return; // no overflow
+        }
+
+        if col.current_column + 1 < col.columns {
+            // Move to next column
+            let next_col = col.current_column + 1;
+            let next_x = col.origin_x + (col.column_width + col.spacer) * next_col as f64;
+
+            // Pop old column bbox, push new one
+            self.state.bounds_stack.pop();
+            let bbox = BoundingBox::new(
+                next_x,
+                col.origin_y,
+                col.column_width,
+                Some(col.origin_y - col.bottom_y),
+            );
+            self.state.bounds_stack.push(bbox);
+
+            // Reset cursor to top of column
+            self.state.cursor_y = col.origin_y;
+
+            // Update column index
+            if let Some(ref mut cs) = self.state.column_state {
+                cs.current_column = next_col;
+            }
+        } else {
+            // Last column overflowed — new page, restart at first column
+            self.state.bounds_stack.pop();
+
+            self.start_new_page();
+
+            let (_, page_height) = self.inner.page_size.dimensions(self.inner.page_layout);
+            let new_origin_y = page_height - self.state.margin.top;
+            let new_bottom_y = self.state.margin.bottom;
+
+            // Push bbox for first column on new page
+            let bbox = BoundingBox::new(
+                col.origin_x,
+                new_origin_y,
+                col.column_width,
+                Some(new_origin_y - new_bottom_y),
+            );
+            self.state.bounds_stack.push(bbox);
+            self.state.cursor_y = new_origin_y;
+
+            // Reset column state for new page
+            if let Some(ref mut cs) = self.state.column_state {
+                cs.current_column = 0;
+                cs.origin_y = new_origin_y;
+                cs.bottom_y = new_bottom_y;
+            }
+        }
     }
 
     // === Grid methods ===
