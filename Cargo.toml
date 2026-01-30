@@ -35,6 +35,9 @@ usvg = { version = "0.45", optional = true }
 qrcode = { version = "0.14", optional = true }
 barcoders = { version = "2.0", optional = true }
 
+# Inline format parsing (HTML-like tags)
+regex = "1"
+
 # Color parsing (CSS color strings)
 csscolorparser = { version = "0.8", default-features = false, features = ["named-colors"] }
 

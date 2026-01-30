@@ -4,6 +4,7 @@
 
 pub mod color;
 pub mod image;
+pub mod inline_format;
 pub mod layout;
 pub mod link;
 pub mod measurements;
