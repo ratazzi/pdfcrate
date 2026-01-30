@@ -2162,13 +2162,15 @@ impl Document {
     ///     do_: Callback that receives the document to add content
     ///     columns: Number of columns (default: 3)
     ///     spacer: Gap between columns in points (default: current font size)
-    #[pyo3(signature = (do_, columns=3, spacer=None))]
+    ///     height: Fixed column height in points (default: fill to bottom margin)
+    #[pyo3(signature = (do_, columns=3, spacer=None, height=None))]
     fn column_box(
         slf: Py<Self>,
         py: Python<'_>,
         do_: &Bound<'_, pyo3::types::PyAny>,
         columns: usize,
         spacer: Option<f64>,
+        height: Option<f64>,
     ) -> PyResult<Py<Self>> {
         // Set up column state
         {
@@ -2184,6 +2186,7 @@ impl Document {
                     let opts = RustColumnBoxOptions {
                         columns,
                         spacer,
+                        height,
                         reflow_margins: false,
                     };
                     layout.column_box_begin(opts);

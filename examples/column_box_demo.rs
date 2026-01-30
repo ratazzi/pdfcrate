@@ -51,14 +51,16 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
                  nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in \
                  reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.";
 
+    let two_lorem = format!("{} {}", lorem, lorem);
+
     // Section 1: Basic 2-column layout
     layout.font("Helvetica").size(12.0);
     layout.text("1. Two-Column Layout");
     layout.move_down(8.0);
 
     layout.font("Helvetica").size(9.0);
-    layout.column_box(ColumnBoxOptions::new(2), |col| {
-        col.text_wrap(lorem);
+    layout.column_box(ColumnBoxOptions::new(2).height(100.0), |col| {
+        col.text_wrap(&two_lorem);
     });
 
     layout.move_down(15.0);
@@ -69,8 +71,8 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     layout.move_down(8.0);
 
     layout.font("Helvetica").size(9.0);
-    layout.column_box(ColumnBoxOptions::new(3), |col| {
-        col.text_wrap(lorem);
+    layout.column_box(ColumnBoxOptions::new(3).height(100.0), |col| {
+        col.text_wrap(&two_lorem);
     });
 
     layout.move_down(15.0);
@@ -81,8 +83,8 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     layout.move_down(8.0);
 
     layout.font("Helvetica").size(9.0);
-    layout.column_box(ColumnBoxOptions::new(2).spacer(24.0), |col| {
-        col.text_wrap(lorem);
+    layout.column_box(ColumnBoxOptions::new(3).spacer(24.0).height(100.0), |col| {
+        col.text_wrap(&two_lorem);
     });
 
     layout.move_down(15.0);
@@ -93,23 +95,25 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     layout.move_down(8.0);
 
     layout.font("Helvetica").size(9.0);
-    layout.column_box(ColumnBoxOptions::new(2), |col| {
+    layout.column_box(ColumnBoxOptions::new(2).height(80.0), |col| {
         col.text_wrap_inline(
-            "This column has <b>bold text</b>, <i>italic text</i>, and \
+            "This column demonstrates <b>bold text</b>, <i>italic text</i>, and \
              <u>underlined text</u>. It also supports \
              <color rgb=\"#FF0000\">colored</color> words and \
-             <font name=\"Courier\">monospace</font> segments.",
+             <font name=\"Courier\">monospace</font> segments. \
+             Even E = mc<sup>2</sup> and H<sub>2</sub>O work inside columns. \
+             Visit <a href=\"https://www.rust-lang.org\">Rust</a> for more.",
         );
     });
 
     layout.move_down(15.0);
 
-    // Section 5: Column overflow (enough text to fill multiple columns)
+    // Section 5: Full-page column overflow (no height limit)
     layout.font("Helvetica").size(12.0);
-    layout.text("5. Column Overflow (text flows to next column)");
+    layout.text("5. Column Overflow (fills remaining page)");
     layout.move_down(8.0);
 
-    let long_text = format!("{} {} {}", lorem, lorem, lorem);
+    let long_text = format!("{} ", lorem).repeat(6);
 
     layout.font("Helvetica").size(9.0);
     layout.column_box(ColumnBoxOptions::new(3), |col| {

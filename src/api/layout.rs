@@ -943,6 +943,9 @@ pub struct ColumnBoxOptions {
     pub columns: usize,
     /// Space between columns in points (default: current font_size)
     pub spacer: Option<f64>,
+    /// Fixed height of the column area in points.
+    /// When None, columns extend to the bottom margin.
+    pub height: Option<f64>,
     /// Whether to reflow margins when entering column mode
     pub reflow_margins: bool,
 }
@@ -952,6 +955,7 @@ impl Default for ColumnBoxOptions {
         Self {
             columns: 3,
             spacer: None,
+            height: None,
             reflow_margins: false,
         }
     }
@@ -969,6 +973,12 @@ impl ColumnBoxOptions {
     /// Set the spacer (gap between columns) in points
     pub fn spacer(mut self, spacer: f64) -> Self {
         self.spacer = Some(spacer);
+        self
+    }
+
+    /// Set the fixed height of the column area in points
+    pub fn height(mut self, height: f64) -> Self {
+        self.height = Some(height);
         self
     }
 
@@ -996,6 +1006,8 @@ struct ColumnState {
     origin_y: f64,
     /// Bottom boundary for column overflow detection
     bottom_y: f64,
+    /// Lowest cursor y reached across all columns (for end-of-box cursor placement)
+    max_depth_y: f64,
 }
 
 /// Internal layout state
@@ -3539,7 +3551,11 @@ impl LayoutDocument {
         let total_width = bounds.width();
         let origin_x = bounds.absolute_left();
         let origin_y = self.state.cursor_y;
-        let bottom_y = bounds.absolute_bottom();
+        let page_bottom = bounds.absolute_bottom();
+        let bottom_y = options
+            .height
+            .map(|h| (origin_y - h).max(page_bottom))
+            .unwrap_or(page_bottom);
 
         let spacer = options.spacer.unwrap_or(self.inner.current_font_size);
         let columns = options.columns.max(1);
@@ -3554,6 +3570,7 @@ impl LayoutDocument {
             origin_x,
             origin_y,
             bottom_y,
+            max_depth_y: origin_y,
         });
 
         // Push a bounding box for the first column
@@ -3564,11 +3581,24 @@ impl LayoutDocument {
         // Execute user content
         f(self);
 
+        // Record final cursor depth before cleanup
+        if let Some(ref mut cs) = self.state.column_state {
+            if self.state.cursor_y < cs.max_depth_y {
+                cs.max_depth_y = self.state.cursor_y;
+            }
+        }
+        let final_cursor = self
+            .state
+            .column_state
+            .as_ref()
+            .map(|c| c.max_depth_y)
+            .unwrap_or(self.state.cursor_y);
+
         // Pop the column bounding box
         self.state.bounds_stack.pop();
 
-        // Move cursor below the column area
-        self.state.cursor_y = bottom_y;
+        // Move cursor below the actual content depth
+        self.state.cursor_y = final_cursor;
 
         // Clear column state
         self.state.column_state = None;
@@ -3584,7 +3614,11 @@ impl LayoutDocument {
         let total_width = bounds.width();
         let origin_x = bounds.absolute_left();
         let origin_y = self.state.cursor_y;
-        let bottom_y = bounds.absolute_bottom();
+        let page_bottom = bounds.absolute_bottom();
+        let bottom_y = options
+            .height
+            .map(|h| (origin_y - h).max(page_bottom))
+            .unwrap_or(page_bottom);
 
         let spacer = options.spacer.unwrap_or(self.inner.current_font_size);
         let columns = options.columns.max(1);
@@ -3598,6 +3632,7 @@ impl LayoutDocument {
             origin_x,
             origin_y,
             bottom_y,
+            max_depth_y: origin_y,
         });
 
         let bbox = BoundingBox::new(origin_x, origin_y, column_width, Some(origin_y - bottom_y));
@@ -3609,15 +3644,21 @@ impl LayoutDocument {
     ///
     /// Must be paired with [`column_box_begin`]. Prefer [`column_box`] in Rust.
     pub fn column_box_end(&mut self) {
-        let bottom_y = self
+        // Record final cursor depth
+        if let Some(ref mut cs) = self.state.column_state {
+            if self.state.cursor_y < cs.max_depth_y {
+                cs.max_depth_y = self.state.cursor_y;
+            }
+        }
+        let final_cursor = self
             .state
             .column_state
             .as_ref()
-            .map(|c| c.bottom_y)
+            .map(|c| c.max_depth_y)
             .unwrap_or(self.state.cursor_y);
 
         self.state.bounds_stack.pop();
-        self.state.cursor_y = bottom_y;
+        self.state.cursor_y = final_cursor;
         self.state.column_state = None;
     }
 
@@ -3639,6 +3680,13 @@ impl LayoutDocument {
         }
 
         if col.current_column + 1 < col.columns {
+            // Record depth before moving to next column
+            if let Some(ref mut cs) = self.state.column_state {
+                if self.state.cursor_y < cs.max_depth_y {
+                    cs.max_depth_y = self.state.cursor_y;
+                }
+            }
+
             // Move to next column
             let next_col = col.current_column + 1;
             let next_x = col.origin_x + (col.column_width + col.spacer) * next_col as f64;
@@ -3661,6 +3709,13 @@ impl LayoutDocument {
                 cs.current_column = next_col;
             }
         } else {
+            // Record depth before new page
+            if let Some(ref mut cs) = self.state.column_state {
+                if self.state.cursor_y < cs.max_depth_y {
+                    cs.max_depth_y = self.state.cursor_y;
+                }
+            }
+
             // Last column overflowed — new page, restart at first column
             self.state.bounds_stack.pop();
 
@@ -6068,6 +6123,50 @@ mod tests {
         let bytes = layout.into_inner().render().unwrap();
         // Should produce valid PDF bytes
         assert!(bytes.len() > 100);
+        assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn test_column_box_overflow() {
+        // Column box should overflow text to the next column
+        let doc = Document::new();
+        let mut layout = LayoutDocument::with_margin(doc, Margin::new(72.0, 72.0, 72.0, 72.0));
+        layout.font("Helvetica").size(10.0);
+
+        let cursor_before = layout.cursor();
+        layout.column_box(ColumnBoxOptions::new(3), |col| {
+            // Write enough lines to overflow at least one column
+            for i in 0..100 {
+                col.text(&format!("Line {}", i));
+            }
+        });
+        let cursor_after = layout.cursor();
+
+        // After column_box, cursor should have moved down
+        assert!(cursor_after < cursor_before);
+
+        // Verify the PDF renders without errors
+        let bytes = layout.into_inner().render().unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn test_column_box_text_wrap_overflow() {
+        // text_wrap inside column_box should flow across columns
+        let doc = Document::new();
+        let mut layout = LayoutDocument::with_margin(doc, Margin::new(72.0, 72.0, 72.0, 72.0));
+        layout.font("Helvetica").size(10.0);
+
+        let lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. \
+                     Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ";
+        let long_text = lorem.repeat(20);
+
+        layout.column_box(ColumnBoxOptions::new(3), |col| {
+            col.text_wrap(&long_text);
+        });
+
+        // Should produce a multi-page or valid PDF
+        let bytes = layout.into_inner().render().unwrap();
         assert!(bytes.starts_with(b"%PDF"));
     }
 }
