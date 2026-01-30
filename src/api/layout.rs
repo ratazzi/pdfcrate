@@ -129,6 +129,16 @@ pub struct TextFragment {
     pub size: Option<f64>,
     /// Font name (None = use current font family)
     pub font: Option<String>,
+    /// Whether to draw an underline
+    pub underline: bool,
+    /// Whether to draw a strikethrough line
+    pub strikethrough: bool,
+    /// Whether to render as superscript (smaller, raised)
+    pub superscript: bool,
+    /// Whether to render as subscript (smaller, lowered)
+    pub subscript: bool,
+    /// Hyperlink URL (None = no link)
+    pub link: Option<String>,
 }
 
 impl TextFragment {
@@ -140,6 +150,11 @@ impl TextFragment {
             color: None,
             size: None,
             font: None,
+            underline: false,
+            strikethrough: false,
+            superscript: false,
+            subscript: false,
+            link: None,
         }
     }
 
@@ -180,6 +195,36 @@ impl TextFragment {
     /// Sets bold-italic style (convenience method)
     pub fn bold_italic(self) -> Self {
         self.style(FontStyle::BoldItalic)
+    }
+
+    /// Enables underline decoration
+    pub fn underline(mut self) -> Self {
+        self.underline = true;
+        self
+    }
+
+    /// Enables strikethrough decoration
+    pub fn strikethrough(mut self) -> Self {
+        self.strikethrough = true;
+        self
+    }
+
+    /// Enables superscript rendering (smaller, raised)
+    pub fn superscript(mut self) -> Self {
+        self.superscript = true;
+        self
+    }
+
+    /// Enables subscript rendering (smaller, lowered)
+    pub fn subscript(mut self) -> Self {
+        self.subscript = true;
+        self
+    }
+
+    /// Sets a hyperlink URL
+    pub fn link(mut self, url: impl Into<String>) -> Self {
+        self.link = Some(url.into());
+        self
     }
 }
 

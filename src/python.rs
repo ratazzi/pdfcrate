@@ -390,12 +390,17 @@ pub struct TextFragment {
     color: Option<(f64, f64, f64)>,
     size: Option<f64>,
     font: Option<String>,
+    underline: bool,
+    strikethrough: bool,
+    superscript: bool,
+    subscript: bool,
+    link: Option<String>,
 }
 
 #[pymethods]
 impl TextFragment {
     #[new]
-    #[pyo3(signature = (text, bold=false, italic=false, color=None, size=None, font=None))]
+    #[pyo3(signature = (text, bold=false, italic=false, color=None, size=None, font=None, underline=false, strikethrough=false, superscript=false, subscript=false, link=None))]
     fn new(
         text: &str,
         bold: bool,
@@ -403,6 +408,11 @@ impl TextFragment {
         color: Option<&Color>,
         size: Option<f64>,
         font: Option<&str>,
+        underline: bool,
+        strikethrough: bool,
+        superscript: bool,
+        subscript: bool,
+        link: Option<&str>,
     ) -> Self {
         Self {
             text: text.to_string(),
@@ -411,6 +421,11 @@ impl TextFragment {
             color: color.map(|c| (c.inner.r, c.inner.g, c.inner.b)),
             size,
             font: font.map(|s| s.to_string()),
+            underline,
+            strikethrough,
+            superscript,
+            subscript,
+            link: link.map(|s| s.to_string()),
         }
     }
 }
@@ -434,6 +449,21 @@ impl From<&TextFragment> for RustTextFragment {
         if let Some((r, g, b)) = frag.color {
             rust_frag = rust_frag.color(RustColor::rgb(r, g, b));
         }
+        if frag.underline {
+            rust_frag = rust_frag.underline();
+        }
+        if frag.strikethrough {
+            rust_frag = rust_frag.strikethrough();
+        }
+        if frag.superscript {
+            rust_frag = rust_frag.superscript();
+        }
+        if frag.subscript {
+            rust_frag = rust_frag.subscript();
+        }
+        if let Some(ref link) = frag.link {
+            rust_frag = rust_frag.link(link);
+        }
         rust_frag
     }
 }
@@ -452,6 +482,11 @@ pub struct SpanBuilder {
     color: Option<(f64, f64, f64)>,
     size: Option<f64>,
     font: Option<String>,
+    underline: bool,
+    strikethrough: bool,
+    superscript: bool,
+    subscript: bool,
+    link: Option<String>,
 }
 
 #[pymethods]
@@ -465,6 +500,11 @@ impl SpanBuilder {
             color: None,
             size: None,
             font: None,
+            underline: false,
+            strikethrough: false,
+            superscript: false,
+            subscript: false,
+            link: None,
         }
     }
 
@@ -498,6 +538,36 @@ impl SpanBuilder {
         slf
     }
 
+    /// Enable underline
+    fn underline(slf: Py<Self>, py: Python<'_>) -> Py<Self> {
+        slf.borrow_mut(py).underline = true;
+        slf
+    }
+
+    /// Enable strikethrough
+    fn strikethrough(slf: Py<Self>, py: Python<'_>) -> Py<Self> {
+        slf.borrow_mut(py).strikethrough = true;
+        slf
+    }
+
+    /// Enable superscript
+    fn superscript(slf: Py<Self>, py: Python<'_>) -> Py<Self> {
+        slf.borrow_mut(py).superscript = true;
+        slf
+    }
+
+    /// Enable subscript
+    fn subscript(slf: Py<Self>, py: Python<'_>) -> Py<Self> {
+        slf.borrow_mut(py).subscript = true;
+        slf
+    }
+
+    /// Set hyperlink URL
+    fn link(slf: Py<Self>, py: Python<'_>, url: &str) -> Py<Self> {
+        slf.borrow_mut(py).link = Some(url.to_string());
+        slf
+    }
+
     /// Finish building and return a TextFragment
     fn end(&self) -> TextFragment {
         TextFragment {
@@ -507,6 +577,11 @@ impl SpanBuilder {
             color: self.color,
             size: self.size,
             font: self.font.clone(),
+            underline: self.underline,
+            strikethrough: self.strikethrough,
+            superscript: self.superscript,
+            subscript: self.subscript,
+            link: self.link.clone(),
         }
     }
 
