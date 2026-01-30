@@ -2112,6 +2112,46 @@ impl Document {
         Ok(slf)
     }
 
+    /// Draw inline-formatted text (HTML-like tags) on a single line
+    fn text_inline(slf: Py<Self>, py: Python<'_>, text: &str) -> PyResult<Py<Self>> {
+        let borrowed = slf.borrow(py);
+        let mut guard = borrowed.inner.lock().unwrap();
+        match &mut *guard {
+            DocumentInner::Basic(_) => {
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    "text_inline() requires margin.",
+                ));
+            }
+            DocumentInner::Layout(layout) => {
+                layout.text_inline(text);
+            }
+            DocumentInner::Consumed => {}
+        }
+        drop(guard);
+        drop(borrowed);
+        Ok(slf)
+    }
+
+    /// Draw inline-formatted text with automatic word wrapping
+    fn text_wrap_inline(slf: Py<Self>, py: Python<'_>, text: &str) -> PyResult<Py<Self>> {
+        let borrowed = slf.borrow(py);
+        let mut guard = borrowed.inner.lock().unwrap();
+        match &mut *guard {
+            DocumentInner::Basic(_) => {
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    "text_wrap_inline() requires margin.",
+                ));
+            }
+            DocumentInner::Layout(layout) => {
+                layout.text_wrap_inline(text);
+            }
+            DocumentInner::Consumed => {}
+        }
+        drop(guard);
+        drop(borrowed);
+        Ok(slf)
+    }
+
     /// Create a SpanBuilder for fluent rich text creation
     /// Example: doc.span("Hello").bold().end()
     #[staticmethod]

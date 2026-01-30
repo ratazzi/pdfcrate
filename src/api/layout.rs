@@ -1659,7 +1659,11 @@ impl LayoutDocument {
                 } else {
                     Some(Self::get_styled_font_name(primary_font, f.style))
                 };
-                let font_size = f.size.unwrap_or(base_size);
+                let mut font_size = f.size.unwrap_or(base_size);
+                // Superscript/subscript use smaller font size
+                if f.superscript || f.subscript {
+                    font_size *= 0.583;
+                }
 
                 // Calculate width with fallback support
                 let base_width = if fallback_fonts.is_empty() {
@@ -1738,14 +1742,27 @@ impl LayoutDocument {
                 Some(Self::get_styled_font_name(primary_font, fragment.style))
             };
 
-            let frag_font_size = fragment.size.unwrap_or(base_size);
+            let mut frag_font_size = fragment.size.unwrap_or(base_size);
             let char_spacing = self.state.character_spacing;
             let word_spacing = self.state.word_spacing;
+
+            // Superscript/subscript: reduce size and adjust y offset
+            let mut frag_y = y;
+            if fragment.superscript {
+                frag_font_size *= 0.583;
+                frag_y += base_size * 0.33; // raise
+            } else if fragment.subscript {
+                frag_font_size *= 0.583;
+                frag_y -= base_size * 0.17; // lower
+            }
 
             // Add inter-fragment spacing BEFORE drawing (not first fragment)
             if !is_first_fragment {
                 x += char_spacing;
             }
+
+            // Record fragment start x for decorations
+            let frag_start_x = x;
 
             // Split text into runs by fallback fonts (or single run if no fallback)
             let runs = if fallback_fonts.is_empty() {
@@ -1787,7 +1804,7 @@ impl LayoutDocument {
                             &run.text,
                             frag_font_size,
                             x,
-                            y,
+                            frag_y,
                             char_spacing,
                             word_spacing,
                             fragment.color,
@@ -1815,7 +1832,7 @@ impl LayoutDocument {
                     page.content.set_word_spacing(word_spacing);
                     page.content
                         .set_font(&run.font, frag_font_size)
-                        .move_text_pos(x, y)
+                        .move_text_pos(x, frag_y)
                         .show_text(&run.text)
                         .end_text();
 
@@ -1838,6 +1855,53 @@ impl LayoutDocument {
                 x += text_width + char_spacing_extra + word_spacing_extra;
 
                 is_first_run = false;
+            }
+
+            // Fragment end x (for decorations)
+            let frag_end_x = x;
+
+            // Draw underline decoration
+            if fragment.underline {
+                let line_y = y - base_size * 0.15; // below baseline
+                let line_width = base_size * 0.05;
+                let page = &mut self.inner.pages[self.inner.current_page];
+                page.content.save_state();
+                if let Some(color) = fragment.color {
+                    page.content.set_stroke_color_rgb(color.r, color.g, color.b);
+                }
+                page.content.set_line_width(line_width);
+                page.content.move_to(frag_start_x, line_y);
+                page.content.line_to(frag_end_x, line_y);
+                page.content.stroke();
+                page.content.restore_state();
+            }
+
+            // Draw strikethrough decoration
+            if fragment.strikethrough {
+                let line_y = y + base_size * 0.25; // middle of text
+                let line_width = base_size * 0.05;
+                let page = &mut self.inner.pages[self.inner.current_page];
+                page.content.save_state();
+                if let Some(color) = fragment.color {
+                    page.content.set_stroke_color_rgb(color.r, color.g, color.b);
+                }
+                page.content.set_line_width(line_width);
+                page.content.move_to(frag_start_x, line_y);
+                page.content.line_to(frag_end_x, line_y);
+                page.content.stroke();
+                page.content.restore_state();
+            }
+
+            // Add link annotation
+            if let Some(ref url) = fragment.link {
+                let rect = [
+                    frag_start_x,
+                    y - base_size * 0.22, // below descender
+                    frag_end_x,
+                    y + base_size * 0.78, // above ascender
+                ];
+                self.inner
+                    .link_annotation(super::link::LinkAnnotation::url(rect, url));
             }
 
             is_first_fragment = false;
@@ -2025,7 +2089,30 @@ impl LayoutDocument {
         if fragments.is_empty() {
             return self;
         }
-        self.formatted_text(&fragments)
+
+        // Split fragments at newline boundaries and render each line separately
+        let mut current_line: Vec<TextFragment> = Vec::new();
+        for frag in &fragments {
+            if frag.text == "\n" {
+                // Flush current line
+                if current_line.is_empty() {
+                    // Empty line — just advance cursor
+                    let line_height = self.line_height();
+                    self.state.cursor_y -= line_height;
+                } else {
+                    self.formatted_text(&current_line);
+                    current_line.clear();
+                }
+            } else {
+                current_line.push(frag.clone());
+            }
+        }
+        // Flush remaining
+        if !current_line.is_empty() {
+            self.formatted_text(&current_line);
+        }
+
+        self
     }
 
     /// Draws inline-formatted text with automatic word wrapping
@@ -5569,5 +5656,162 @@ mod tests {
         assert!(!LayoutDocument::is_winansi_char('\u{0093}')); // C1 control, not "
         assert!(!LayoutDocument::is_winansi_char('\u{009D}')); // C1 control
         assert!(!LayoutDocument::is_winansi_char('\u{009F}')); // C1 control, not Ÿ
+    }
+
+    // ====================================================================
+    // Inline format integration tests
+    // ====================================================================
+
+    #[test]
+    fn test_text_inline_basic() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+        let cursor_before = layout.cursor();
+        layout.text_inline("Hello <b>world</b>!");
+        let cursor_after = layout.cursor();
+        // Cursor should move down (at least one line)
+        assert!(cursor_after < cursor_before);
+    }
+
+    #[test]
+    fn test_text_inline_empty() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+        let cursor_before = layout.cursor();
+        layout.text_inline("");
+        let cursor_after = layout.cursor();
+        // Empty input should not move cursor
+        assert!((cursor_after - cursor_before).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_text_inline_plain_text() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+        let cursor_before = layout.cursor();
+        layout.text_inline("Just plain text");
+        let cursor_after = layout.cursor();
+        assert!(cursor_after < cursor_before);
+    }
+
+    #[test]
+    fn test_text_inline_nested_tags() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+        // Should not panic with nested tags
+        layout.text_inline("<b>bold <i>bold-italic</i> bold</b>");
+    }
+
+    #[test]
+    fn test_text_wrap_inline_basic() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+        let cursor_before = layout.cursor();
+        layout.text_wrap_inline(
+            "This is a <b>long</b> paragraph with <i>mixed</i> styles that should wrap.",
+        );
+        let cursor_after = layout.cursor();
+        assert!(cursor_after < cursor_before);
+    }
+
+    #[test]
+    fn test_text_wrap_inline_empty() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+        let cursor_before = layout.cursor();
+        layout.text_wrap_inline("");
+        let cursor_after = layout.cursor();
+        assert!((cursor_after - cursor_before).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_text_wrap_inline_long_text_wraps() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+
+        // Single unwrapped line
+        let cursor_start = layout.cursor();
+        layout.text("Short");
+        let single_line_drop = cursor_start - layout.cursor();
+
+        // Reset cursor for next test
+        let cursor_before_wrap = layout.cursor();
+        // Long text with inline formatting that should wrap to multiple lines
+        layout.text_wrap_inline(
+            "This is a <b>very long piece of text</b> that contains <i>many words</i> \
+             and should definitely <u>wrap across multiple lines</u> when rendered \
+             within the default page margins of the layout document.",
+        );
+        let multi_line_drop = cursor_before_wrap - layout.cursor();
+
+        // Multi-line should drop more than single line
+        assert!(multi_line_drop > single_line_drop * 1.5);
+    }
+
+    #[test]
+    fn test_formatted_text_wrap_preserves_styles() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+
+        // Should not panic; styles should carry through wrapping
+        let fragments = vec![
+            TextFragment::new("Normal text "),
+            TextFragment::new("bold text ").bold(),
+            TextFragment::new("italic text ").italic(),
+            TextFragment::new("more normal text that keeps going and going to force wrapping"),
+        ];
+        layout.formatted_text_wrap(&fragments);
+    }
+
+    #[test]
+    fn test_formatted_text_wrap_empty() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+        let cursor_before = layout.cursor();
+        layout.formatted_text_wrap(&[]);
+        let cursor_after = layout.cursor();
+        assert!((cursor_after - cursor_before).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_formatted_text_wrap_with_newlines() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+        // Newlines in fragments should create paragraph breaks
+        let fragments = vec![
+            TextFragment::new("Line 1"),
+            TextFragment::new("\n"),
+            TextFragment::new("Line 2"),
+        ];
+        let cursor_before = layout.cursor();
+        layout.formatted_text_wrap(&fragments);
+        let cursor_after = layout.cursor();
+        let drop = cursor_before - cursor_after;
+        // Should be at least 2 lines worth of drop
+        let line_height = layout.line_height();
+        assert!(drop >= line_height * 1.5);
+    }
+
+    #[test]
+    fn test_text_inline_renders_pdf() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(12.0);
+        layout.text_inline("Hello <b>bold</b> and <i>italic</i>");
+        layout.text_wrap_inline("Wrapped <u>underline</u> text that goes on for a while.");
+        let bytes = layout.into_inner().render().unwrap();
+        // Should produce valid PDF bytes
+        assert!(bytes.len() > 100);
+        assert!(bytes.starts_with(b"%PDF"));
     }
 }

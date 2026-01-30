@@ -203,6 +203,8 @@ pub fn parse(input: &str) -> Vec<TextFragment> {
             "</link>" | "</a>" => {
                 if let Some(prev) = stack.pop() {
                     current.link = prev.link.clone();
+                    current.underline = prev.underline;
+                    current.color = prev.color;
                 }
             }
             "</color>" => {
@@ -227,6 +229,11 @@ pub fn parse(input: &str) -> Vec<TextFragment> {
                 stack.push(current.clone());
                 if let Some(caps) = HREF_RE.captures(token) {
                     current.link = Some(caps[1].to_string());
+                }
+                // Default visual style for links: blue + underline
+                current.underline = true;
+                if current.color.is_none() {
+                    current.color = Some(Color::hex("0000EE"));
                 }
             }
             _ if token.starts_with("<color") => {
@@ -356,7 +363,11 @@ mod tests {
         assert!(frags[0].link.is_none());
         assert_eq!(frags[1].link.as_deref(), Some("https://example.com"));
         assert_eq!(frags[1].text, "here");
+        assert!(frags[1].underline); // links get default underline
+        assert!(frags[1].color.is_some()); // links get default blue
         assert!(frags[2].link.is_none());
+        assert!(!frags[2].underline); // underline reverted after </link>
+        assert!(frags[2].color.is_none()); // color reverted after </link>
     }
 
     #[test]
@@ -365,6 +376,8 @@ mod tests {
         assert_eq!(frags.len(), 1);
         assert_eq!(frags[0].link.as_deref(), Some("https://rust-lang.org"));
         assert_eq!(frags[0].text, "Rust");
+        assert!(frags[0].underline);
+        assert!(frags[0].color.is_some());
     }
 
     #[test]
