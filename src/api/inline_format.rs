@@ -59,7 +59,7 @@ static FONT_SIZE_RE: LazyLock<Regex> =
 static BR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<br\s*/?>").unwrap());
 
 /// Style state that can be pushed/popped as tags open and close.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct StyleState {
     bold: bool,
     italic: bool,
@@ -71,23 +71,6 @@ struct StyleState {
     color: Option<Color>,
     font: Option<String>,
     size: Option<f64>,
-}
-
-impl Default for StyleState {
-    fn default() -> Self {
-        Self {
-            bold: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
-            superscript: false,
-            subscript: false,
-            link: None,
-            color: None,
-            font: None,
-            size: None,
-        }
-    }
 }
 
 impl StyleState {

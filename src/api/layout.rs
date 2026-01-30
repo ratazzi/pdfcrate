@@ -2007,6 +2007,285 @@ impl LayoutDocument {
         self
     }
 
+    /// Draws inline-formatted text at the current cursor position
+    ///
+    /// Parses HTML-like tags (`<b>`, `<i>`, `<u>`, etc.) and renders them
+    /// as a single formatted line using `formatted_text()`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument};
+    ///
+    /// let mut doc = LayoutDocument::new(Document::new());
+    /// doc.text_inline("Hello <b>bold</b> and <i>italic</i>");
+    /// ```
+    pub fn text_inline(&mut self, text: &str) -> &mut Self {
+        let fragments = crate::api::inline_format::parse(text);
+        if fragments.is_empty() {
+            return self;
+        }
+        self.formatted_text(&fragments)
+    }
+
+    /// Draws inline-formatted text with automatic word wrapping
+    ///
+    /// Parses HTML-like tags and wraps the resulting fragments across
+    /// multiple lines to fit within the current bounds width.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use pdfcrate::api::{Document, LayoutDocument};
+    ///
+    /// let mut doc = LayoutDocument::new(Document::new());
+    /// doc.text_wrap_inline("This is a <b>long</b> paragraph with <i>mixed</i> styles that will wrap automatically.");
+    /// ```
+    pub fn text_wrap_inline(&mut self, text: &str) -> &mut Self {
+        let fragments = crate::api::inline_format::parse(text);
+        if fragments.is_empty() {
+            return self;
+        }
+        self.formatted_text_wrap(&fragments)
+    }
+
+    /// Draws formatted text fragments with automatic word wrapping
+    ///
+    /// Splits fragments into lines that fit within the current bounds width,
+    /// preserving the styling of each fragment across line breaks.
+    pub fn formatted_text_wrap(&mut self, fragments: &[TextFragment]) -> &mut Self {
+        if fragments.is_empty() {
+            return self;
+        }
+
+        let bounds = self.state.bounds();
+        let max_width = bounds.width();
+        let lines = self.wrap_fragments_to_lines(fragments, max_width);
+
+        for line in &lines {
+            self.formatted_text(line);
+        }
+
+        self
+    }
+
+    /// Wraps a sequence of fragments into lines that fit within `max_width`.
+    ///
+    /// Splitting happens at word boundaries (whitespace). Each fragment may
+    /// be split across multiple lines, and each resulting piece retains the
+    /// original fragment's styling.
+    fn wrap_fragments_to_lines(
+        &self,
+        fragments: &[TextFragment],
+        max_width: f64,
+    ) -> Vec<Vec<TextFragment>> {
+        // Flatten fragments into (word, style) tokens, honoring newlines.
+        // A "word" here is a whitespace-delimited run of text.
+        // We track leading/trailing spaces to reconstruct spacing faithfully.
+
+        struct Token {
+            text: String,
+            frag_index: usize, // which original fragment this came from
+            is_newline: bool,
+        }
+
+        let mut tokens: Vec<Token> = Vec::new();
+
+        for (idx, frag) in fragments.iter().enumerate() {
+            if frag.text == "\n" {
+                tokens.push(Token {
+                    text: String::new(),
+                    frag_index: idx,
+                    is_newline: true,
+                });
+                continue;
+            }
+
+            // Split fragment text into words, preserving whitespace boundaries
+            let text = &frag.text;
+            let mut start = 0;
+            let chars: Vec<char> = text.chars().collect();
+            let len = chars.len();
+
+            while start < len {
+                // Skip whitespace (we'll add a space when joining words)
+                if chars[start].is_whitespace() {
+                    start += 1;
+                    continue;
+                }
+
+                // Collect word (non-whitespace run)
+                let word_start = start;
+                while start < len && !chars[start].is_whitespace() {
+                    start += 1;
+                }
+
+                let word: String = chars[word_start..start].iter().collect();
+
+                // Check if there was a leading space before this word in the fragment
+                let has_leading_space = word_start > 0 || {
+                    // If this is not the first token, and the previous fragment
+                    // ended in whitespace or this fragment starts with whitespace
+                    idx > 0
+                        && !tokens.is_empty()
+                        && !tokens.last().is_none_or(|t| t.is_newline)
+                        && frag.text.starts_with(|c: char| c.is_whitespace())
+                        && word_start == 0
+                };
+
+                let _ = has_leading_space; // We handle spacing in line assembly below
+
+                tokens.push(Token {
+                    text: word,
+                    frag_index: idx,
+                    is_newline: false,
+                });
+            }
+
+            // Handle fragment that is only whitespace (like " ")
+            // This acts as a separator; if no words were extracted, the spacing
+            // will naturally be handled when assembling lines.
+        }
+
+        // Now assemble lines by accumulating words until width is exceeded.
+        let base_font = &self.inner.current_font;
+        let base_size = self.inner.current_font_size;
+
+        let measure_word = |word: &str, frag: &TextFragment| -> f64 {
+            let font_name = if let Some(ref f) = frag.font {
+                f.as_str()
+            } else {
+                base_font.as_str()
+            };
+            let styled = if frag.font.is_some() {
+                font_name.to_string()
+            } else {
+                Self::get_styled_font_name(font_name, frag.style)
+            };
+            let font_size = frag.size.unwrap_or(base_size);
+            self.measure_fragment_width_inner(&styled, word, font_size)
+        };
+
+        // Measure a single space in the base font
+        let space_width = { Self::measure_fragment_width(base_font, " ", base_size) };
+
+        let mut lines: Vec<Vec<TextFragment>> = Vec::new();
+        let mut current_line: Vec<(String, usize)> = Vec::new(); // (word, frag_index)
+        let mut current_width: f64 = 0.0;
+
+        for token in &tokens {
+            if token.is_newline {
+                // Flush current line
+                lines.push(self.assemble_line(&current_line, fragments));
+                current_line.clear();
+                current_width = 0.0;
+                continue;
+            }
+
+            let frag = &fragments[token.frag_index];
+            let word_w = measure_word(&token.text, frag);
+
+            let needed = if current_line.is_empty() {
+                word_w
+            } else {
+                space_width + word_w
+            };
+
+            if current_width + needed <= max_width || current_line.is_empty() {
+                // Fits on current line (or first word, always add)
+                current_width += needed;
+                current_line.push((token.text.clone(), token.frag_index));
+            } else {
+                // Line break
+                lines.push(self.assemble_line(&current_line, fragments));
+                current_line.clear();
+                current_width = word_w;
+                current_line.push((token.text.clone(), token.frag_index));
+            }
+        }
+
+        // Flush remaining
+        if !current_line.is_empty() {
+            lines.push(self.assemble_line(&current_line, fragments));
+        }
+
+        // Ensure at least one line (empty)
+        if lines.is_empty() {
+            lines.push(Vec::new());
+        }
+
+        lines
+    }
+
+    /// Assemble a line from (word, frag_index) pairs into fragments,
+    /// merging consecutive words that share the same fragment style.
+    fn assemble_line(
+        &self,
+        words: &[(String, usize)],
+        original_fragments: &[TextFragment],
+    ) -> Vec<TextFragment> {
+        if words.is_empty() {
+            return Vec::new();
+        }
+
+        let mut line_frags: Vec<TextFragment> = Vec::new();
+        let mut current_text = String::new();
+        let mut current_idx = words[0].1;
+
+        for (i, (word, frag_idx)) in words.iter().enumerate() {
+            if *frag_idx != current_idx {
+                // Flush accumulated text
+                if !current_text.is_empty() {
+                    let orig = &original_fragments[current_idx];
+                    line_frags.push(self.clone_fragment_with_text(orig, &current_text));
+                    current_text.clear();
+                }
+                current_idx = *frag_idx;
+            }
+
+            if i > 0 && !current_text.is_empty() {
+                current_text.push(' ');
+            } else if i > 0 {
+                // Different fragment, add space to previous fragment if non-empty
+                // or add space prefix here
+                // Actually, inter-fragment spacing: if we're starting a new fragment
+                // and it's not the first word on the line, add a space
+                if !line_frags.is_empty() {
+                    // Append space to previous fragment
+                    if let Some(prev) = line_frags.last_mut() {
+                        prev.text.push(' ');
+                    }
+                }
+            }
+
+            current_text.push_str(word);
+        }
+
+        // Flush last accumulated text
+        if !current_text.is_empty() {
+            let orig = &original_fragments[current_idx];
+            line_frags.push(self.clone_fragment_with_text(orig, &current_text));
+        }
+
+        line_frags
+    }
+
+    /// Clone a fragment's style with new text content
+    fn clone_fragment_with_text(&self, original: &TextFragment, text: &str) -> TextFragment {
+        TextFragment {
+            text: text.to_string(),
+            style: original.style,
+            color: original.color,
+            size: original.size,
+            font: original.font.clone(),
+            underline: original.underline,
+            strikethrough: original.strikethrough,
+            superscript: original.superscript,
+            subscript: original.subscript,
+            link: original.link.clone(),
+        }
+    }
+
     /// Internal: draws a single line with left alignment (for justify paragraph ends)
     ///
     /// In justify mode, this is used for paragraph-ending lines which should NOT
