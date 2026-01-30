@@ -6,8 +6,9 @@ use pyo3::prelude::*;
 use std::sync::Mutex;
 
 use crate::api::layout::{
-    Color as RustColor, GridOptions as RustGridOptions, LayoutDocument, Margin as RustMargin,
-    TextAlign as RustTextAlign, TextFragment as RustTextFragment,
+    Color as RustColor, ColumnBoxOptions as RustColumnBoxOptions, GridOptions as RustGridOptions,
+    LayoutDocument, Margin as RustMargin, TextAlign as RustTextAlign,
+    TextFragment as RustTextFragment,
 };
 use crate::api::page::{PageLayout, PageSize as RustPageSize};
 use crate::api::table::{
@@ -2149,6 +2150,62 @@ impl Document {
         }
         drop(guard);
         drop(borrowed);
+        Ok(slf)
+    }
+
+    /// Multi-column layout with automatic overflow handling
+    ///
+    /// Divides the current bounding box into columns. Text flows from
+    /// one column to the next, and to new pages when all columns are full.
+    ///
+    /// Args:
+    ///     do_: Callback that receives the document to add content
+    ///     columns: Number of columns (default: 3)
+    ///     spacer: Gap between columns in points (default: current font size)
+    #[pyo3(signature = (do_, columns=3, spacer=None))]
+    fn column_box(
+        slf: Py<Self>,
+        py: Python<'_>,
+        do_: &Bound<'_, pyo3::types::PyAny>,
+        columns: usize,
+        spacer: Option<f64>,
+    ) -> PyResult<Py<Self>> {
+        // Set up column state
+        {
+            let borrowed = slf.borrow(py);
+            let mut guard = borrowed.inner.lock().unwrap();
+            match &mut *guard {
+                DocumentInner::Basic(_) => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                        "column_box() requires margin.",
+                    ));
+                }
+                DocumentInner::Layout(layout) => {
+                    let opts = RustColumnBoxOptions {
+                        columns,
+                        spacer,
+                        reflow_margins: false,
+                    };
+                    layout.column_box_begin(opts);
+                }
+                DocumentInner::Consumed => {}
+            }
+        }
+
+        // Execute callback
+        let result = do_.call1((slf.clone_ref(py),));
+
+        // Always clean up column state
+        {
+            let borrowed = slf.borrow(py);
+            let mut guard = borrowed.inner.lock().unwrap();
+            if let DocumentInner::Layout(layout) = &mut *guard {
+                layout.column_box_end();
+            }
+        }
+
+        // Propagate any error
+        result?;
         Ok(slf)
     }
 

@@ -3576,6 +3576,51 @@ impl LayoutDocument {
         self
     }
 
+    /// Begin column layout (for FFI / Python bindings).
+    ///
+    /// Must be paired with [`column_box_end`]. Prefer [`column_box`] in Rust.
+    pub fn column_box_begin(&mut self, options: ColumnBoxOptions) {
+        let bounds = self.state.bounds();
+        let total_width = bounds.width();
+        let origin_x = bounds.absolute_left();
+        let origin_y = self.state.cursor_y;
+        let bottom_y = bounds.absolute_bottom();
+
+        let spacer = options.spacer.unwrap_or(self.inner.current_font_size);
+        let columns = options.columns.max(1);
+        let column_width = (total_width - spacer * (columns as f64 - 1.0)) / columns as f64;
+
+        self.state.column_state = Some(ColumnState {
+            columns,
+            spacer,
+            current_column: 0,
+            column_width,
+            origin_x,
+            origin_y,
+            bottom_y,
+        });
+
+        let bbox = BoundingBox::new(origin_x, origin_y, column_width, Some(origin_y - bottom_y));
+        self.state.bounds_stack.push(bbox);
+        self.state.cursor_y = origin_y;
+    }
+
+    /// End column layout (for FFI / Python bindings).
+    ///
+    /// Must be paired with [`column_box_begin`]. Prefer [`column_box`] in Rust.
+    pub fn column_box_end(&mut self) {
+        let bottom_y = self
+            .state
+            .column_state
+            .as_ref()
+            .map(|c| c.bottom_y)
+            .unwrap_or(self.state.cursor_y);
+
+        self.state.bounds_stack.pop();
+        self.state.cursor_y = bottom_y;
+        self.state.column_state = None;
+    }
+
     /// Checks if cursor has overflowed the current column and handles it
     ///
     /// Called internally after each text rendering operation when column_state
