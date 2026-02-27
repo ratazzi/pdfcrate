@@ -6170,4 +6170,60 @@ mod tests {
         let bytes = layout.into_inner().render().unwrap();
         assert!(bytes.starts_with(b"%PDF"));
     }
+
+    #[test]
+    fn test_standard_font_height_uses_afm_metrics() {
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.inner_mut().font("Helvetica").size(12.0);
+
+        // Helvetica AFM: ascender=718, descender=-207, line_gap=231
+        let fh = layout.font_height();
+        let expected = (718.0 + 207.0 + 231.0) * 12.0 / 1000.0; // 13.872
+        assert!(
+            (fh - expected).abs() < 0.01,
+            "Helvetica font_height: got {fh}, expected {expected}"
+        );
+
+        let ah = layout.ascender_height();
+        let expected_asc = 718.0 * 12.0 / 1000.0; // 8.616
+        assert!(
+            (ah - expected_asc).abs() < 0.01,
+            "Helvetica ascender_height: got {ah}, expected {expected_asc}"
+        );
+    }
+
+    #[cfg(feature = "fonts")]
+    #[test]
+    fn test_embedded_font_height_uses_ttf_metrics() {
+        let mut doc = Document::new();
+        let roboto = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples")
+            .join("fonts")
+            .join("Roboto-Regular.ttf");
+        if !roboto.exists() {
+            eprintln!("Skipping: examples/fonts/Roboto-Regular.ttf not found");
+            return;
+        }
+        let ps_name = doc.embed_font_file(roboto.to_str().unwrap()).unwrap();
+        doc.font(&ps_name).size(12.0);
+
+        let layout = LayoutDocument::new(doc);
+
+        let fh = layout.font_height();
+        // Embedded font should NOT fall back to font_size * 1.15
+        let fallback = 12.0 * 1.15;
+        assert!(
+            (fh - fallback).abs() > 0.01,
+            "font_height should use TTF metrics, not fallback {fallback}; got {fh}"
+        );
+        assert!(fh > 0.0, "font_height must be positive");
+
+        let ah = layout.ascender_height();
+        assert!(ah > 0.0, "ascender_height must be positive");
+        assert!(
+            ah < fh,
+            "ascender_height ({ah}) should be less than font_height ({fh})"
+        );
+    }
 }
