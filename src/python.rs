@@ -1435,7 +1435,9 @@ impl Document {
         let old_cursor = if let DocumentInner::Layout(layout) = &mut *guard {
             layout.push_bounding_box([x, y], width, height)
         } else {
-            0.0
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "bounding_box() requires margin mode. Use Document(margin=...) to enable layout.",
+            ));
         };
         drop(guard);
         drop(borrowed);
