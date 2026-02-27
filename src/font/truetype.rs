@@ -44,6 +44,8 @@ pub struct EmbeddedFont {
     pub ascender: i32,
     /// Descender (negative, in PDF units)
     pub descender: i32,
+    /// Line gap (in PDF units, 1000 = 1 em)
+    pub line_gap: i32,
     /// Cap height
     pub cap_height: i32,
     /// x-height (height of lowercase 'x')
@@ -117,6 +119,7 @@ impl EmbeddedFont {
 
         let ascender = (face.ascender() as f64 * scale) as i32;
         let descender = (face.descender() as f64 * scale) as i32;
+        let line_gap = (face.line_gap() as f64 * scale) as i32;
         let cap_height = face
             .capital_height()
             .map(|h| (h as f64 * scale) as i32)
@@ -186,6 +189,7 @@ impl EmbeddedFont {
             italic_angle,
             ascender,
             descender,
+            line_gap,
             cap_height,
             x_height,
             stem_v,
@@ -997,6 +1001,7 @@ mod tests {
             italic_angle: 0.0,
             ascender: 800,
             descender: -200,
+            line_gap: 0,
             cap_height: 700,
             x_height: 0,
             stem_v: 80,
@@ -1027,6 +1032,7 @@ mod tests {
             italic_angle: 0.0,
             ascender: 800,
             descender: -200,
+            line_gap: 0,
             cap_height: 700,
             x_height: 0,
             stem_v: 80,
@@ -1060,6 +1066,7 @@ mod tests {
             italic_angle: 0.0,
             ascender: 800,
             descender: -200,
+            line_gap: 0,
             cap_height: 700,
             x_height: 0,
             stem_v: 80,
