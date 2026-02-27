@@ -1637,13 +1637,8 @@ impl LayoutDocument {
         let width = right - left;
 
         // In Prawn, cursor is at the TOP of the text line.
-        // Text baseline should be below cursor by approximately (font_size - descender).
-        // For most fonts, ascender is about 80% of em height, descender about 20%.
-        // So baseline = cursor - ascender ≈ cursor - (font_size * 0.8)
-        // But Prawn uses a simpler model: baseline = cursor - (font_size - descender_height)
-        // Approximating descender as 20% of font_size: baseline = cursor - font_size * 0.8
-        let font_size = self.inner.current_font_size;
-        let ascender_offset = font_size * 0.78; // Approximate ascender ratio
+        // Text baseline = cursor - ascender_height (matches Prawn behavior)
+        let ascender_offset = self.ascender_height();
         let y = self.state.cursor_y - ascender_offset;
 
         // Calculate text width including character and word spacing
@@ -1805,8 +1800,7 @@ impl LayoutDocument {
         };
 
         // Calculate y position (baseline)
-        let font_size = base_size;
-        let ascender_offset = font_size * 0.78;
+        let ascender_offset = self.ascender_height();
         let y = self.state.cursor_y - ascender_offset;
 
         let mut x = start_x;
@@ -2471,9 +2465,9 @@ impl LayoutDocument {
     fn text_line_left(&mut self, text: &str) {
         let bounds = self.state.bounds();
         let left = bounds.absolute_left();
-
         let font_size = self.inner.current_font_size;
-        let ascender_offset = font_size * 0.78;
+
+        let ascender_offset = self.ascender_height();
         let y = self.state.cursor_y - ascender_offset;
 
         // For justify mode paragraph ends, use character_spacing but zero word_spacing
@@ -2526,8 +2520,7 @@ impl LayoutDocument {
 
     /// Internal: draws a single line with justified alignment
     fn text_line_justified(&mut self, text: &str, width: f64) {
-        let font_size = self.inner.current_font_size;
-        let ascender_offset = font_size * 0.78;
+        let ascender_offset = self.ascender_height();
         let y = self.state.cursor_y - ascender_offset;
 
         self.draw_text_justified(text, y, width);
