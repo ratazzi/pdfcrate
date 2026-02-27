@@ -2781,9 +2781,9 @@ impl Document {
     ///
     /// Args:
     ///     path: Path to the image file
-    ///     width: Explicit width (overrides fit)
-    ///     height: Explicit height (overrides fit)
-    ///     fit: Tuple (max_width, max_height) to fit image within bounds preserving aspect ratio
+    ///     width: Explicit width (proportional if height omitted; overrides fit)
+    ///     height: Explicit height (proportional if width omitted; overrides fit)
+    ///     fit: Tuple (max_width, max_height) to fit preserving aspect ratio (lowest priority)
     #[pyo3(signature = (path, width=None, height=None, fit=None))]
     fn image(
         slf: Py<Self>,
@@ -2805,38 +2805,44 @@ impl Document {
                 ));
             }
             DocumentInner::Layout(layout) => {
-                // Get absolute cursor position and bounds
-                // cursor() returns relative to bounds.bottom, need absolute for image_with
-                let bounds = layout.bounds();
-                let abs_cursor_y = bounds.absolute_bottom() + layout.cursor();
-                let x = bounds.absolute_left();
+                let bounds_left = layout.bounds().absolute_left();
+                let bounds_bottom = layout.bounds().absolute_bottom();
+                let cursor_y = bounds_bottom + layout.cursor();
 
-                // Create options with absolute position at cursor
-                let mut opts = crate::api::image::ImageOptions::default();
-                opts.at = Some([x, abs_cursor_y]);
-
-                // Handle fit vs explicit dimensions
-                if let Some((max_w, max_h)) = fit {
-                    opts.fit = Some((max_w, max_h));
-                }
-                if let Some(w) = width {
-                    opts.width = Some(w);
-                }
-                if let Some(h) = height {
-                    opts.height = Some(h);
-                }
-
+                // Step 1: embed image to get pixel dimensions
                 let embedded = layout
                     .inner_mut()
-                    .image_with(data.as_slice(), opts)
+                    .embed_image(data.as_slice())
                     .map_err(|e| {
                         PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
                     })?;
 
-                // Move cursor down by actual rendered image height
-                // Priority: explicit height > actual rendered height from embedded
-                let move_height = height.unwrap_or(embedded.height as f64);
-                layout.move_down(move_height);
+                // Step 2: calculate rendered dimensions (Prawn-compatible priority)
+                let pw = embedded.width as f64;
+                let ph = embedded.height as f64;
+                let (render_w, render_h) = match (width, height) {
+                    (Some(w), Some(h)) => (w, h),
+                    (Some(w), None) => (w, ph * w / pw),
+                    (None, Some(h)) => (pw * h / ph, h),
+                    (None, None) => {
+                        if let Some((max_w, max_h)) = fit {
+                            embedded.fit_dimensions(max_w, max_h)
+                        } else {
+                            (pw, ph)
+                        }
+                    }
+                };
+
+                // Step 3: draw with correct position (at = bottom-left corner)
+                let opts = crate::api::image::ImageOptions {
+                    at: Some([bounds_left, cursor_y - render_h]),
+                    width: Some(render_w),
+                    height: Some(render_h),
+                    ..Default::default()
+                };
+                layout.inner_mut().draw_embedded_image(&embedded, opts);
+
+                layout.move_down(render_h);
             }
             DocumentInner::Consumed => {}
         }
