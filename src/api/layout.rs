@@ -1509,21 +1509,25 @@ impl LayoutDocument {
     /// Returns the natural height of the current font (ascender - descender + line_gap)
     ///
     /// This matches Prawn's line height calculation which includes line_gap.
-    fn font_height(&self) -> f64 {
+    pub fn font_height(&self) -> f64 {
         use crate::font::StandardFont;
 
         let font_size = self.inner.current_font_size;
 
-        // Try to get actual metrics for standard fonts
+        // Try standard fonts (AFM metrics)
         if let Some(font) = StandardFont::from_name(&self.inner.current_font) {
             let metrics = font.metrics();
-            // Height = ascender - descender + line_gap (descender is negative)
-            // This matches Prawn: font.ascender + font.descender + font.line_gap
             let height_units = metrics.ascender - metrics.descender + metrics.line_gap;
             return height_units as f64 * font_size / 1000.0;
         }
 
-        // Fallback: approximate as 115% of em (matches typical Prawn behavior)
+        // Try embedded fonts (TTF metrics)
+        #[cfg(feature = "fonts")]
+        if let Some(embedded) = self.inner.get_embedded_font(&self.inner.current_font) {
+            let height_units = embedded.ascender - embedded.descender + embedded.line_gap;
+            return height_units as f64 * font_size / 1000.0;
+        }
+
         font_size * 1.15
     }
 
@@ -1540,7 +1544,11 @@ impl LayoutDocument {
             return metrics.ascender as f64 * font_size / 1000.0;
         }
 
-        // Fallback: approximate as 72% of em (typical for Latin fonts)
+        #[cfg(feature = "fonts")]
+        if let Some(embedded) = self.inner.get_embedded_font(&self.inner.current_font) {
+            return embedded.ascender as f64 * font_size / 1000.0;
+        }
+
         font_size * 0.72
     }
 
