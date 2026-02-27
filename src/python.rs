@@ -2000,7 +2000,7 @@ impl Document {
     }
 
     /// Draw text at absolute position
-    fn text_at(slf: Py<Self>, py: Python<'_>, text: &str, pos: (f64, f64)) -> Py<Self> {
+    fn text_at(slf: Py<Self>, py: Python<'_>, text: &str, pos: (f64, f64)) -> PyResult<Py<Self>> {
         let borrowed = slf.borrow(py);
         let mut guard = borrowed.inner.lock().unwrap();
         match &mut *guard {
@@ -2010,11 +2010,15 @@ impl Document {
             DocumentInner::Layout(layout) => {
                 layout.inner_mut().text_at(text, [pos.0, pos.1]);
             }
-            DocumentInner::Consumed => {}
+            DocumentInner::Consumed => {
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    "Document already consumed by render()",
+                ));
+            }
         }
         drop(guard);
         drop(borrowed);
-        slf
+        Ok(slf)
     }
 
     /// Draw text at absolute position without kerning (for comparison demos)
@@ -2305,7 +2309,9 @@ impl Document {
                 "cursor() requires margin.",
             )),
             DocumentInner::Layout(layout) => Ok(layout.cursor()),
-            DocumentInner::Consumed => Ok(0.0),
+            DocumentInner::Consumed => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Document already consumed by render()",
+            )),
         }
     }
 
@@ -2317,7 +2323,9 @@ impl Document {
                 "bounds_bottom() requires margin.",
             )),
             DocumentInner::Layout(layout) => Ok(layout.bounds().absolute_bottom()),
-            DocumentInner::Consumed => Ok(0.0),
+            DocumentInner::Consumed => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Document already consumed.",
+            )),
         }
     }
 
@@ -2425,13 +2433,9 @@ impl Document {
                     total_lines: result.total_lines,
                 })
             }
-            DocumentInner::Consumed => Ok(TextBoxResult {
-                height: 0.0,
-                truncated: false,
-                font_size: 0.0,
-                lines_rendered: 0,
-                total_lines: 0,
-            }),
+            DocumentInner::Consumed => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Document already consumed.",
+            )),
         }
     }
 
