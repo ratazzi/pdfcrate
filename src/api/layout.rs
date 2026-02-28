@@ -1976,15 +1976,23 @@ impl LayoutDocument {
                     page.content.set_word_spacing(word_spacing);
                     page.content
                         .set_font(&run.font, frag_font_size)
-                        .move_text_pos(x, frag_y)
-                        .show_text(&run.text)
-                        .end_text();
+                        .move_text_pos(x, frag_y);
+
+                    // Apply kerning for standard fonts
+                    use crate::font::StandardFont;
+                    if let Some(std_font) = StandardFont::from_name(&run.font) {
+                        let chunks = crate::font::kern_tables::kern_text(&std_font, &run.text);
+                        page.content.show_text_kerned(&chunks);
+                    } else {
+                        page.content.show_text(&run.text);
+                    }
+                    page.content.end_text();
 
                     if needs_color_change {
                         page.content.restore_state();
                     }
 
-                    Self::measure_fragment_width(&run.font, &run.text, frag_font_size)
+                    Self::measure_fragment_width_kerned(&run.font, &run.text, frag_font_size)
                 };
 
                 // Calculate extra width from character and word spacing within this run
@@ -2139,7 +2147,7 @@ impl LayoutDocument {
                 return total_advance as f64 * font_size / 1000.0;
             }
         }
-        Self::measure_fragment_width(font_name, text, font_size)
+        Self::measure_fragment_width_kerned(font_name, text, font_size)
     }
 
     /// Returns the styled font name for standard fonts
@@ -2176,6 +2184,18 @@ impl LayoutDocument {
         use crate::font::StandardFont;
         if let Some(font) = StandardFont::from_name(font_name) {
             font.string_width(text) as f64 * font_size / 1000.0
+        } else {
+            text.len() as f64 * font_size * 0.5
+        }
+    }
+
+    /// Measures text width including kerning adjustments
+    fn measure_fragment_width_kerned(font_name: &str, text: &str, font_size: f64) -> f64 {
+        use crate::font::StandardFont;
+        if let Some(font) = StandardFont::from_name(font_name) {
+            let raw = font.string_width(text) as f64;
+            let kern = crate::font::kern_tables::total_kern_adjustment(&font, text) as f64;
+            (raw + kern) * font_size / 1000.0
         } else {
             text.len() as f64 * font_size * 0.5
         }
@@ -3436,11 +3456,15 @@ impl LayoutDocument {
     {
         let original_page = self.inner.page_number();
         let saved_cursor = self.state.cursor_y;
+        let saved_font = self.inner.current_font.clone();
+        let saved_font_size = self.inner.current_font_size;
         f(self);
         if self.inner.page_number() != original_page {
             self.inner.go_to_page(original_page - 1); // go_to_page uses 0-based index
         }
         self.state.cursor_y = saved_cursor;
+        self.inner.current_font = saved_font;
+        self.inner.current_font_size = saved_font_size;
         self
     }
 
