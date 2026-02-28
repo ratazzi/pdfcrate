@@ -6288,4 +6288,36 @@ mod tests {
             "ascender_height ({ah}) should be less than font_height ({fh})"
         );
     }
+
+    #[test]
+    fn test_formatted_text_mixed_fonts_cursor_advancement() {
+        use crate::api::{FontStyle, TextFragment};
+
+        let doc = Document::new();
+        let mut layout = LayoutDocument::new(doc);
+        layout.font("Helvetica").size(10.0);
+
+        // Record cursor before formatted_text
+        let cursor_before = layout.cursor();
+
+        // Mixed: Helvetica (normal) + Helvetica-Bold
+        // Helvetica-Bold has line_gap=265 vs Helvetica's 231,
+        // so font_height differs: 1190/1000*10=11.90 vs 1156/1000*10=11.56
+        layout.formatted_text(&[
+            TextFragment::new("Normal "),
+            TextFragment::new("Bold").style(FontStyle::Bold),
+            TextFragment::new(" text"),
+        ]);
+
+        let cursor_after = layout.cursor();
+        let moved = cursor_before - cursor_after;
+
+        // Should use Helvetica-Bold's font_height (11.90), not Helvetica's (11.56)
+        let expected = 1190.0 / 1000.0 * 10.0; // 11.90
+        assert!(
+            (moved - expected).abs() < 0.01,
+            "formatted_text should advance by max font_height across fragments; \
+             expected {expected:.2}, got {moved:.2}"
+        );
+    }
 }
