@@ -280,4 +280,46 @@ mod tests {
             width_9pt
         );
     }
+
+    #[test]
+    fn test_text_box_line_widths_match_prawn() {
+        use super::kern_tables;
+
+        let font = StandardFont::Helvetica;
+        let size = 9.0;
+
+        // Prawn line breaks for text_box_overflow_demo at 220pt width
+        let lines = [
+            (
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                219.078,
+            ),
+            (
+                "Sed do eiusmod tempor incididunt ut labore et dolore",
+                211.104,
+            ),
+            (
+                "magna aliqua. Ut enim ad minim veniam, quis nostrud",
+                214.488,
+            ),
+            (
+                "exercitation ullamco laboris. Duis aute irure dolor in",
+                203.661,
+            ),
+            ("reprehenderit in voluptate velit esse cillum.", 169.749),
+        ];
+
+        for (text, prawn_width) in &lines {
+            let raw = font.string_width(text) as f64;
+            let kern = kern_tables::total_kern_adjustment(&font, text) as f64;
+            let width = (raw + kern) * size / 1000.0;
+            assert!(
+                (width - prawn_width).abs() < 0.01,
+                "width mismatch for \"{}\": pdfcrate={:.3}, prawn={:.3}",
+                text,
+                width,
+                prawn_width
+            );
+        }
+    }
 }
