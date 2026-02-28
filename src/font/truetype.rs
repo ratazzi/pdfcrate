@@ -368,10 +368,11 @@ impl EmbeddedFont {
         }
     }
 
-    /// Measures the width of a string in PDF units
+    /// Measures the width of a string in PDF units (with kerning/shaping)
     pub fn text_width(&self, text: &str, font_size: f64) -> f64 {
-        let width: u32 = text.chars().map(|c| self.char_width(c) as u32).sum();
-        width as f64 * font_size / 1000.0
+        let glyphs = self.shape_text(text);
+        let total_advance: i32 = glyphs.iter().map(|g| g.x_advance).sum();
+        total_advance as f64 * font_size / 1000.0
     }
 
     /// Shapes text into glyphs with advances/offsets.
