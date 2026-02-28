@@ -1552,6 +1552,42 @@ impl LayoutDocument {
         font_size * 0.72
     }
 
+    /// Returns font_height for a specific font and size
+    fn font_height_for(&self, font_name: &str, font_size: f64) -> f64 {
+        use crate::font::StandardFont;
+
+        if let Some(font) = StandardFont::from_name(font_name) {
+            let metrics = font.metrics();
+            let height_units = metrics.ascender - metrics.descender + metrics.line_gap;
+            return height_units as f64 * font_size / 1000.0;
+        }
+
+        #[cfg(feature = "fonts")]
+        if let Some(embedded) = self.inner.get_embedded_font(font_name) {
+            let height_units = embedded.ascender - embedded.descender + embedded.line_gap;
+            return height_units as f64 * font_size / 1000.0;
+        }
+
+        font_size * 1.15
+    }
+
+    /// Returns ascender_height for a specific font and size
+    fn ascender_height_for(&self, font_name: &str, font_size: f64) -> f64 {
+        use crate::font::StandardFont;
+
+        if let Some(font) = StandardFont::from_name(font_name) {
+            let metrics = font.metrics();
+            return metrics.ascender as f64 * font_size / 1000.0;
+        }
+
+        #[cfg(feature = "fonts")]
+        if let Some(embedded) = self.inner.get_embedded_font(font_name) {
+            return embedded.ascender as f64 * font_size / 1000.0;
+        }
+
+        font_size * 0.72
+    }
+
     /// Returns the current font name
     pub fn current_font(&self) -> &str {
         &self.inner.current_font
@@ -1799,8 +1835,34 @@ impl LayoutDocument {
             TextAlign::Justify => left,
         };
 
-        // Calculate y position (baseline)
-        let ascender_offset = self.ascender_height();
+        // Calculate max ascender and line height across all fragments
+        let mut max_ascender = self.ascender_height_for(&base_font, base_size);
+        let mut max_line_height = self.font_height_for(&base_font, base_size);
+        for f in fragments {
+            if f.text.is_empty() {
+                continue;
+            }
+            let frag_font = if let Some(ref font) = f.font {
+                font.clone()
+            } else {
+                Self::get_styled_font_name(&base_font, f.style)
+            };
+            let mut frag_size = f.size.unwrap_or(base_size);
+            if f.superscript || f.subscript {
+                frag_size *= 0.583;
+            }
+            let asc = self.ascender_height_for(&frag_font, frag_size);
+            let fh = self.font_height_for(&frag_font, frag_size);
+            if asc > max_ascender {
+                max_ascender = asc;
+            }
+            if fh > max_line_height {
+                max_line_height = fh;
+            }
+        }
+
+        // Calculate y position (baseline) using max ascender across fragments
+        let ascender_offset = max_ascender;
         let y = self.state.cursor_y - ascender_offset;
 
         let mut x = start_x;
@@ -1989,8 +2051,8 @@ impl LayoutDocument {
             is_first_fragment = false;
         }
 
-        // Move cursor down by line height
-        let line_height = self.line_height();
+        // Move cursor down by max line height across all fragments
+        let line_height = max_line_height * self.state.leading;
         self.state.cursor_y -= line_height;
 
         // Update stretched height if in stretchy box
