@@ -62,5 +62,6 @@ fonts = ["ttf-parser", "subsetter"]
 text-shaping = ["rustybuzz"]
 svg = ["usvg"]
 barcode = ["qrcode", "barcoders"]
+prawn-compat = []  # Skip space kern pairs to match Prawn's WinAnsi encoding behavior
 full = ["std", "png", "fonts", "text-shaping", "svg", "barcode"]
 python = ["pyo3", "full"]

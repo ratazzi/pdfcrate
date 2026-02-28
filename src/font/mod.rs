@@ -288,11 +288,10 @@ mod tests {
         let font = StandardFont::Helvetica;
         let size = 9.0;
 
-        // Expected widths with full AFM kerning (including space kern pairs).
-        // Lines with ". U" or ". D" are ~0.54pt narrower than Prawn because
-        // we apply "period space" kern pair (-60 units) which Prawn skips
-        // due to its WinAnsi encoding mapping "space" to position 160.
-        let lines = [
+        // With prawn-compat: space kern pairs are skipped (matching Prawn's WinAnsi).
+        // Without: full AFM kerning including "period space" pairs.
+        #[cfg(feature = "prawn-compat")]
+        let lines: [(&str, f64); 5] = [
             (
                 "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
                 219.078,
@@ -303,11 +302,31 @@ mod tests {
             ),
             (
                 "magna aliqua. Ut enim ad minim veniam, quis nostrud",
-                213.948, // Prawn: 214.488 (no period-space kern)
+                214.488,
             ),
             (
                 "exercitation ullamco laboris. Duis aute irure dolor in",
-                203.121, // Prawn: 203.661 (no period-space kern)
+                203.661,
+            ),
+            ("reprehenderit in voluptate velit esse cillum.", 169.749),
+        ];
+        #[cfg(not(feature = "prawn-compat"))]
+        let lines: [(&str, f64); 5] = [
+            (
+                "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+                219.078,
+            ),
+            (
+                "Sed do eiusmod tempor incididunt ut labore et dolore",
+                211.104,
+            ),
+            (
+                "magna aliqua. Ut enim ad minim veniam, quis nostrud",
+                213.948,
+            ),
+            (
+                "exercitation ullamco laboris. Duis aute irure dolor in",
+                203.121,
             ),
             ("reprehenderit in voluptate velit esse cillum.", 169.749),
         ];

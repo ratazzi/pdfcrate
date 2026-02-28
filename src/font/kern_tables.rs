@@ -9026,6 +9026,12 @@ pub fn kern_text(font: &StandardFont, text: &str) -> Vec<(String, i16)> {
     let mut result = Vec::new();
     let mut chunk_start = 0;
     for i in 0..bytes.len() - 1 {
+        // prawn-compat: Prawn's WinAnsi encoding maps "space" to position 160,
+        // so AFM kern pairs involving space (e.g. "period space") are never matched.
+        #[cfg(feature = "prawn-compat")]
+        if bytes[i] == b' ' || bytes[i + 1] == b' ' {
+            continue;
+        }
         let k = get_kern_pair(font, bytes[i], bytes[i + 1]);
         if k != 0 {
             // Include current char in this chunk
@@ -9045,6 +9051,11 @@ pub fn total_kern_adjustment(font: &StandardFont, text: &str) -> i32 {
     let bytes = text.as_bytes();
     let mut total: i32 = 0;
     for i in 0..bytes.len().saturating_sub(1) {
+        // prawn-compat: skip space kern pairs (see kern_text for details)
+        #[cfg(feature = "prawn-compat")]
+        if bytes[i] == b' ' || bytes[i + 1] == b' ' {
+            continue;
+        }
         total += get_kern_pair(font, bytes[i], bytes[i + 1]) as i32;
     }
     total
