@@ -560,7 +560,7 @@ impl Document {
         self.font_features.iter().map(|s| s.as_str())
     }
 
-    /// Draws text at a specific position
+    /// Draws text at a specific position (with kerning for standard fonts)
     pub fn text_at(&mut self, text: &str, pos: [f64; 2]) -> &mut Self {
         let font_name = self.current_font.clone();
         self.ensure_font(&font_name);
@@ -584,11 +584,18 @@ impl Document {
         // Reset spacing to 0 to avoid inheriting from previous text_at_with_spacing calls
         content.set_character_spacing(0.0);
         content.set_word_spacing(0.0);
-        content
-            .set_font(&font_name, font_size)
-            .move_text_pos(pos[0], pos[1])
-            .show_text(text)
-            .end_text();
+        content.set_font(&font_name, font_size);
+        content.move_text_pos(pos[0], pos[1]);
+
+        // Apply kerning for standard fonts
+        use crate::font::StandardFont;
+        if let Some(font) = StandardFont::from_name(&font_name) {
+            let chunks = crate::font::kern_tables::kern_text(&font, text);
+            content.show_text_kerned(&chunks);
+        } else {
+            content.show_text(text);
+        }
+        content.end_text();
 
         self
     }
@@ -762,11 +769,18 @@ impl Document {
         content.set_character_spacing(char_spacing);
         content.set_word_spacing(word_spacing);
 
-        content
-            .set_font(&font_name, font_size)
-            .move_text_pos(pos[0], pos[1])
-            .show_text(text)
-            .end_text();
+        content.set_font(&font_name, font_size);
+        content.move_text_pos(pos[0], pos[1]);
+
+        // Apply kerning for standard fonts
+        use crate::font::StandardFont;
+        if let Some(font) = StandardFont::from_name(&font_name) {
+            let chunks = crate::font::kern_tables::kern_text(&font, text);
+            content.show_text_kerned(&chunks);
+        } else {
+            content.show_text(text);
+        }
+        content.end_text();
 
         self
     }
@@ -940,12 +954,15 @@ impl Document {
         self.measure_standard_font_text(text)
     }
 
-    /// Measures text width using standard font AFM metrics
+    /// Measures text width using standard font AFM metrics (with kerning)
     fn measure_standard_font_text(&self, text: &str) -> f64 {
+        use crate::font::kern_tables;
         use crate::font::StandardFont;
 
         if let Some(font) = StandardFont::from_name(&self.current_font) {
-            font.string_width(text) as f64 * self.current_font_size / 1000.0
+            let raw_width = font.string_width(text) as f64;
+            let kern_adj = kern_tables::total_kern_adjustment(&font, text) as f64;
+            (raw_width + kern_adj) * self.current_font_size / 1000.0
         } else {
             // Fallback for unknown fonts
             text.len() as f64 * self.current_font_size * 0.5

@@ -5,6 +5,8 @@
 #[cfg(feature = "fonts")]
 pub mod truetype;
 
+pub mod kern_tables;
+
 #[cfg(feature = "fonts")]
 pub use truetype::{EmbeddedFont, ShapedGlyph};
 
@@ -258,5 +260,24 @@ mod tests {
         // Courier is monospace: 600 per character
         assert_eq!(StandardFont::Courier.string_width("ABCD"), 2400);
         assert_eq!(StandardFont::Courier.string_width("abcd"), 2400);
+    }
+
+    #[test]
+    fn test_kerning_width_matches_prawn() {
+        use super::kern_tables;
+
+        // Compare with Prawn's width_of("The quick brown fox...", kerning: true)
+        // Prawn at 9pt: 179.361 (with kerning), 180.576 (without)
+        let font = StandardFont::Helvetica;
+        let text = "The quick brown fox jumps over the lazy dog.";
+        let raw = font.string_width(text) as f64; // 20064 units
+        let kern = kern_tables::total_kern_adjustment(&font, text) as f64;
+        let width_9pt = (raw + kern) * 9.0 / 1000.0;
+        // Prawn: 179.361
+        assert!(
+            (width_9pt - 179.361).abs() < 0.01,
+            "kerned width at 9pt: {}, expected ~179.361",
+            width_9pt
+        );
     }
 }

@@ -473,6 +473,37 @@ impl ContentBuilder {
         self.line(&line)
     }
 
+    /// Show text with kerning adjustments (TJ) - for standard fonts with kerning
+    ///
+    /// Takes pairs of (text_chunk, kern_adjustment). The kern adjustment is in
+    /// thousandths of a text space unit. Positive values reduce spacing.
+    pub fn show_text_kerned(&mut self, chunks: &[(String, i16)]) -> &mut Self {
+        if chunks.is_empty() {
+            return self;
+        }
+        // If only one chunk with no adjustment, use simple Tj
+        if chunks.len() == 1 {
+            return self.show_text(&chunks[0].0);
+        }
+        let mut line = String::new();
+        line.push('[');
+        for (i, (text, adj)) in chunks.iter().enumerate() {
+            let escaped = escape_pdf_string(text);
+            line.push('(');
+            line.push_str(&escaped);
+            line.push(')');
+            if *adj != 0 {
+                line.push(' ');
+                line.push_str(&format_number(*adj as f64));
+            }
+            if i + 1 < chunks.len() {
+                line.push(' ');
+            }
+        }
+        line.push_str("] TJ");
+        self.line(&line)
+    }
+
     /// Set text leading (TL)
     pub fn set_text_leading(&mut self, leading: f64) -> &mut Self {
         self.line(&format!("{} TL", format_number(leading)))

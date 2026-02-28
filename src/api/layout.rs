@@ -2844,10 +2844,13 @@ impl LayoutDocument {
         }
         #[cfg(not(feature = "fonts"))]
         {
-            // Use proper AFM metrics for standard fonts
+            // Use proper AFM metrics for standard fonts (with kerning)
+            use crate::font::kern_tables;
             use crate::font::StandardFont;
             if let Some(font) = StandardFont::from_name(&self.inner.current_font) {
-                font.string_width(text) as f64 * self.inner.current_font_size / 1000.0
+                let raw_width = font.string_width(text) as f64;
+                let kern_adj = kern_tables::total_kern_adjustment(&font, text) as f64;
+                (raw_width + kern_adj) * self.inner.current_font_size / 1000.0
             } else {
                 // Fallback for unknown fonts
                 text.len() as f64 * self.inner.current_font_size * 0.5
@@ -4561,7 +4564,7 @@ impl LayoutDocument {
     /// This is the low-level method used by Python context managers.
     /// For normal Rust usage, prefer the closure-based `bounding_box()` method.
     #[doc(hidden)]
-    pub fn pop_bounding_box(&mut self, old_cursor: f64, fixed_height: Option<f64>) -> f64 {
+    pub fn pop_bounding_box(&mut self, _old_cursor: f64, fixed_height: Option<f64>) -> f64 {
         // Update stretched height before popping
         let cursor_y = self.state.cursor_y;
         if let Some(bbox) = self.state.bounds_stack.last_mut() {
