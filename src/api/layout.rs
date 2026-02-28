@@ -3580,11 +3580,6 @@ impl LayoutDocument {
             self.state.cursor_y = abs_y - finished_bbox.height();
         }
 
-        // Additional check: if cursor would move up, restore original position
-        if self.state.cursor_y > old_cursor {
-            self.state.cursor_y = old_cursor;
-        }
-
         self
     }
 
@@ -4580,11 +4575,6 @@ impl LayoutDocument {
             self.state.cursor_y = abs_y - height;
         } else {
             self.state.cursor_y = abs_y - finished_bbox.height();
-        }
-
-        // If cursor moved below old cursor, keep the new position
-        if self.state.cursor_y > old_cursor {
-            self.state.cursor_y = old_cursor;
         }
 
         finished_bbox.height()
