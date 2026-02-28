@@ -8997,12 +8997,6 @@ static KERN_TIMES_ROMAN: &[(u16, i16)] = &[
 /// Get kerning adjustment for a character pair in the given standard font.
 /// Returns the kerning value in 1/1000 em units, or 0 if no kerning pair exists.
 pub fn get_kern_pair(font: &StandardFont, left: u8, right: u8) -> i16 {
-    // Prawn's WinAnsi encoding maps the "space" glyph name to position 160,
-    // so AFM kern pairs involving "space" are never matched against byte 32.
-    // Skip these to match Prawn's behavior.
-    if left == b' ' || right == b' ' {
-        return 0;
-    }
     let table = match font {
         StandardFont::Helvetica => KERN_HELVETICA,
         StandardFont::HelveticaBold => KERN_HELVETICA_BOLD,

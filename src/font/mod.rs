@@ -282,13 +282,16 @@ mod tests {
     }
 
     #[test]
-    fn test_text_box_line_widths_match_prawn() {
+    fn test_text_box_line_widths() {
         use super::kern_tables;
 
         let font = StandardFont::Helvetica;
         let size = 9.0;
 
-        // Prawn line breaks for text_box_overflow_demo at 220pt width
+        // Expected widths with full AFM kerning (including space kern pairs).
+        // Lines with ". U" or ". D" are ~0.54pt narrower than Prawn because
+        // we apply "period space" kern pair (-60 units) which Prawn skips
+        // due to its WinAnsi encoding mapping "space" to position 160.
         let lines = [
             (
                 "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
@@ -300,25 +303,25 @@ mod tests {
             ),
             (
                 "magna aliqua. Ut enim ad minim veniam, quis nostrud",
-                214.488,
+                213.948, // Prawn: 214.488 (no period-space kern)
             ),
             (
                 "exercitation ullamco laboris. Duis aute irure dolor in",
-                203.661,
+                203.121, // Prawn: 203.661 (no period-space kern)
             ),
             ("reprehenderit in voluptate velit esse cillum.", 169.749),
         ];
 
-        for (text, prawn_width) in &lines {
+        for (text, expected_width) in &lines {
             let raw = font.string_width(text) as f64;
             let kern = kern_tables::total_kern_adjustment(&font, text) as f64;
             let width = (raw + kern) * size / 1000.0;
             assert!(
-                (width - prawn_width).abs() < 0.01,
-                "width mismatch for \"{}\": pdfcrate={:.3}, prawn={:.3}",
+                (width - expected_width).abs() < 0.01,
+                "width mismatch for \"{}\": got={:.3}, expected={:.3}",
                 text,
                 width,
-                prawn_width
+                expected_width
             );
         }
     }
