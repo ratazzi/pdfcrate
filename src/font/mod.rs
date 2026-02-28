@@ -138,38 +138,70 @@ impl StandardFont {
     pub fn metrics(&self) -> FontMetrics {
         // Metrics from AFM files, line_gap calculated to match Prawn behavior
         match self {
-            StandardFont::Courier
-            | StandardFont::CourierBold
-            | StandardFont::CourierOblique
-            | StandardFont::CourierBoldOblique => FontMetrics {
+            // line_gap derived from AFM FontBBox: (bbox_top - bbox_bottom) - (ascender - descender)
+            StandardFont::Courier | StandardFont::CourierOblique => FontMetrics {
                 avg_width: 600,
                 ascender: 629,
                 descender: -157,
                 cap_height: 562,
                 x_height: 426,
-                line_gap: 214, // Matches Prawn's line spacing
+                line_gap: 269,
             },
-            StandardFont::Helvetica
-            | StandardFont::HelveticaBold
-            | StandardFont::HelveticaOblique
-            | StandardFont::HelveticaBoldOblique => FontMetrics {
+            StandardFont::CourierBold | StandardFont::CourierBoldOblique => FontMetrics {
+                avg_width: 600,
+                ascender: 629,
+                descender: -157,
+                cap_height: 562,
+                x_height: 426,
+                line_gap: 265,
+            },
+            StandardFont::Helvetica | StandardFont::HelveticaOblique => FontMetrics {
                 avg_width: 500,
                 ascender: 718,
                 descender: -207,
                 cap_height: 718,
                 x_height: 523,
-                line_gap: 231, // From Prawn: 3.234/14*1000 ≈ 231
+                line_gap: 231,
             },
-            StandardFont::TimesRoman
-            | StandardFont::TimesBold
-            | StandardFont::TimesItalic
-            | StandardFont::TimesBoldItalic => FontMetrics {
+            StandardFont::HelveticaBold | StandardFont::HelveticaBoldOblique => FontMetrics {
+                avg_width: 500,
+                ascender: 718,
+                descender: -207,
+                cap_height: 718,
+                x_height: 523,
+                line_gap: 265,
+            },
+            StandardFont::TimesRoman => FontMetrics {
                 avg_width: 500,
                 ascender: 683,
                 descender: -217,
                 cap_height: 662,
                 x_height: 450,
-                line_gap: 200, // Approximate
+                line_gap: 216,
+            },
+            StandardFont::TimesBold => FontMetrics {
+                avg_width: 500,
+                ascender: 683,
+                descender: -217,
+                cap_height: 662,
+                x_height: 450,
+                line_gap: 253,
+            },
+            StandardFont::TimesItalic => FontMetrics {
+                avg_width: 500,
+                ascender: 683,
+                descender: -217,
+                cap_height: 662,
+                x_height: 450,
+                line_gap: 200,
+            },
+            StandardFont::TimesBoldItalic => FontMetrics {
+                avg_width: 500,
+                ascender: 683,
+                descender: -217,
+                cap_height: 662,
+                x_height: 450,
+                line_gap: 239,
             },
             StandardFont::Symbol => FontMetrics {
                 avg_width: 500,
