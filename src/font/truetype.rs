@@ -113,13 +113,34 @@ impl EmbeddedFont {
             .and_then(|n| n.to_string())
             .unwrap_or_else(|| postscript_name.clone());
 
-        // Get metrics
+        // Get metrics - prefer OS/2 typo metrics (like Prawn/TTFunk), fallback to hhea
         let units_per_em = face.units_per_em();
         let scale = 1000.0 / units_per_em as f64;
 
-        let ascender = (face.ascender() as f64 * scale) as i32;
-        let descender = (face.descender() as f64 * scale) as i32;
-        let line_gap = (face.line_gap() as f64 * scale) as i32;
+        let (ascender, descender, line_gap) = if let Some(ref os2) = face.tables().os2 {
+            let typo_asc = os2.typographic_ascender();
+            let typo_desc = os2.typographic_descender();
+            let typo_gap = os2.typographic_line_gap();
+            if typo_asc != 0 {
+                (
+                    (typo_asc as f64 * scale) as i32,
+                    (typo_desc as f64 * scale) as i32,
+                    (typo_gap as f64 * scale) as i32,
+                )
+            } else {
+                (
+                    (face.ascender() as f64 * scale) as i32,
+                    (face.descender() as f64 * scale) as i32,
+                    (face.line_gap() as f64 * scale) as i32,
+                )
+            }
+        } else {
+            (
+                (face.ascender() as f64 * scale) as i32,
+                (face.descender() as f64 * scale) as i32,
+                (face.line_gap() as f64 * scale) as i32,
+            )
+        };
         let cap_height = face
             .capital_height()
             .map(|h| (h as f64 * scale) as i32)
