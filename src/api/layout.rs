@@ -1626,6 +1626,11 @@ impl LayoutDocument {
     /// doc.text("Hello World");
     /// ```
     pub fn text(&mut self, text: &str) -> &mut Self {
+        // Empty text is a no-op (matches Prawn behavior)
+        if text.is_empty() {
+            return self;
+        }
+
         // If fallback fonts are configured, use fallback-aware rendering
         if !self.state.fallback_fonts.is_empty() {
             let fallback_fonts = self.state.fallback_fonts.clone();
