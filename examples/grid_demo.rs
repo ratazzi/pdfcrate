@@ -40,7 +40,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         doc.text("Grid System");
         doc.move_down(5.0);
         doc.font("Helvetica").size(11.0);
-        doc.text("Prawn-style grid layout for precise positioning");
+        doc.text("Grid layout for precise positioning");
     });
 
     // Row 1: Vertical span and large span

@@ -9,7 +9,7 @@
 //!
 //! Run with: cargo run --example drawing_demo
 
-use pdfcrate::api::AxisOptions;
+use pdfcrate::api::{AxisOptions, PageLayout, PageSize};
 use pdfcrate::prelude::Document;
 use pdfcrate::Result as PdfResult;
 
@@ -28,7 +28,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// This function is also called by showcase.rs to include this page.
 pub fn add_page(doc: &mut Document) -> PdfResult<()> {
-    // Draw coordinate axes for visual reference (gray)
+    let (page_width, page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
+    let margin = 48.0;
+
     doc.stroke_axis(
         AxisOptions::new()
             .at(20.0, 20.0)
@@ -38,39 +40,38 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
 
     // Header band
     doc.fill(|ctx| {
-        ctx.color("F2F2F2").rectangle([0.0, 842.0], 595.0, 82.0);
+        ctx.color("F2F2F2")
+            .rectangle([0.0, page_height], page_width, 82.0);
     });
 
     doc.font("Helvetica").size(24.0);
-    doc.text_at("Drawing Primitives", [48.0, 804.0]);
+    doc.text_at("PDF Showcase", [margin, 804.0]);
     doc.font("Helvetica").size(11.0);
-    doc.text_at("Strokes, fills, polygons & transparency", [48.0, 784.0]);
+    doc.text_at(
+        "Drawing primitives, polygons & transparency",
+        [margin, 784.0],
+    );
 
-    // Section labels
     doc.font("Helvetica").size(12.0);
     doc.text_at("Strokes", [60.0, 720.0]);
     doc.text_at("Fills", [320.0, 720.0]);
 
-    // === Stroke-only shapes ===
-    // Blue rectangle
+    // Stroke-only shapes
     doc.stroke(|ctx| {
         ctx.color("2673D9")
             .line_width(2.0)
             .rectangle([60.0, 700.0], 180.0, 90.0);
     });
-    // Red rounded rectangle
     doc.stroke(|ctx| {
         ctx.color("E64D33")
             .line_width(3.0)
             .rounded_rectangle([60.0, 580.0], 180.0, 90.0, 14.0);
     });
-    // Green circle
     doc.stroke(|ctx| {
         ctx.color("33B366")
             .line_width(2.5)
             .circle([150.0, 420.0], 40.0);
     });
-    // Dashed line (matches Ruby's inherited 2.5pt line width)
     doc.stroke(|ctx| {
         ctx.color("333333")
             .line_width(2.5)
@@ -78,26 +79,22 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
             .line([60.0, 360.0], [240.0, 360.0]);
     });
 
-    // === Filled shapes ===
-    // Yellow rounded rectangle
+    // Filled shapes
     doc.fill(|ctx| {
         ctx.color("FAD940")
             .rounded_rectangle([320.0, 700.0], 220.0, 90.0, 18.0);
     });
-    // Blue ellipse
     doc.fill(|ctx| {
         ctx.color("339EF2").ellipse([430.0, 520.0], 90.0, 45.0);
     });
-    // Pink circle
     doc.fill(|ctx| {
         ctx.color("E68099").circle([430.0, 420.0], 45.0);
     });
 
-    // === Polygons section ===
+    // Polygons
     doc.font("Helvetica").size(12.0);
     doc.text_at("Polygons", [60.0, 320.0]);
 
-    // Triangle (stroke)
     doc.stroke(|ctx| {
         ctx.color("CC3333").line_width(2.5).polygon(&[
             [100.0, 280.0],
@@ -106,7 +103,6 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         ]);
     });
 
-    // Pentagon (fill)
     doc.fill(|ctx| {
         ctx.color("3399CC").polygon(&[
             [200.0, 280.0],
@@ -117,7 +113,6 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         ]);
     });
 
-    // Star (fill)
     doc.fill(|ctx| {
         ctx.color("E6CC33").polygon(&[
             [310.0, 280.0],
@@ -133,7 +128,7 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         ]);
     });
 
-    // Hexagon (stroke + fill with transparency)
+    // Hexagon (transparent fill + stroke)
     doc.transparent(0.6, 0.6, |doc| {
         doc.fill(|ctx| {
             ctx.color("804DCC").polygon(&[
@@ -157,11 +152,10 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         ]);
     });
 
-    // === Transparency section ===
+    // Transparency section
     doc.font("Helvetica").size(12.0);
     doc.text_at("Transparency", [60.0, 200.0]);
 
-    // Overlapping circles with transparency
     let circle_cx = 120.0;
     let circle_cy = 130.0;
 
@@ -181,23 +175,20 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         });
     });
 
-    // Overlapping rectangles with transparency
+    // Overlapping rectangles
     let rect_x = 320.0;
     let rect_top_y = 155.0;
 
-    // Red rect (100%)
     doc.fill(|ctx| {
         ctx.color("D93352")
             .rectangle([rect_x, rect_top_y], 80.0, 55.0);
     });
-    // Blue rect (65%)
     doc.transparent(0.65, 0.65, |d| {
         d.fill(|ctx| {
             ctx.color("3399E6")
                 .rectangle([rect_x + 45.0, rect_top_y], 80.0, 55.0);
         });
     });
-    // Green rect (35%)
     doc.transparent(0.35, 0.35, |d| {
         d.fill(|ctx| {
             ctx.color("4DD94D")

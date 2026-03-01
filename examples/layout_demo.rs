@@ -41,11 +41,11 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     let margin = 36.0;
 
     doc.font("Helvetica").size(24.0);
-    doc.text_at("LayoutDocument Demo", [margin, 800.0]);
+    doc.text_at("Cursor Layout Demo", [margin, 800.0]);
 
     doc.font("Helvetica").size(11.0);
     doc.text_at(
-        "Prawn-style cursor-based layout (no manual coordinate calculation)",
+        "Native cursor-based layout (no manual coordinate calculation)",
         [margin, 780.0],
     );
 

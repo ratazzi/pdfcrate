@@ -70,19 +70,23 @@ pub fn fit_image(
 pub fn add_page(doc: &mut Document, png_bytes: &[u8], width: u32, height: u32) -> PdfResult<()> {
     let (page_width, page_height) = PageSize::A4.dimensions(PageLayout::Portrait);
     let margin = 36.0;
-    let header_height = 32.0;
-
-    let (draw_x, draw_y, draw_width, draw_height) = fit_image(
-        page_width,
-        page_height,
-        margin,
-        header_height,
-        width,
-        height,
-    );
+    let bounds_width = page_width - 2.0 * margin;
+    let bounds_height = page_height - 2.0 * margin;
 
     doc.font("Helvetica").size(14.0);
     doc.text_at("Embedded PNG", [margin, page_height - margin - 16.0]);
+
+    // Fit image within [bounds_width, bounds_height - 50], matching Prawn behavior
+    let fit_width = bounds_width;
+    let fit_height = bounds_height - 50.0;
+    let scale = (fit_width / width as f64).min(fit_height / height as f64);
+    let draw_width = width as f64 * scale;
+    let draw_height = height as f64 * scale;
+
+    // Center in full bounds, matching Prawn's position: :center, vposition: :center
+    let draw_x = margin + (bounds_width - draw_width) / 2.0;
+    let draw_y = margin + (bounds_height - draw_height) / 2.0;
+
     doc.image_png(png_bytes, [draw_x, draw_y], draw_width, draw_height)?;
 
     Ok(())

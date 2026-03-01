@@ -10,7 +10,7 @@
 //!
 //! Run with: cargo run --example cjk_demo --features fonts
 
-use pdfcrate::prelude::{Document, PageLayout, PageSize};
+use pdfcrate::prelude::{Document, LayoutDocument, Margin, PageLayout, PageSize};
 use pdfcrate::Result as PdfResult;
 use std::fs;
 
@@ -57,90 +57,92 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         [margin, 778.0],
     );
 
-    let mut y = 710.0;
-
-    // Section 1: Chinese text samples
-    doc.font("Helvetica").size(14.0);
-    doc.text_at("Chinese Text Samples:", [margin, y]);
-    y -= 30.0;
-
-    doc.font(&cjk_light).size(16.0);
-    doc.text_at("Light: 霞鹜文楷是一款开源中文字体", [margin, y]);
-    y -= 25.0;
-
-    doc.font(&cjk_regular).size(16.0);
-    doc.text_at("Regular: 天地玄黄，宇宙洪荒", [margin, y]);
-    y -= 25.0;
-
-    doc.font(&cjk_medium).size(16.0);
-    doc.text_at("Medium: 日月盈昃，辰宿列张", [margin, y]);
-    y -= 40.0;
-
-    // Section 2: Mixed content
-    doc.font("Helvetica").size(14.0);
-    doc.text_at("Mixed Language Content:", [margin, y]);
-    y -= 30.0;
-
-    doc.font(&cjk_regular).size(14.0);
-    doc.text_at("PDF 库 pdfcrate 支持 TrueType 字体嵌入", [margin, y]);
-    y -= 22.0;
-    doc.text_at(
-        "支持字体子集化 (Font Subsetting) 以减小文件大小",
-        [margin, y],
-    );
-    y -= 22.0;
-    doc.text_at("可用于 Cloudflare Workers 等 WASM 环境", [margin, y]);
-    y -= 40.0;
-
-    // Section 3: Classical Chinese
-    doc.font("Helvetica").size(14.0);
-    doc.text_at("Classical Chinese:", [margin, y]);
-    y -= 30.0;
-
-    doc.font(&cjk_regular).size(13.0);
-    let classical_lines = [
-        "子曰：「学而时习之，不亦说乎？",
-        "有朋自远方来，不亦乐乎？",
-        "人不知而不愠，不亦君子乎？」",
-        "",
-        "《论语·学而》",
-    ];
-    for line in classical_lines {
-        doc.text_at(line, [margin, y]);
-        y -= 20.0;
-    }
-    y -= 20.0;
-
-    // Section 4: Japanese text
-    doc.font("Helvetica").size(14.0);
-    doc.text_at("Japanese Text:", [margin, y]);
-    y -= 30.0;
-
-    doc.font(&cjk_regular).size(14.0);
-    doc.text_at("ひらがな: あいうえお かきくけこ", [margin, y]);
-    y -= 22.0;
-    doc.text_at("カタカナ: アイウエオ カキクケコ", [margin, y]);
-    y -= 22.0;
-    doc.text_at("漢字混じり: 東京は日本の首都です", [margin, y]);
-    y -= 40.0;
-
-    // Section 5: Size variations with CJK
-    doc.font("Helvetica").size(14.0);
-    doc.text_at("Size Variations:", [margin, y]);
-    y -= 25.0;
-
-    for size in [10.0, 14.0, 18.0, 24.0] {
-        doc.font(&cjk_regular).size(size);
-        doc.text_at(&format!("{}pt: 中文字体大小测试", size as i32), [margin, y]);
-        y -= size + 8.0;
-    }
-
-    // Footer note
-    doc.font("Helvetica").size(10.0);
-    doc.text_at(
-        "Note: CJK fonts are subsetted - only used glyphs are embedded to reduce file size.",
-        [margin, 60.0],
+    // Wrap into LayoutDocument for cursor-based body
+    // Prawn: margin 36, indent(12) → text at 48
+    let doc_owned = std::mem::take(doc);
+    let mut layout = LayoutDocument::with_margin(
+        doc_owned,
+        Margin::new(132.0, margin - 12.0, margin - 12.0, margin - 12.0),
     );
 
+    let abs_bottom = layout.bounds().absolute_bottom();
+
+    layout.indent(12.0, 0.0, |layout| {
+        layout.font("Helvetica").size(14.0);
+        layout.text("Chinese Text Samples:");
+        layout.move_down(16.0);
+
+        layout.font(&cjk_light).size(16.0);
+        layout.text("Light: 霞鹜文楷是一款开源中文字体");
+        layout.move_down(6.0);
+
+        layout.font(&cjk_regular).size(16.0);
+        layout.text("Regular: 天地玄黄，宇宙洪荒");
+        layout.move_down(6.0);
+
+        layout.font(&cjk_medium).size(16.0);
+        layout.text("Medium: 日月盈昃，辰宿列张");
+        layout.move_down(21.0);
+
+        layout.font("Helvetica").size(14.0);
+        layout.text("Mixed Language Content:");
+        layout.move_down(16.0);
+
+        layout.font(&cjk_regular).size(14.0);
+        layout.text("PDF 库支持 TrueType 字体嵌入");
+        layout.move_down(4.0);
+        layout.text("支持字体子集化 (Font Subsetting) 以减小文件大小");
+        layout.move_down(4.0);
+        layout.text("开源的高性能 PDF 生成库");
+        layout.move_down(22.0);
+
+        layout.font("Helvetica").size(14.0);
+        layout.text("Classical Chinese:");
+        layout.move_down(16.0);
+
+        layout.font(&cjk_regular).size(13.0);
+        let classical_lines = [
+            "子曰：「学而时习之，不亦说乎？",
+            "有朋自远方来，不亦乐乎？",
+            "人不知而不愠，不亦君子乎？」",
+            "",
+            "《论语·学而》",
+        ];
+        for line in classical_lines {
+            layout.text(line);
+            layout.move_down(4.0);
+        }
+        layout.move_down(16.0);
+
+        layout.font("Helvetica").size(14.0);
+        layout.text("Japanese Text:");
+        layout.move_down(16.0);
+
+        layout.font(&cjk_regular).size(14.0);
+        layout.text("ひらがな: あいうえお かきくけこ");
+        layout.move_down(4.0);
+        layout.text("カタカナ: アイウエオ カキクケコ");
+        layout.move_down(4.0);
+        layout.text("漢字混じり: 東京は日本の首都です");
+        layout.move_down(22.0);
+
+        layout.font("Helvetica").size(14.0);
+        layout.text("Size Variations:");
+        layout.move_down(8.0);
+
+        for size in [10.0, 14.0, 18.0, 24.0] {
+            layout.font(&cjk_regular).size(size);
+            layout.text(&format!("{}pt: 中文字体大小测试", size as i32));
+        }
+    });
+
+    // Prawn: draw_text at: [12, 24] → absolute (36+12, 36+24) = (48, 60)
+    layout.font("Helvetica").size(10.0);
+    layout.text_at(
+        "Note: CJK fonts are subsetted - only used glyphs are embedded.",
+        [margin, abs_bottom + 24.0],
+    );
+
+    *doc = layout.into_inner();
     Ok(())
 }

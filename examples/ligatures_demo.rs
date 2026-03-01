@@ -8,7 +8,7 @@
 //!
 //! Run with: cargo run --example ligatures_demo --features fonts
 
-use pdfcrate::prelude::{Document, PageLayout, PageSize};
+use pdfcrate::prelude::{Document, LayoutDocument, Margin, PageLayout, PageSize};
 use pdfcrate::Result as PdfResult;
 use std::fs;
 
@@ -39,89 +39,95 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         ctx.gray(0.95).rectangle([0.0, 842.0], page_width, 82.0);
     });
 
-    let font_name = doc.embed_font(fs::read(MAPLE_FONT_PATH)?)?;
+    let maple_mono = doc.embed_font(fs::read(MAPLE_FONT_PATH)?)?;
 
-    doc.font(&font_name).size(28.0);
+    doc.font(&maple_mono).size(28.0);
     doc.text_at("MapleMono Ligatures", [margin, 800.0]);
 
     doc.font("Helvetica").size(12.0);
     doc.text_at("Ligatures, kerning, and line spacing", [margin, 778.0]);
 
-    let mut y = 700.0;
-    doc.font(&font_name).size(22.0);
-
-    let samples = ["== != === !== <= >= -> => <-> <=>"];
-
-    for line in samples {
-        doc.text_at(line, [margin, y]);
-        y -= 32.0;
-    }
-
-    y -= 8.0;
-    doc.font("Helvetica").size(11.0);
-    doc.text_at("Nerd Font glyphs (MapleMono NF):", [margin, y]);
-    y -= 32.0;
-
-    doc.font(&font_name).size(24.0);
-    doc.text_at(
-        "\u{f09b}  \u{f121}  \u{f179}  \u{f0f3}  \u{f0e0}  \u{f2db}  \u{f1eb}",
-        [margin, y],
+    // Wrap into LayoutDocument for cursor-based body
+    // Prawn: margin 36, indent(12) → text at 48
+    let doc_owned = std::mem::take(doc);
+    let mut layout = LayoutDocument::with_margin(
+        doc_owned,
+        Margin::new(142.0, margin - 12.0, margin - 12.0, margin - 12.0),
     );
-    y -= 36.0;
 
-    doc.stroke(|ctx| {
-        ctx.gray(0.88)
-            .line_width(0.5)
-            .line([margin, y], [page_width - margin, y]);
+    let roboto_font = layout.embed_font(fs::read(ROBOTO_FONT_PATH)?)?;
+
+    let abs_bottom = layout.bounds().absolute_bottom();
+
+    layout.indent(12.0, 0.0, |layout| {
+        // Prawn drawing coords are relative to indented bounds
+        let bounds_left = layout.bounds().absolute_left();
+        // Ligature samples
+        layout.font(&maple_mono).size(22.0);
+        layout.text("== != === !== <= >= -> => <-> <=>");
+        layout.move_down(8.0);
+
+        layout.font("Helvetica").size(11.0);
+        layout.text("Nerd Font glyphs (MapleMono NF):");
+        layout.move_down(16.0);
+
+        layout.font(&maple_mono).size(24.0);
+        layout.text("\u{f09b}  \u{f121}  \u{f179}  \u{f0f3}  \u{f0e0}  \u{f2db}  \u{f1eb}");
+        layout.move_down(26.0);
+
+        layout.font("Helvetica").size(12.0);
+        layout.text("Kerning samples (Roboto, proportional):");
+
+        // Kerning OFF
+        layout.font("Helvetica").size(10.0);
+        layout.text("Kerning OFF:");
+        layout.move_down(26.0);
+
+        let y = layout.cursor() + abs_bottom;
+        layout.font(&roboto_font).size(32.0);
+        layout.text_at_no_kerning("AV AVA WA We To Ta Te Yo", [bounds_left, y]);
+        layout.move_down(22.0);
+
+        // Kerning ON
+        layout.font("Helvetica").size(10.0);
+        layout.text("Kerning ON:");
+        layout.move_down(26.0);
+
+        let y = layout.cursor() + abs_bottom;
+        layout.font(&roboto_font).size(32.0);
+        layout.text_at("AV AVA WA We To Ta Te Yo", [bounds_left, y]);
+        layout.move_down(22.0);
+
+        // Line spacing
+        layout.font("Helvetica").size(12.0);
+        layout.text("Line spacing (manual):");
+
+        let right_x = page_width - margin * 2.0;
+        for spacing in [16.0, 24.0, 36.0] {
+            layout.font("Helvetica").size(10.0);
+            layout.text(&format!("Line height {:.0}pt", spacing));
+            layout.move_down(12.0);
+
+            let text_y = layout.cursor() + abs_bottom;
+
+            layout.stroke(|ctx| {
+                ctx.color("999999")
+                    .line_width(0.5)
+                    .line([bounds_left, text_y], [bounds_left + right_x, text_y])
+                    .line(
+                        [bounds_left, text_y - spacing],
+                        [bounds_left + right_x, text_y - spacing],
+                    );
+            });
+
+            layout.font(&maple_mono).size(14.0);
+            layout.text_at("The quick brown fox jumps.", [bounds_left, text_y]);
+            layout.text_at("Second line for spacing.", [bounds_left, text_y - spacing]);
+
+            layout.move_cursor_to(text_y - abs_bottom - spacing - 24.0);
+        }
     });
-    y -= 16.0;
 
-    doc.font("Helvetica").size(12.0);
-    doc.text_at("Kerning samples (Roboto, proportional):", [margin, y]);
-    y -= 18.0;
-
-    let roboto_font = doc.embed_font(fs::read(ROBOTO_FONT_PATH)?)?;
-    doc.font("Helvetica").size(10.0);
-    doc.text_at("Kerning OFF:", [margin, y]);
-    y -= 26.0;
-
-    doc.font(&roboto_font).size(32.0);
-    doc.text_at_no_kerning("AV AVA WA We To Ta Te Yo", [margin, y]);
-    y -= 48.0;
-
-    doc.font("Helvetica").size(10.0);
-    doc.text_at("Kerning ON:", [margin, y]);
-    y -= 26.0;
-
-    doc.font(&roboto_font).size(32.0);
-    doc.text_at("AV AVA WA We To Ta Te Yo", [margin, y]);
-    y -= 48.0;
-
-    doc.font("Helvetica").size(12.0);
-    doc.text_at("Line spacing (manual):", [margin, y]);
-    y -= 18.0;
-
-    for spacing in [16.0, 24.0, 36.0] {
-        doc.font("Helvetica").size(10.0);
-        doc.text_at(&format!("Line height {:.0}pt", spacing), [margin, y]);
-        let text_y = y - 14.0;
-
-        doc.stroke(|ctx| {
-            ctx.gray(0.8)
-                .line_width(0.5)
-                .line([margin, text_y], [page_width - margin, text_y])
-                .line(
-                    [margin, text_y - spacing],
-                    [page_width - margin, text_y - spacing],
-                );
-        });
-
-        doc.font(&font_name).size(14.0);
-        doc.text_at("The quick brown fox jumps.", [margin, text_y]);
-        doc.text_at("Second line for spacing.", [margin, text_y - spacing]);
-
-        y = text_y - spacing - 24.0;
-    }
-
+    *doc = layout.into_inner();
     Ok(())
 }

@@ -42,178 +42,180 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
         Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris. \
         Duis aute irure dolor in reprehenderit in voluptate velit esse cillum.";
 
-    // Create LayoutDocument for cursor-based layout
-    // Use left margin of 48pt to align with header (which is at x=48)
-    // Top margin: header is 82pt, plus ~54pt gap = 136pt from page top
+    // Match Prawn: default margins (36pt) + move_cursor_to bounds.top - 100
     let doc_owned = std::mem::take(doc);
-    let mut layout = LayoutDocument::with_margin(doc_owned, Margin::new(136.0, 48.0, 48.0, 48.0));
+    let mut layout = LayoutDocument::with_margin(doc_owned, Margin::new(36.0, 36.0, 36.0, 36.0));
+
+    let bounds_top = layout.bounds().height();
+    layout.move_cursor_to(bounds_top - 100.0);
 
     let box_width = 220.0;
     let box_height = 50.0;
     let padding = 4.0;
+    let left_offset = 12.0;
 
     // Section 1: Overflow::Truncate
-    layout.font("Helvetica-Bold").size(14.0);
-    layout.text("1. Overflow::Truncate (default)");
-    layout.move_down(8.0);
+    layout.indent(left_offset, 0.0, |l| {
+        l.font("Helvetica-Bold").size(14.0);
+        l.text("1. Overflow: :truncate (default)");
+        l.move_down(8.0);
 
-    layout.font("Helvetica").size(9.0);
-    layout.text("Text that exceeds the box height is silently discarded:");
+        l.font("Helvetica").size(9.0);
+        l.text("Text that exceeds the box height is silently discarded:");
+    });
     layout.move_down(10.0);
 
-    // Draw border and text in the same bounding_box
-    let mut truncate_result = None;
     let y = layout.cursor();
     let outer_height = box_height + padding * 2.0;
     layout.bounding_box(
-        [0.0, y],
+        [left_offset, y],
         box_width + padding * 2.0,
         Some(outer_height),
         |l| {
             l.stroke_bounds();
             l.font("Helvetica").size(9.0);
-            // Prawn-style: point[1] is Y from bounds.bottom
-            // To place text_box at top with padding: y = outer_height - padding
-            truncate_result = Some(l.text_box(
+            l.text_box(
                 long_text,
-                [padding, outer_height - padding],
+                [padding, box_height + padding],
                 box_width,
                 box_height,
                 Overflow::Truncate,
-            ));
+            );
         },
     );
-    let result = truncate_result.unwrap();
 
     layout.move_down(10.0);
-    layout.font("Helvetica").size(8.0);
-    layout.text(&format!(
-        "Result: truncated={}, lines_rendered={}, total_lines={}",
-        result.truncated, result.lines_rendered, result.total_lines
-    ));
+    layout.indent(left_offset, 0.0, |l| {
+        l.font("Helvetica").size(8.0);
+        l.text("Result: truncated (overflow: :truncate)");
+    });
 
     layout.move_down(25.0);
 
     // Section 2: Overflow::ShrinkToFit
-    layout.font("Helvetica-Bold").size(14.0);
-    layout.text("2. Overflow::ShrinkToFit(min_size)");
-    layout.move_down(8.0);
+    layout.indent(left_offset, 0.0, |l| {
+        l.font("Helvetica-Bold").size(14.0);
+        l.text("2. Overflow: :shrink_to_fit");
+        l.move_down(8.0);
 
-    layout.font("Helvetica").size(9.0);
-    layout.text("Font size is reduced until text fits (minimum 6pt):");
+        l.font("Helvetica").size(9.0);
+        l.text("Font size is reduced until text fits (minimum 6pt):");
+    });
     layout.move_down(10.0);
 
-    let mut shrink_result = None;
     let y = layout.cursor();
     let outer_height = box_height + padding * 2.0;
     layout.bounding_box(
-        [0.0, y],
+        [left_offset, y],
         box_width + padding * 2.0,
         Some(outer_height),
         |l| {
             l.stroke_bounds();
             l.font("Helvetica").size(9.0);
-            shrink_result = Some(l.text_box(
+            l.text_box(
                 long_text,
-                [padding, outer_height - padding],
+                [padding, box_height + padding],
                 box_width,
                 box_height,
                 Overflow::ShrinkToFit(6.0),
-            ));
+            );
         },
     );
-    let result = shrink_result.unwrap();
 
     layout.move_down(10.0);
-    layout.font("Helvetica").size(8.0);
-    layout.text(&format!(
-        "Result: font_size={:.1}pt (was 9pt), truncated={}, lines={}",
-        result.font_size, result.truncated, result.lines_rendered
-    ));
+    layout.indent(left_offset, 0.0, |l| {
+        l.font("Helvetica").size(8.0);
+        l.text("Result: font shrunk to fit (overflow: :shrink_to_fit, min_font_size: 6)");
+    });
 
     layout.move_down(25.0);
 
     // Section 3: Overflow::Expand
-    layout.font("Helvetica-Bold").size(14.0);
-    layout.text("3. Overflow::Expand");
-    layout.move_down(8.0);
+    layout.indent(left_offset, 0.0, |l| {
+        l.font("Helvetica-Bold").size(14.0);
+        l.text("3. Overflow: :expand");
+        l.move_down(8.0);
 
-    layout.font("Helvetica").size(9.0);
-    layout.text("Box height expands to fit all content:");
+        l.font("Helvetica").size(9.0);
+        l.text("Box height expands to fit all content:");
+    });
     layout.move_down(10.0);
 
-    // For Expand, render text first, then draw border with actual height
     let cursor_before = layout.cursor();
     layout.font("Helvetica").size(9.0);
-    // Prawn-style: point[1] is Y from bounds.bottom
-    // Subtract padding from y to create top padding (text starts below border top)
-    let result = layout.text_box(
+    let _result = layout.text_box(
         long_text,
-        [padding, cursor_before - padding],
+        [left_offset + padding, cursor_before - padding],
         box_width,
         box_height,
         Overflow::Expand,
     );
 
-    // Draw border around the expanded content using float
+    // Match Ruby: fixed-height stroke_rectangle
     layout.float(|l| {
         l.set_cursor(cursor_before);
         l.bounding_box(
-            [0.0, cursor_before],
+            [left_offset, cursor_before],
             box_width + padding * 2.0,
-            Some(result.height + padding * 2.0),
+            Some(box_height + padding * 2.0 + 20.0),
             |l| {
                 l.stroke_bounds();
             },
         );
     });
 
-    layout.move_down(10.0);
-    layout.font("Helvetica").size(8.0);
-    layout.text(&format!(
-        "Result: actual_height={:.1}pt (min {}pt), lines={}",
-        result.height, box_height, result.lines_rendered
-    ));
+    // Match Ruby: move_cursor_to box_top - box_height - padding * 2 - 30
+    layout.move_cursor_to(cursor_before - box_height - padding * 2.0 - 30.0);
+
+    layout.indent(left_offset, 0.0, |l| {
+        l.font("Helvetica").size(8.0);
+        l.text("Result: box expanded (overflow: :expand)");
+    });
 
     layout.move_down(25.0);
 
     // Section 4: Comparison - same text, all three modes side by side
-    layout.font("Helvetica-Bold").size(14.0);
-    layout.text("4. Side-by-Side Comparison");
-    layout.move_down(8.0);
+    layout.indent(left_offset, 0.0, |l| {
+        l.font("Helvetica-Bold").size(14.0);
+        l.text("4. Side-by-Side Comparison");
+        l.move_down(8.0);
 
-    layout.font("Helvetica").size(9.0);
-    layout.text("Same text in 150x45pt boxes:");
+        l.font("Helvetica").size(9.0);
+        l.text("Same text in 150x45pt boxes:");
+    });
     layout.move_down(10.0);
 
     let compare_width = 150.0;
-    let compare_height = 45.0; // Smaller height to show overflow effects
+    let compare_height = 45.0;
     let gap = 15.0;
     let small_padding = 2.0;
-    // Longer text to clearly show overflow differences
     let compare_text =
         "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump!";
 
     let row_top = layout.cursor();
 
     // Box 1: Truncate
-    layout.bounding_box([0.0, row_top], compare_width, Some(compare_height), |l| {
-        l.stroke_bounds();
-        l.font("Helvetica").size(9.0);
-        // Prawn-style: point[1] is Y from bounds.bottom, place at top with padding
-        l.text_box(
-            compare_text,
-            [small_padding, compare_height - small_padding],
-            compare_width - small_padding * 2.0,
-            compare_height - small_padding * 2.0,
-            Overflow::Truncate,
-        );
-    });
+    layout.bounding_box(
+        [left_offset, row_top],
+        compare_width,
+        Some(compare_height),
+        |l| {
+            l.stroke_bounds();
+            l.font("Helvetica").size(9.0);
+            l.text_box(
+                compare_text,
+                [small_padding, compare_height - small_padding],
+                compare_width - small_padding * 2.0,
+                compare_height - small_padding * 2.0,
+                Overflow::Truncate,
+            );
+        },
+    );
 
     // Box 2: ShrinkToFit
     layout.set_cursor(row_top);
     layout.bounding_box(
-        [compare_width + gap, row_top],
+        [left_offset + compare_width + gap, row_top],
         compare_width,
         Some(compare_height),
         |l| {
@@ -230,56 +232,51 @@ pub fn add_page(doc: &mut Document) -> PdfResult<()> {
     );
 
     // Box 3: Expand - render text first, then draw border
+    let expand_x = left_offset + (compare_width + gap) * 2.0;
     layout.set_cursor(row_top);
     layout.font("Helvetica").size(9.0);
-    // Prawn-style: point[1] is Y from bounds.bottom
-    // Subtract small_padding from y to create top padding
-    let result = layout.text_box(
+    let _result = layout.text_box(
         compare_text,
-        [
-            (compare_width + gap) * 2.0 + small_padding,
-            row_top - small_padding,
-        ],
+        [expand_x + small_padding, row_top - small_padding],
         compare_width - small_padding * 2.0,
         compare_height - small_padding * 2.0,
         Overflow::Expand,
     );
 
-    // Draw border for expanded box
+    // Match Ruby: fixed-height stroke_rectangle for expand box
     layout.float(|l| {
         l.set_cursor(row_top);
         l.bounding_box(
-            [(compare_width + gap) * 2.0, row_top],
+            [expand_x, row_top],
             compare_width,
-            Some(result.height + small_padding * 2.0),
+            Some(compare_height + 10.0),
             |l| {
                 l.stroke_bounds();
             },
         );
     });
 
-    // Labels below the boxes - find the tallest box height
-    let max_box_height = compare_height.max(result.height + small_padding * 2.0);
-    layout.set_cursor(row_top - max_box_height - 5.0);
+    // Match Ruby: move_cursor_to row_top - compare_height - 15
+    layout.move_cursor_to(row_top - compare_height - 15.0);
 
-    // Convert relative cursor to absolute Y for text_at
-    let left_margin = 48.0;
+    // Labels below boxes using absolute coordinates
+    let abs_left = 36.0; // page left margin
     let label_y = layout.bounds().absolute_bottom() + layout.cursor();
     layout.font("Helvetica").size(7.0);
-    layout
-        .inner_mut()
-        .text_at("Truncate", [left_margin + small_padding, label_y]);
     layout.inner_mut().text_at(
-        "ShrinkToFit(5.0)",
-        [left_margin + compare_width + gap + small_padding, label_y],
+        "Truncate",
+        [abs_left + left_offset + small_padding, label_y],
     );
     layout.inner_mut().text_at(
-        &format!("Expand (h={:.0})", result.height + small_padding * 2.0),
+        "ShrinkToFit(5.0)",
         [
-            left_margin + (compare_width + gap) * 2.0 + small_padding,
+            abs_left + left_offset + compare_width + gap + small_padding,
             label_y,
         ],
     );
+    layout
+        .inner_mut()
+        .text_at("Expand", [abs_left + expand_x + small_padding, label_y]);
 
     *doc = layout.into_inner();
     Ok(())
