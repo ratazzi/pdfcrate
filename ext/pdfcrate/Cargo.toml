@@ -1,0 +1,16 @@
+[package]
+name = "pdfcrate-ruby"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pdfcrate"
+crate-type = ["cdylib"]
+
+[dependencies]
+magnus = "0.7"
+rb-sys = { version = "*", default-features = false, features = ["stable-api-compiled-fallback"] }
+pdfcrate = { path = "../..", features = ["full"] }
+
+[build-dependencies]
+rb-sys = "0.9.87"

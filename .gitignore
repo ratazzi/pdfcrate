@@ -12,6 +12,13 @@ __pycache__/
 dist/
 .venv/
 
+# Ruby
+Gemfile.lock
+pkg/
+tmp/
+.bundle/
+*.bundle
+
 # Secrets / environment
 .env
 .env.*
