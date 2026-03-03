@@ -33,10 +33,11 @@ Gem::Specification.new do |spec|
     spec.add_development_dependency "rake-compiler", "~> 1.2"
   end
 
-  spec.add_dependency "rb_sys", "~> 0.9.87"
+  spec.add_dependency "rb_sys", "~> 0.9.124"
 
   spec.metadata = {
     "source_code_uri" => "https://github.com/ratazzi/pdfcrate",
-    "rubygems_mfa_required" => "true"
+    "rubygems_mfa_required" => "true",
+    "cargo_crate_name" => "pdfcrate-ruby"
   }
 end

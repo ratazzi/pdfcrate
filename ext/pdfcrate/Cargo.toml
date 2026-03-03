@@ -13,4 +13,4 @@ rb-sys = { version = "*", default-features = false, features = ["stable-api-comp
 pdfcrate = { path = "../..", features = ["full"] }
 
 [build-dependencies]
-rb-sys = "0.9.87"
+rb-sys = "0.9.124"
