@@ -37,6 +37,7 @@ Gem::Specification.new do |spec|
 
   spec.metadata = {
     "source_code_uri" => "https://github.com/ratazzi/pdfcrate",
-    "rubygems_mfa_required" => "true"
+    "rubygems_mfa_required" => "true",
+    "cargo_crate_name" => "pdfcrate-ruby"
   }
 end
