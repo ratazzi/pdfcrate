@@ -1,0 +1,107 @@
+name: Ruby Gem
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Build native gem (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - x86_64-linux
+          - x86_64-linux-musl
+          - aarch64-linux
+          - aarch64-linux-musl
+          - x86_64-darwin
+          - arm64-darwin
+          - x64-mingw-ucrt
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          cargo-cache: true
+
+      - uses: oxidize-rb/actions/cross-gem@v1
+        with:
+          platform: ${{ matrix.platform }}
+          ruby-versions: '3.3, 3.4, 4.0'
+
+      - name: Upload native gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-${{ matrix.platform }}
+          path: pkg/*-${{ matrix.platform }}.gem
+          if-no-files-found: error
+
+  source:
+    name: Build source gem
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - name: Build source gem
+        run: bundle exec rake build
+
+      - name: Upload source gem
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-source
+          path: pkg/*.gem
+          if-no-files-found: error
+
+  publish:
+    name: Publish to RubyGems
+    needs: [native, source]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: gems
+          pattern: gem-*
+          merge-multiple: true
+
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          for gem in gems/*.gem; do
+            GEM_VERSION=$(echo "$gem" | grep -oP '\d+\.\d+\.\d+')
+            if [ "$GEM_VERSION" != "$TAG_VERSION" ]; then
+              echo "::error::Gem version ($GEM_VERSION) does not match tag ($TAG_VERSION): $gem"
+              exit 1
+            fi
+          done
+          echo "Version check passed: $TAG_VERSION"
+
+      - name: List gems
+        run: ls -la gems/
+
+      - name: Publish gems
+        run: |
+          mkdir -p ~/.gem
+          cat > ~/.gem/credentials <<EOF
+          ---
+          :rubygems_api_key: ${{ secrets.RUBYGEMS_API_KEY }}
+          EOF
+          chmod 0600 ~/.gem/credentials
+          for gem in gems/*.gem; do
+            echo "Publishing $gem..."
+            gem push "$gem" || true
+          done
