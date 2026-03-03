@@ -19,6 +19,7 @@ classifiers = [
   "Operating System :: MacOS",
 ]
 description = "A fast PDF generation library for Python, written in Rust"
+readme = "README.md"
 license = "MIT"
 authors = [{name = "ratazzi", email = "ratazzi.potts@gmail.com"}]
 keywords = ["pdf", "document", "generator", "report"]
