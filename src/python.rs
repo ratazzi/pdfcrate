@@ -22,7 +22,7 @@ use crate::api::Document as RustDocument;
 // ============================================================================
 
 /// Color for fills, strokes, and text
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Color {
     inner: RustColor,
@@ -108,7 +108,7 @@ impl Color {
 // ============================================================================
 
 /// Page margins
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct Margin {
     inner: RustMargin,
@@ -169,7 +169,7 @@ impl Margin {
 // ============================================================================
 
 /// Page size presets and custom sizes
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PageSize {
     inner: RustPageSize,
@@ -250,7 +250,7 @@ impl PageSize {
 // ============================================================================
 
 /// Text alignment options
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TextAlign {
     Left,
@@ -271,7 +271,7 @@ impl From<TextAlign> for RustTextAlign {
 }
 
 /// Vertical alignment options
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum VerticalAlign {
     Top,
@@ -294,7 +294,7 @@ impl From<VerticalAlign> for RustVerticalAlign {
 // ============================================================================
 
 /// Text overflow behavior for text boxes
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Overflow {
     /// Truncate text that exceeds the box height
@@ -304,7 +304,7 @@ pub enum Overflow {
 }
 
 /// Result information from text_box rendering
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct TextBoxResult {
     /// Actual height used by the text box
@@ -338,7 +338,7 @@ impl TextBoxResult {
 // EmbeddedImage / EmbeddedFont
 // ============================================================================
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct EmbeddedImage {
     #[allow(dead_code)]
@@ -359,7 +359,7 @@ impl EmbeddedImage {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct EmbeddedFont {
     name: String,
@@ -382,7 +382,7 @@ impl EmbeddedFont {
 // ============================================================================
 
 /// A text fragment with optional styling for formatted_text
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct TextFragment {
     text: String,
@@ -474,7 +474,7 @@ impl From<&TextFragment> for RustTextFragment {
 // ============================================================================
 
 /// A builder for creating TextFragment with fluent API
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct SpanBuilder {
     text: String,
@@ -599,7 +599,7 @@ impl SpanBuilder {
 // ============================================================================
 
 /// A grid cell reference with position and dimensions
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct GridBox {
     #[pyo3(get)]
@@ -631,7 +631,7 @@ impl GridBox {
 // ============================================================================
 
 /// An outline/bookmark item
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct OutlineItem {
     #[pyo3(get, set)]
@@ -673,7 +673,7 @@ impl OutlineItem {
 // ============================================================================
 
 /// Cell styling options for tables
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct CellStyle {
     background_color: Option<(f64, f64, f64)>,
@@ -736,7 +736,7 @@ impl From<&CellStyle> for RustCellStyle {
 // ============================================================================
 
 /// A table cell with content and optional styling
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct Cell {
@@ -776,7 +776,7 @@ impl Cell {
 // ============================================================================
 
 /// Options for table creation
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct TableOptions {
     width: Option<f64>,

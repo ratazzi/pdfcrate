@@ -43,7 +43,7 @@ csscolorparser = { version = "0.8", default-features = false, features = ["named
 
 # Python bindings (optional)
 [dependencies.pyo3]
-version = "0.23"
+version = "0.28"
 features = ["extension-module", "abi3-py39"]
 optional = true
 
