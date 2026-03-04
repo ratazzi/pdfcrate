@@ -10,6 +10,20 @@ repository = "https://github.com/ratazzi/pdfcrate"
 homepage = "https://github.com/ratazzi/pdfcrate"
 keywords = ["pdf", "document", "generator"]
 categories = ["text-processing", "encoding"]
+exclude = [
+  ".github/",
+  "examples/",
+  "ext/",
+  "lib/",
+  "python/",
+  "tests/",
+  "Gemfile",
+  "Rakefile",
+  "pdfcrate.gemspec",
+  "pyproject.toml",
+  "src/python.rs",
+  "src/wasm.rs",
+]
 
 [dependencies]
 # Use zlib-rs for SIMD-accelerated pure Rust compression
