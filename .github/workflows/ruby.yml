@@ -98,7 +98,9 @@ jobs:
       - name: List gems
         run: ls -la gems/
 
-      - uses: rubygems/configure-rubygems-credentials@v1
+      - uses: rubygems/configure-rubygems-credentials@v1.0.0
+        with:
+          api-token: ${{ secrets.RUBYGEMS_API_KEY }}
 
       - name: Publish gems
         run: |
