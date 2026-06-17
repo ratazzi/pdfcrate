@@ -625,6 +625,16 @@ fn escape_pdf_string(s: &str) -> String {
             '(' => result.push_str("\\("),
             ')' => result.push_str("\\)"),
             '\\' => result.push_str("\\\\"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            '\u{08}' => result.push_str("\\b"),
+            '\u{0C}' => result.push_str("\\f"),
+            // Other control chars: escape so EOL markers aren't normalized and
+            // raw control bytes don't leak into the content stream.
+            c if (c as u32) < 0x20 || c as u32 == 0x7F => {
+                result.push_str(&format!("\\{:03o}", c as u32));
+            }
             c if (c as u32) < 0x80 => result.push(c),
             // Non-ASCII: emit the WinAnsi byte as an octal escape so the
             // standard font's WinAnsiEncoding selects the right glyph.
@@ -694,5 +704,13 @@ mod tests {
         assert_eq!(escape_pdf_string("5 €"), "5 \\200");
         // Characters with no WinAnsi representation fall back to '?'.
         assert_eq!(escape_pdf_string("日本"), "??");
+    }
+
+    #[test]
+    fn test_escape_control_chars() {
+        // Common controls use named escapes so EOL markers aren't normalized.
+        assert_eq!(escape_pdf_string("a\nb\r\tc"), "a\\nb\\r\\tc");
+        // Other C0 controls and DEL become octal: BEL=0x07=\007, DEL=0x7F=\177.
+        assert_eq!(escape_pdf_string("\u{07}\u{7F}"), "\\007\\177");
     }
 }
