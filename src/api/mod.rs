@@ -1811,10 +1811,19 @@ impl Document {
     where
         F: FnOnce(&mut Self),
     {
+        self.begin_transparency(fill_opacity, stroke_opacity);
+        f(self);
+        self.end_transparency();
+        self
+    }
+
+    /// Begins a transparency scope: creates/caches ExtGState, then save_state + set_graphics_state.
+    ///
+    /// Must be paired with [`end_transparency()`](Self::end_transparency).
+    pub fn begin_transparency(&mut self, fill_opacity: f64, stroke_opacity: f64) {
         let fill_opacity = fill_opacity.clamp(0.0, 1.0);
         let stroke_opacity = stroke_opacity.clamp(0.0, 1.0);
 
-        // Cache key: "fill_opacity_stroke_opacity"
         let cache_key = format!("{}_{}", fill_opacity, stroke_opacity);
 
         let gs_name = if let Some((name, _)) = self
@@ -1824,7 +1833,6 @@ impl Document {
         {
             name.clone()
         } else {
-            // Create new ExtGState dictionary
             let gs_ref = self.context.alloc_ref();
             let gs_name = format!("GS{}", gs_ref.object_number());
 
@@ -1839,15 +1847,14 @@ impl Document {
             gs_name
         };
 
-        // Apply graphics state
         let page = &mut self.pages[self.current_page];
         page.content.save_state();
         page.content.set_graphics_state(&gs_name);
+    }
 
-        f(self);
-
+    /// Ends a transparency scope started by [`begin_transparency()`](Self::begin_transparency).
+    pub fn end_transparency(&mut self) {
         self.pages[self.current_page].content.restore_state();
-        self
     }
 
     /// Draws X and Y coordinate axes with tick marks and labels
