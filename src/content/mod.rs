@@ -577,6 +577,47 @@ fn format_number(n: f64) -> String {
 }
 
 /// Escapes a string for PDF
+/// Maps a Unicode scalar to its WinAnsi (CP1252) byte, when representable.
+///
+/// Standard PDF fonts use WinAnsiEncoding, where each glyph is selected by a
+/// single byte. The Latin-1 high range (0xA0-0xFF) coincides with CP1252; the
+/// 0x80-0x9F range holds CP1252-specific punctuation that maps from higher
+/// Unicode code points.
+fn win_ansi_byte(c: char) -> Option<u8> {
+    let cp = c as u32;
+    match cp {
+        0x00..=0x7F | 0xA0..=0xFF => Some(cp as u8),
+        0x20AC => Some(0x80), // €
+        0x201A => Some(0x82), // ‚
+        0x0192 => Some(0x83), // ƒ
+        0x201E => Some(0x84), // „
+        0x2026 => Some(0x85), // …
+        0x2020 => Some(0x86), // †
+        0x2021 => Some(0x87), // ‡
+        0x02C6 => Some(0x88), // ˆ
+        0x2030 => Some(0x89), // ‰
+        0x0160 => Some(0x8A), // Š
+        0x2039 => Some(0x8B), // ‹
+        0x0152 => Some(0x8C), // Œ
+        0x017D => Some(0x8E), // Ž
+        0x2018 => Some(0x91), // '
+        0x2019 => Some(0x92), // '
+        0x201C => Some(0x93), // "
+        0x201D => Some(0x94), // "
+        0x2022 => Some(0x95), // •
+        0x2013 => Some(0x96), // –
+        0x2014 => Some(0x97), // —
+        0x02DC => Some(0x98), // ˜
+        0x2122 => Some(0x99), // ™
+        0x0161 => Some(0x9A), // š
+        0x203A => Some(0x9B), // ›
+        0x0153 => Some(0x9C), // œ
+        0x017E => Some(0x9E), // ž
+        0x0178 => Some(0x9F), // Ÿ
+        _ => None,
+    }
+}
+
 fn escape_pdf_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for c in s.chars() {
@@ -584,7 +625,13 @@ fn escape_pdf_string(s: &str) -> String {
             '(' => result.push_str("\\("),
             ')' => result.push_str("\\)"),
             '\\' => result.push_str("\\\\"),
-            _ => result.push(c),
+            c if (c as u32) < 0x80 => result.push(c),
+            // Non-ASCII: emit the WinAnsi byte as an octal escape so the
+            // standard font's WinAnsiEncoding selects the right glyph.
+            c => match win_ansi_byte(c) {
+                Some(b) => result.push_str(&format!("\\{:03o}", b)),
+                None => result.push('?'),
+            },
         }
     }
     result
@@ -631,5 +678,21 @@ mod tests {
         assert!(s.contains("/Helvetica 12 Tf"));
         assert!(s.contains("(Hello World) Tj"));
         assert!(s.contains("ET"));
+    }
+
+    #[test]
+    fn test_escape_win_ansi() {
+        // ASCII is passed through; parens and backslash stay escaped.
+        assert_eq!(escape_pdf_string("a(b)\\c"), "a\\(b\\)\\\\c");
+        // Non-ASCII becomes WinAnsi octal escapes: ä=0xE4=\344, ü=0xFC=\374.
+        assert_eq!(escape_pdf_string("Währung"), "W\\344hrung");
+        assert_eq!(
+            escape_pdf_string("Zuschläge & Abzüge"),
+            "Zuschl\\344ge & Abz\\374ge"
+        );
+        // CP1252 punctuation maps from higher code points: €=U+20AC -> 0x80=\200.
+        assert_eq!(escape_pdf_string("5 €"), "5 \\200");
+        // Characters with no WinAnsi representation fall back to '?'.
+        assert_eq!(escape_pdf_string("日本"), "??");
     }
 }
